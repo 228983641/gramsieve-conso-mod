@@ -4713,8 +4713,41 @@ final class TelegramHookInstaller {
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 }
             }
+            // Target selector (Build #17): smart analysis no longer only
+            // adds to global rules. The user chooses per dialog: global
+            // (all chats) or current chat only (this dialogId). Default
+            // stays global to preserve existing behaviour; chat target is
+            // disabled when the snapshot has no dialogId.
+            long smartDialogId = snapshot.dialogId;
+            TextView targetLabel = new TextView(activity);
+            targetLabel.setText("添加到");
+            targetLabel.setTextColor(accent);
+            targetLabel.setTextSize(13f);
+            targetLabel.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams targetLabelParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            targetLabelParams.topMargin = dp(context, 12f);
+            targetLabelParams.bottomMargin = dp(context, 4f);
+            dialogView.addView(targetLabel, targetLabelParams);
+            android.widget.RadioGroup targetGroup = new android.widget.RadioGroup(activity);
+            targetGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
+            android.widget.RadioButton globalRadio = new android.widget.RadioButton(activity);
+            globalRadio.setText("全局规则（所有聊天）");
+            globalRadio.setTextSize(15f);
+            globalRadio.setChecked(true);
+            targetGroup.addView(globalRadio, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.widget.RadioButton chatRadio = new android.widget.RadioButton(activity);
+            chatRadio.setText(smartDialogId == 0L ? "当前聊天规则（仅本聊天，无法识别当前聊天）" : "当前聊天规则（仅本聊天）");
+            chatRadio.setTextSize(15f);
+            chatRadio.setChecked(false);
+            chatRadio.setEnabled(smartDialogId != 0L);
+            targetGroup.addView(chatRadio, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialogView.addView(targetGroup, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView footer = new TextView(activity);
-            footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入全局规则，对所有聊天生效。");
+            footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入上面所选的规则范围。");
             footer.setTextSize(13f);
             LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -4726,7 +4759,7 @@ final class TelegramHookInstaller {
                     .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
                     .setView(scrollView)
                     .setPositiveButton(
-                            isChineseLocale(context) ? "加入全局规则" : "Add to global rules",
+                            isChineseLocale(context) ? "确认加入" : "Confirm",
                             (dialog, which) -> {
                                 List<FilterConfig.RuleSpec> selected = new ArrayList<>();
                                 for (int i = 0; i < candidates.size(); i++) {
@@ -4734,7 +4767,11 @@ final class TelegramHookInstaller {
                                         selected.add(candidates.get(i));
                                     }
                                 }
-                                addSmartBlockGlobalRules(context, messageView, selected);
+                                if (chatRadio.isChecked() && smartDialogId != 0L) {
+                                    addSmartBlockChatRules(context, messageView, selected, smartDialogId);
+                                } else {
+                                    addSmartBlockGlobalRules(context, messageView, selected);
+                                }
                             }
                     )
                     .setNegativeButton(
@@ -4773,6 +4810,40 @@ final class TelegramHookInstaller {
         Toast.makeText(
                 context,
                 isChineseLocale(context) ? "已加入全局规则 " + added + " 条" : "Added " + added + " global rules",
+                Toast.LENGTH_SHORT
+        ).show();
+    }
+
+    private void addSmartBlockChatRules(Context context, View messageView, List<FilterConfig.RuleSpec> selected, long dialogId) {
+        if (selected == null || selected.isEmpty()) {
+            Toast.makeText(context, localizedNoTextToast(context), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (dialogId == 0L) {
+            addSmartBlockGlobalRules(context, messageView, selected);
+            return;
+        }
+        FilterConfig updated = configProvider.getConfig(context).deepCopy();
+        FilterConfig.ChatRuleSet chatRuleSet = updated.getOrCreateChatRuleSet(dialogId);
+        chatRuleSet.enabled = true;
+        int added = 0;
+        for (FilterConfig.RuleSpec rule : selected) {
+            if (!MessageRuleFactory.containsEquivalentRule(chatRuleSet.rules, rule)) {
+                chatRuleSet.rules.add(rule);
+                added++;
+            }
+        }
+        updated.sanitize();
+        updated.updatedAtEpochMs = System.currentTimeMillis();
+        updated = saveUpdatedConfig(context, updated);
+        decisionCache.clear();
+        if (messageView != null) {
+            refreshFilteringAround(messageView);
+        }
+        info("Smart-block added chat rules dialogId=" + dialogId + " added=" + added + " selected=" + selected.size());
+        Toast.makeText(
+                context,
+                isChineseLocale(context) ? "已加入当前聊天规则 " + added + " 条" : "Added " + added + " chat rules",
                 Toast.LENGTH_SHORT
         ).show();
     }
