@@ -64,6 +64,7 @@ final class TgProxyManager {
         FilterConfig updated;
         int fetched = 0;
         int folderFetched = 0;
+        String folderDiag = "";
         int tested = 0;
         int availableCount = 0;
         FilterConfig.ProxyEntry fastest;
@@ -74,6 +75,7 @@ final class TgProxyManager {
     private static final Pattern PROXY_LINK = Pattern.compile(
             "(?:https://t\\.me/proxy|tg://proxy)\\?([^\\s\"'<>]+)");
     private static volatile long lastAutoAttemptMs = 0L;
+    static volatile String lastFolderScanDiag = "";
 
     static boolean isExpired(FilterConfig.ProxyEntry entry, FilterConfig config) {
         if (entry == null) {
@@ -301,15 +303,18 @@ final class TgProxyManager {
             TelegramHistoryApiAdapter.ProbeResult probe =
                     TelegramHistoryApiAdapter.probe(context.getClassLoader());
             if (probe == null || !probe.isSupported() || probe.adapter == null) {
+                lastFolderScanDiag = "历史接口不支持";
                 return out;
             }
             TelegramHistoryApiAdapter adapter = probe.adapter;
             Object controller = adapter.getController(0);
             if (controller == null) {
+                lastFolderScanDiag = "控制器为空";
                 return out;
             }
             Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
             if (!(filtersObj instanceof List)) {
+                lastFolderScanDiag = "文件夹列表为空";
                 return out;
             }
             List<Long> dialogIds = null;
@@ -329,7 +334,12 @@ final class TgProxyManager {
                     break;
                 }
             }
-            if (dialogIds == null || dialogIds.isEmpty()) {
+            if (dialogIds == null) {
+                lastFolderScanDiag = "文件夹 " + folderName.trim() + " 未找到";
+                return out;
+            }
+            if (dialogIds.isEmpty()) {
+                lastFolderScanDiag = "文件夹 " + folderName.trim() + " 里没有聊天";
                 return out;
             }
             // Build #25: sort folder chats by last message date, newest
@@ -366,6 +376,9 @@ final class TgProxyManager {
                 return out;
             }
             StringBuilder allText = new StringBuilder();
+            final int[] historyOk = new int[]{0};
+            final int[] messageCount = new int[]{0};
+            final int totalChats = dialogIds.size();
             java.util.concurrent.CountDownLatch latch =
                     new java.util.concurrent.CountDownLatch(dialogIds.size());
             for (long dialogId : dialogIds) {
@@ -388,8 +401,14 @@ final class TgProxyManager {
                                 Object response = args != null && args.length > 0 ? args[0] : null;
                                 Object error = args != null && args.length > 1 ? args[1] : null;
                                 if (error == null && response != null) {
+                                    synchronized (allText) {
+                                        historyOk[0]++;
+                                    }
                                     Object messages = Reflect.field(response, "messages");
                                     if (messages instanceof List) {
+                                        synchronized (allText) {
+                                            messageCount[0] += ((List<?>) messages).size();
+                                        }
                                         for (Object msg : (List<?>) messages) {
                                             try {
                                                 Object text = Reflect.field(msg, "message");
@@ -482,6 +501,8 @@ final class TgProxyManager {
                 latch.await(45, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Throwable ignored) {
             }
+            lastFolderScanDiag = "文件夹 " + folderName.trim() + "：聊天 " + totalChats + " 个，历史成功 "
+                    + historyOk[0] + " 个，消息 " + messageCount[0] + " 条，文本 " + allText.length() + " 字";
             if (allText.length() > 0) {
                 out.addAll(parseLinks(allText.toString(), "folder:" + folderName.trim()));
             }
@@ -548,6 +569,7 @@ final class TgProxyManager {
             try {
                 List<FilterConfig.ProxyEntry> folderEntries = scanFolderChats(context, updated.proxyFolderName.trim());
                 result.folderFetched = folderEntries.size();
+                result.folderDiag = lastFolderScanDiag == null ? "" : lastFolderScanDiag;
                 fresh.addAll(folderEntries);
             } catch (Throwable ignored) {
             }

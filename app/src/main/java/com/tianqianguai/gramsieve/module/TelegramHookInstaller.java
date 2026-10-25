@@ -799,6 +799,16 @@ final class TelegramHookInstaller {
                 } catch (Throwable throwable) {
                     error("ChatActivity resume refresh failed", throwable);
                 }
+                // Build #27: menu items injected at createView can be
+                // missed when the chat is not loaded yet (currentChat
+                // null, broadcast check fails, add-to-folder skipped
+                // permanently for that session). Re-inject on resume,
+                // when the chat is loaded; injectChatMenu is idempotent
+                // for items already present.
+                try {
+                    injectChatMenu(chain.getThisObject());
+                } catch (Throwable ignored) {
+                }
                 try {
                     enableAutoTranslateForChat(chain.getThisObject());
                 } catch (Throwable throwable) {
