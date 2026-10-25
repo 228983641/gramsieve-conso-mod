@@ -146,14 +146,16 @@ final class HostConfigPanel {
         this.backgroundColor = telegramThemeColor("key_windowBackgroundWhite", androidBackground);
         this.cardColor = telegramThemeColor("key_windowBackgroundGray", backgroundColor);
         this.primaryTextColor = telegramThemeColor("key_windowBackgroundWhiteBlackText", androidPrimaryText);
-        this.secondaryTextColor = telegramThemeColor("key_windowBackgroundWhiteGrayText2", androidSecondaryText);
         // Contrast guard (Build #18, from user screenshots): Telegram's
         // secondary gray can resolve too dark against a dark card, and the
         // dialog dimming makes it worse, so info text looked unreadable.
         // If secondary vs card contrast is below 4.5:1, blend secondary
         // toward primary until it passes, so info text is always readable
-        // without changing the theme's hue.
-        this.secondaryTextColor = ensureContrast(secondaryTextColor, cardColor, primaryTextColor);
+        // without changing the theme's hue. Single assignment because the
+        // field is final (Build #19 fix: double assignment failed compile).
+        this.secondaryTextColor = ensureContrast(
+                telegramThemeColor("key_windowBackgroundWhiteGrayText2", androidSecondaryText),
+                cardColor, primaryTextColor);
         this.strokeColor = telegramThemeColor("key_divider", adjustAlpha(primaryTextColor, 0.14f));
         this.toolbarColor = telegramThemeColor("key_actionBarDefault", backgroundColor);
         this.toolbarTextColor = telegramThemeColor("key_actionBarDefaultTitle", primaryTextColor);

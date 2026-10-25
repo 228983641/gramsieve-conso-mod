@@ -4541,12 +4541,12 @@ final class TelegramHookInstaller {
         // the dialog: with fallback on (default) the local candidates are
         // shown, with a toast noting the LLM failed.
         if (!LlmAiAnalyzer.isLlmEnabled(existing)) {
-            showSmartBlockDialog(context, messageView, candidates);
+            showSmartBlockDialog(context, messageView, candidates, snapshot.dialogId);
             return;
         }
         Activity loadingActivity = findActivity(context);
         if (loadingActivity == null || loadingActivity.isFinishing()) {
-            showSmartBlockDialog(context, messageView, candidates);
+            showSmartBlockDialog(context, messageView, candidates, snapshot.dialogId);
             return;
         }
         final List<FilterConfig.RuleSpec> localCandidates = new ArrayList<>(candidates);
@@ -4592,7 +4592,7 @@ final class TelegramHookInstaller {
                     Toast.makeText(context, isChineseLocale(context) ? "这条消息没有可提取的过滤词，或已全部在全局规则里" : "No new filter terms found for this message", Toast.LENGTH_SHORT).show();
                     return;
                 }
-                showSmartBlockDialog(context, messageView, finalCandidates);
+                showSmartBlockDialog(context, messageView, finalCandidates, llmSnapshot.dialogId);
             });
         }).start();
     }
@@ -4608,7 +4608,7 @@ final class TelegramHookInstaller {
         return null;
     }
 
-    private void showSmartBlockDialog(Context context, View messageView, List<FilterConfig.RuleSpec> candidates) {
+    private void showSmartBlockDialog(Context context, View messageView, List<FilterConfig.RuleSpec> candidates, long smartDialogId) {
         // Confirmation dialog with per-term checkboxes. If the host context
         // cannot show a dialog (not an Activity), fall back to adding all
         // candidates directly so the feature still works instead of crashing.
@@ -4794,7 +4794,9 @@ final class TelegramHookInstaller {
             // (all chats) or current chat only (this dialogId). Default
             // stays global to preserve existing behaviour; chat target is
             // disabled when the snapshot has no dialogId.
-            long smartDialogId = snapshot.dialogId;
+            // smartDialogId is now a parameter (Build #19 fix: the old
+            // method body referenced snapshot, which is out of scope here
+            // after the LLM refactor split the dialog out).
             TextView targetLabel = new TextView(activity);
             targetLabel.setText("添加到");
             targetLabel.setTextColor(accent);
