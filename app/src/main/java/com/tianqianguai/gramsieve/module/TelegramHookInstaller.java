@@ -4536,15 +4536,28 @@ final class TelegramHookInstaller {
             String[] labels = new String[candidates.size()];
             for (int i = 0; i < candidates.size(); i++) {
                 FilterConfig.RuleSpec rule = candidates.get(i);
-                String targetLabel = rule.target == FilterConfig.RuleTarget.SENDER
-                        ? "发送者"
-                        : "文本关键词";
+                String targetLabel;
+                if (rule.pattern != null && rule.pattern.matches("\\d+\\.\\d+\\.\\d+\\.\\d+")) {
+                    targetLabel = "IP 地址";
+                } else if (rule.target == FilterConfig.RuleTarget.SENDER) {
+                    targetLabel = "发送者";
+                } else {
+                    targetLabel = "文本关键词";
+                }
                 labels[i] = targetLabel + "：" + rule.pattern;
             }
+            // Strong terms are pre-checked; weak generic terms (体育 / 电子 /
+            // 红包) are offered unchecked, so confirming by habit does not
+            // block normal sports, e-goods or red-packet chats.
             boolean[] checked = new boolean[candidates.size()];
-            java.util.Arrays.fill(checked, true);
+            for (int i = 0; i < candidates.size(); i++) {
+                checked[i] = !FilterEngine.isWeakGamblingTerm(candidates.get(i).pattern);
+            }
             new AlertDialog.Builder(activity)
-                    .setTitle(localizedSmartBlockDialogTitle(context))
+                    .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
+                    .setMessage(isChineseLocale(context)
+                            ? "已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入全局规则，对所有聊天生效。"
+                            : "Checked terms are strong signals; unchecked terms are generic. Confirmed terms become global rules.")
                     .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
                     .setPositiveButton(
                             isChineseLocale(context) ? "加入全局规则" : "Add to global rules",

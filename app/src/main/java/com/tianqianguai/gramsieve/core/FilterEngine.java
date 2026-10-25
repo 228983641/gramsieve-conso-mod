@@ -26,6 +26,17 @@ public final class FilterEngine {
     // Conso adaptation: user-facing gambling terms that the upstream list misses.
     // Upstream GAMBLING_KEYWORDS has no 赌博 / 百家乐 / 彩票, yet those are the
     // terms the user actually wants filtered, so smart-block checks them too.
+    // Expanded 2026-10-25 from two real spam samples supplied by the user:
+    // sample 1 (78.COM / IP landing page): 六合彩, 特码, 连码, 三中三, 捕鱼,
+    // 德州, 十三水, 真人视讯, 返水, 出款, 提款, 派彩, 爆奖, 一拉, 占成, 打码,
+    // 返佣, 担保, 飞投, 充提, 万U, 代理, 盘总.
+    // sample 2 (122体育 / n10086.com): 返水, 出款, 提款, 彩金, 流水, 存款,
+    // 存取款, 免实名, 免绑卡, 捕鱼, 一拉, 一注, USDT.
+    // These are STRONG terms: specific enough to become a global keyword rule.
+    // Generic promo cues (http://, https://, .com, 官方, 下载, 网址, 注册,
+    // 开户) are deliberately NOT returned here: as a rule they would match
+    // almost every normal message. They still count for isLikelyGamblingPromotion
+    // scoring, just not as rule candidates.
     private static final String[] USER_GAMBLING_KEYWORDS = new String[]{
             "赌博",
             "百家乐",
@@ -33,6 +44,47 @@ public final class FilterEngine {
             "投注",
             "下注",
             "开奖",
+            "六合彩",
+            "特码",
+            "连码",
+            "三中三",
+            "捕鱼",
+            "德州",
+            "十三水",
+            "真人视讯",
+            "返水",
+            "出款",
+            "提款",
+            "派彩",
+            "爆奖",
+            "一拉",
+            "一注",
+            "占成",
+            "打码",
+            "返佣",
+            "彩金",
+            "流水",
+            "存款",
+            "存取款",
+            "免实名",
+            "免绑卡",
+            "担保",
+            "飞投",
+            "充提",
+            "代理",
+            "盘总",
+            "USDT",
+            "万U",
+    };
+
+    // Weak terms: appear in gambling promos, but also in normal chats.
+    // They are offered in the smart-block dialog UNCHECKED by default, so the
+    // user can tick them deliberately instead of blocking sports / e-goods /
+    // red-packet chats by accident.
+    static final String[] WEAK_GAMBLING_KEYWORDS = new String[]{
+            "体育",
+            "电子",
+            "红包",
     };
 
     private static final String[] GAMBLING_PROMO_CUES = new String[]{
@@ -177,9 +229,14 @@ public final class FilterEngine {
     }
 
     /**
-     * Returns the gambling / promo terms actually present in the snapshot, in
-     * first-seen order, deduplicated. Used by smart-block so the user can see
-     * and tick exactly which keywords will become global rules.
+     * Returns the gambling terms actually present in the snapshot, in
+     * first-seen order, deduplicated. Strong terms first, then weak terms.
+     * Matching is done against both the raw text and an emoji-stripped
+     * version, because spam inserts emoji (e.g. 🤩) as separators and
+     * sometimes around a keyword; the returned term itself is the clean
+     * keyword, so the resulting rule matches clean future messages.
+     * Promo cues (http://, .com, 官方, 下载, ...) are NOT returned: they
+     * are scoring signals for isLikelyGamblingPromotion, not safe rules.
      */
     public static List<String> matchedGamblingTerms(MessageSnapshot snapshot) {
         List<String> matched = new ArrayList<>();
@@ -190,21 +247,35 @@ public final class FilterEngine {
         if (content == null || content.isBlank()) {
             return matched;
         }
-        String normalized = content.toLowerCase(Locale.ROOT);
+        String raw = content.toLowerCase(Locale.ROOT);
+        String cleaned = raw.replaceAll("[\\p{So}\\p{Sk}\\p{Cf}\\uFE0F]", "");
         java.util.Set<String> seen = new java.util.HashSet<>();
-        for (String[] group : new String[][]{GAMBLING_KEYWORDS, USER_GAMBLING_KEYWORDS, GAMBLING_PROMO_CUES}) {
+        for (String[] group : new String[][]{GAMBLING_KEYWORDS, USER_GAMBLING_KEYWORDS, WEAK_GAMBLING_KEYWORDS}) {
             for (String term : group) {
                 if (term == null || term.isBlank()) {
                     continue;
                 }
                 String key = term.toLowerCase(Locale.ROOT);
-                if (!seen.contains(key) && normalized.contains(key)) {
+                if (!seen.contains(key) && (raw.contains(key) || cleaned.contains(key))) {
                     seen.add(key);
                     matched.add(term);
                 }
             }
         }
         return matched;
+    }
+
+    public static boolean isWeakGamblingTerm(String term) {
+        if (term == null) {
+            return false;
+        }
+        String key = term.toLowerCase(Locale.ROOT);
+        for (String weak : WEAK_GAMBLING_KEYWORDS) {
+            if (weak.toLowerCase(Locale.ROOT).equals(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static boolean isLikelyGamblingPromotion(MessageSnapshot snapshot) {

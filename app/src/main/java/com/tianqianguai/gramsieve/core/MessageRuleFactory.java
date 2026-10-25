@@ -14,6 +14,17 @@ public final class MessageRuleFactory {
     );
     private static final Pattern TELEGRAM_LINK = Pattern.compile("(?i)\\b(?:https?://)?(?:t\\.me|telegram\\.me)/[a-z0-9_+/-]{3,}");
     private static final Pattern HANDLE = Pattern.compile("(?i)(?<![\\w@])@[a-z0-9_]{4,32}\\b");
+    // IP landing page, e.g. https://153.43.183.234:18029/?id=... -- the
+    // strongest stable identifier when a spam message hides behind an IP
+    // instead of a domain. The rule stores the IP alone (no scheme/port),
+    // so a port rotation does not evade it.
+    private static final Pattern IP_ADDRESS = Pattern.compile("\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b");
+    // Chinese brand token: a Latin/digit prefix + a brand suffix, or the
+    // reverse, e.g. 122体育, N1国际. Deliberately NOT any digit+Han
+    // sequence: game names and amounts (极速糖果1000, 特码49) would
+    // otherwise become useless brand rules. Only suffixes that mark
+    // an operator brand are accepted.
+    private static final Pattern CHINESE_BRAND = Pattern.compile("[A-Za-z0-9]{2,}(体育|娱乐城|娱乐|国际|平台)|(体育|娱乐城|娱乐|国际|平台)[A-Za-z0-9]{2,}");
     private static final Pattern BRANDISH_TOKEN = Pattern.compile("(?i)\\b[a-z0-9][a-z0-9._-]{2,}[a-z0-9]\\b");
 
     private MessageRuleFactory() {
@@ -46,6 +57,35 @@ public final class MessageRuleFactory {
         }
         for (String term : FilterEngine.matchedGamblingTerms(snapshot)) {
             addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, term));
+        }
+        // IP landing pages first, before domains: they are the actual host
+        // when the message uses an IP URL instead of a domain name.
+        if (snapshot != null) {
+            String visibleForIp = snapshot.combinedVisibleContent();
+            Matcher ipMatcher = IP_ADDRESS.matcher(visibleForIp);
+            while (ipMatcher.find()) {
+                String ip = ipMatcher.group();
+                boolean valid = true;
+                for (String octet : ip.split("\\.")) {
+                    try {
+                        if (Integer.parseInt(octet) > 255) {
+                            valid = false;
+                        }
+                    } catch (NumberFormatException ignored) {
+                        valid = false;
+                    }
+                }
+                if (valid) {
+                    addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, ip));
+                }
+            }
+            Matcher brandMatcher = CHINESE_BRAND.matcher(visibleForIp);
+            while (brandMatcher.find()) {
+                String token = brandMatcher.group();
+                if (token.length() >= 4 && token.length() <= 10) {
+                    addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, token));
+                }
+            }
         }
         for (FilterConfig.RuleSpec rule : automaticRules(snapshot)) {
             if (rule != null && rule.mode == FilterConfig.RuleMode.KEYWORD) {
