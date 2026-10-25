@@ -79,3 +79,8 @@ Untested on a real device. Known risks:
 - 新发布密钥已生成（别名 gramsieve-conso，RSA 2048，证书 SHA256 指纹以 F1:45:22:73: 开头，完整指纹待构建后核对），只存放在 GitHub Actions Secrets 里（RELEASE_KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD），本地副本已删，Secrets 取不回，只能覆盖重设。
 - 工作流已改（提交 edf4bff）：删除“Restore fixed debug keystore”一步，改为“Restore release keystore from Secrets”（从 Secret 还原 release.keystore，只列文件名不打印内容），构建步骤加 release 签名 env（RELEASE_STORE_FILE=release.keystore 等），run 命令本身未改。
 - 待做：删仓库当前版本的 debug.keystore.b64（历史里仍有旧密钥，只能用于旧版）、把 README.md 换成开源版、.gitignore 加 *.keystore / debug.keystore.b64 / release.keystore、仓库设公开、再构建一次验证新签名；公开后的首版需卸载旧版再装，之后同一把 Secret 密钥可覆盖安装。
+
+## 2026-10-25 聊天列表：置顶区分 + 自动分类栏（Build #14 待构建，用户选低风险路线）
+- 新增设置 → GramSieve → 聊天列表卡片，两个开关默认关闭：置顶聊天区分显示（左侧色条 + 浅色背景）、显示自动分类栏（全部 / 个人 / 群聊 / 频道）。
+- 置顶：勾 DialogCell.onDraw，置顶且非文件夹项时，在已绘制内容上叠加浅色主题蓝 tint（0x1A3390EC）+ 左侧 4dp 实色主题蓝条，头像与文字不受遮挡；判断用 DialogCell.getIsPinned，非置顶不画。
+- 分类：勾 DialogsActivity.createView，在文件夹栏下方插入独立分类栏（与文件夹分开），按钮为全部/个人/群聊/频道，选中为主题蓝底白字，未选中为灰字透明底；点按钮保存 classifyFilter（0=全部，1=个人，2=群聊，3=频道）并刷新聊天列表；DialogCell.setDialog 勾子按分类隐藏不匹配项（GONE，回收后匹配项恢复显示），分类用 DialogObject.isUserDialog / isChatDialog + MessagesController.getUserOrChat（User=个人含机器人，TL_chat 或 megagroup 频道=群聊，广播频道=频道，未知/未加载项永不隐藏）；分类栏关闭时筛选完全失效。文件夹栏本身未改（多行自适应排布风险高，未按激进路线做）。

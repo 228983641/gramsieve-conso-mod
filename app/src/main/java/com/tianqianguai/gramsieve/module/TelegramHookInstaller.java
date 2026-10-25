@@ -101,6 +101,9 @@ final class TelegramHookInstaller {
 
     private final XposedModule module;
     private XposedConfigProvider configProvider;
+    // Dialog list features (Build #14): last DialogsActivity, held weakly
+    // only so the classify bar can trigger a list refresh on filter change.
+    private java.lang.ref.WeakReference<Object> lastDialogsActivityRef;
     private final FilterEngine filterEngine = new FilterEngine();
     private final DecisionCache decisionCache = new DecisionCache();
     private final AtomicInteger bindingProbeBudget = new AtomicInteger(12);
@@ -6811,6 +6814,339 @@ final class TelegramHookInstaller {
         hookBoostDownloadSpeed(classLoader);
         hookLocalPremium(classLoader);
         hookAutoTranslate(classLoader);
+        hookDialogListFeatures(classLoader);
+    }
+
+    // Dialog list features (Build #14, user-selected low-risk route):
+    // 1) Pinned highlight: after DialogCell.onDraw, if the cell is pinned
+    //    (DialogCell.getIsPinned) and the switch is on, draw a light
+    //    accent tint over the cell plus a solid accent bar at the left
+    //    edge. Drawing after the host's own onDraw means the host's
+    //    background cannot paint over it; the bar sits at x=0..4dp, left
+    //    of the avatar, so it does not cover text or the avatar.
+    // 2) Auto-classify bar: after DialogsActivity.createView, insert a
+    //    horizontal bar below the folder tabs (FilterTabsView) with
+    //    All / Personal / Groups / Channels. Tapping a button saves
+    //    classifyFilter to config and refreshes the dialog list; the
+    //    DialogCell.setDialog hook then hides non-matching cells by
+    //    setting them GONE (recycled cells are re-shown when they match
+    //    again, so scrolling does not leave stale hidden rows).
+    //    Classification uses DialogObject.isUserDialog / isChatDialog and
+    //    MessagesController.getUserOrChat: User -> Personal (bots included),
+    //    TL_chat or megagroup channel -> Groups, broadcast channel -> Channels.
+    //    Unknown / unloaded peers are never hidden, to avoid losing chats
+    //    on a classification miss. When the bar switch is off, the filter
+    //    is ignored entirely, even if a filter value was saved before.
+    private void hookDialogListFeatures(ClassLoader classLoader) {
+        try {
+            Class<?> dialogCellClass = classLoader.loadClass("org.telegram.ui.Cells.DialogCell");
+            // Pinned highlight: onDraw after-proceed.
+            try {
+                java.lang.reflect.Method onDraw = Reflect.method(dialogCellClass, "onDraw", android.graphics.Canvas.class);
+                hook(onDraw, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        if (!currentEnhancementConfig().highlightPinnedDialogs) {
+                            return result;
+                        }
+                        Object cell = chain.getThisObject();
+                        if (!(cell instanceof View)) {
+                            return result;
+                        }
+                        Boolean pinned = (Boolean) Reflect.invokeIfExists(cell, "getIsPinned", new Class<?>[0]);
+                        if (!Boolean.TRUE.equals(pinned)) {
+                            return result;
+                        }
+                        Boolean isFolder = (Boolean) Reflect.invokeIfExists(cell, "isDialogFolder", new Class<?>[0]);
+                        if (Boolean.TRUE.equals(isFolder)) {
+                            return result;
+                        }
+                        View view = (View) cell;
+                        int w = view.getWidth();
+                        int h = view.getHeight();
+                        if (w <= 0 || h <= 0) {
+                            return result;
+                        }
+                        Object canvasObj = chain.getArg(0);
+                        if (!(canvasObj instanceof android.graphics.Canvas)) {
+                            return result;
+                        }
+                        android.graphics.Canvas canvas = (android.graphics.Canvas) canvasObj;
+                        android.graphics.Paint tint = new android.graphics.Paint();
+                        tint.setColor(0x1A3390EC);
+                        tint.setStyle(android.graphics.Paint.Style.FILL);
+                        canvas.drawRect(0, 0, w, h, tint);
+                        android.graphics.Paint bar = new android.graphics.Paint();
+                        bar.setColor(0xFF3390EC);
+                        bar.setStyle(android.graphics.Paint.Style.FILL);
+                        canvas.drawRect(0, 0, dp(view.getContext(), 4f), h, bar);
+                    } catch (Throwable ignored) {
+                    }
+                    return result;
+                });
+            } catch (Throwable t) {
+                error("Dialog list: DialogCell.onDraw hook failed", t);
+            }
+            // Classify filter: setDialog after-proceed, all overloads.
+            try {
+                for (java.lang.reflect.Method candidate : dialogCellClass.getDeclaredMethods()) {
+                    if (!"setDialog".equals(candidate.getName())) {
+                        continue;
+                    }
+                    candidate.setAccessible(true);
+                    java.lang.reflect.Method method = candidate;
+                    hook(method, chain -> {
+                        Object result = chain.proceed();
+                        try {
+                            FilterConfig cfg = currentEnhancementConfig();
+                            Object cell = chain.getThisObject();
+                            if (!(cell instanceof View) || !cfg.showClassifyBar || cfg.classifyFilter == 0) {
+                                if (cell instanceof View) {
+                                    ((View) cell).setVisibility(View.VISIBLE);
+                                }
+                                return result;
+                            }
+                            long dialogId = 0L;
+                            Object idFromCell = Reflect.invokeIfExists(cell, "getDialogId", new Class<?>[0]);
+                            if (idFromCell instanceof Number) {
+                                dialogId = ((Number) idFromCell).longValue();
+                            }
+                            if (dialogId == 0L && chain.getArgs() != null && !chain.getArgs().isEmpty()
+                                    && chain.getArgs().get(0) instanceof Number) {
+                                dialogId = ((Number) chain.getArgs().get(0)).longValue();
+                            }
+                            if (dialogId == 0L) {
+                                ((View) cell).setVisibility(View.VISIBLE);
+                                return result;
+                            }
+                            int type = classifyDialogType(cell, dialogId);
+                            // type: 0=unknown (never hide), 1=personal, 2=group, 3=channel
+                            if (type == 0 || type == cfg.classifyFilter) {
+                                ((View) cell).setVisibility(View.VISIBLE);
+                            } else {
+                                ((View) cell).setVisibility(View.GONE);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                        return result;
+                    });
+                }
+            } catch (Throwable t) {
+                error("Dialog list: DialogCell.setDialog hook failed", t);
+            }
+        } catch (Throwable t) {
+            error("Dialog list: DialogCell hooks failed", t);
+        }
+        try {
+            Class<?> dialogsClass = classLoader.loadClass("org.telegram.ui.DialogsActivity");
+            java.lang.reflect.Method createView = Reflect.method(dialogsClass, "createView", Context.class);
+            hook(createView, chain -> {
+                Object result = chain.proceed();
+                try {
+                    Object host = chain.getThisObject();
+                    lastDialogsActivityRef = new java.lang.ref.WeakReference<>(host);
+                    if (result instanceof View) {
+                        ((View) result).post(() -> {
+                            try {
+                                if (currentEnhancementConfig().showClassifyBar) {
+                                    installClassifyBar(host, (View) result);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        });
+                    }
+                } catch (Throwable t) {
+                    error("Dialog list: createView classify bar failed", t);
+                }
+                return result;
+            });
+        } catch (Throwable t) {
+            error("Dialog list: DialogsActivity.createView hook failed", t);
+        }
+    }
+
+    private int classifyDialogType(Object cell, long dialogId) {
+        try {
+            ClassLoader cl = cell.getClass().getClassLoader();
+            Class<?> dialogObjectClass = cl.loadClass("org.telegram.messenger.DialogObject");
+            Boolean isUser = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isUserDialog",
+                    new Class<?>[]{long.class}, dialogId);
+            if (Boolean.TRUE.equals(isUser)) {
+                return 1;
+            }
+            int account = 0;
+            try {
+                Object acc = Reflect.field(cell, "currentAccount");
+                if (acc instanceof Number) {
+                    account = ((Number) acc).intValue();
+                }
+            } catch (Throwable ignored) {
+            }
+            Class<?> messagesControllerClass = cl.loadClass("org.telegram.messenger.MessagesController");
+            Object controller = Reflect.invokeStatic(messagesControllerClass, "getInstance",
+                    new Class<?>[]{int.class}, account);
+            if (controller == null) {
+                return 0;
+            }
+            Object peer = Reflect.invokeIfExists(controller, "getUserOrChat",
+                    new Class<?>[]{long.class}, dialogId);
+            if (peer == null) {
+                return 0;
+            }
+            String peerClass = peer.getClass().getName();
+            if (peerClass.contains("TL_user")) {
+                return 1;
+            }
+            if (peerClass.contains("TL_channel")) {
+                Object megagroup = Reflect.field(peer, "megagroup");
+                return Boolean.TRUE.equals(megagroup) ? 2 : 3;
+            }
+            if (peerClass.contains("TL_chat")) {
+                return 2;
+            }
+            // Fallback: chat dialogs that are not users are groups.
+            Boolean isChat = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isChatDialog",
+                    new Class<?>[]{long.class}, dialogId);
+            return Boolean.TRUE.equals(isChat) ? 2 : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private void installClassifyBar(Object host, View root) {
+        try {
+            if (!(root instanceof ViewGroup)) {
+                return;
+            }
+            View tabsView = findFilterTabsView((ViewGroup) root);
+            ViewGroup parent;
+            int insertIndex;
+            if (tabsView != null && tabsView.getParent() instanceof ViewGroup) {
+                parent = (ViewGroup) tabsView.getParent();
+                insertIndex = parent.indexOfChild(tabsView) + 1;
+            } else {
+                // Fallback: insert above the first dialog list view found.
+                View listView = findFirstRecyclerListView((ViewGroup) root);
+                if (listView == null || !(listView.getParent() instanceof ViewGroup)) {
+                    return;
+                }
+                parent = (ViewGroup) listView.getParent();
+                insertIndex = parent.indexOfChild(listView);
+            }
+            // Idempotent: do not install twice in the same parent.
+            for (int i = 0; i < parent.getChildCount(); i++) {
+                View child = parent.getChildAt(i);
+                if (child != null && "gramsieve_classify_bar".equals(child.getTag())) {
+                    updateClassifyBarButtons((ViewGroup) child);
+                    return;
+                }
+            }
+            Context context = root.getContext();
+            LinearLayout bar = new LinearLayout(context);
+            bar.setTag("gramsieve_classify_bar");
+            bar.setOrientation(LinearLayout.HORIZONTAL);
+            bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            bar.setPadding(dp(context, 12f), dp(context, 8f), dp(context, 12f), dp(context, 8f));
+            String[] labels = new String[]{"全部", "个人", "群聊", "频道"};
+            for (int i = 0; i < labels.length; i++) {
+                final int filter = i;
+                TextView button = new TextView(context);
+                button.setText(labels[i]);
+                button.setTextSize(14f);
+                button.setGravity(android.view.Gravity.CENTER);
+                button.setPadding(dp(context, 12f), dp(context, 6f), dp(context, 12f), dp(context, 6f));
+                button.setTag(filter);
+                button.setOnClickListener(v -> {
+                    try {
+                        FilterConfig updated = currentEnhancementConfig().deepCopy();
+                        updated.classifyFilter = filter;
+                        updated.updatedAtEpochMs = System.currentTimeMillis();
+                        saveUpdatedConfig(context, updated);
+                        updateClassifyBarButtons(bar);
+                        Object dialogsActivity = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
+                        if (dialogsActivity != null) {
+                            refreshDialogsUi(dialogsActivity);
+                        } else {
+                            bar.requestLayout();
+                            bar.invalidate();
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                });
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                params.leftMargin = dp(context, 4f);
+                params.rightMargin = dp(context, 4f);
+                bar.addView(button, params);
+            }
+            updateClassifyBarButtons(bar);
+            if (insertIndex < 0 || insertIndex > parent.getChildCount()) {
+                parent.addView(bar, new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else {
+                parent.addView(bar, insertIndex, new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+        } catch (Throwable t) {
+            error("Dialog list: install classify bar failed", t);
+        }
+    }
+
+    private void updateClassifyBarButtons(ViewGroup bar) {
+        try {
+            int selected = currentEnhancementConfig().classifyFilter;
+            for (int i = 0; i < bar.getChildCount(); i++) {
+                View child = bar.getChildAt(i);
+                if (!(child instanceof TextView)) {
+                    continue;
+                }
+                Object tag = child.getTag();
+                boolean isSelected = tag instanceof Number && ((Number) tag).intValue() == selected;
+                TextView button = (TextView) child;
+                if (isSelected) {
+                    button.setTextColor(0xFFFFFFFF);
+                    android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                    bg.setColor(0xFF3390EC);
+                    bg.setCornerRadius(dp(button.getContext(), 16f));
+                    button.setBackground(bg);
+                } else {
+                    button.setTextColor(0xFF8A8A8A);
+                    button.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private View findFilterTabsView(ViewGroup group) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child != null && "org.telegram.ui.Components.FilterTabsView".equals(child.getClass().getName())) {
+                return child;
+            }
+            if (child instanceof ViewGroup) {
+                View found = findFilterTabsView((ViewGroup) child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private View findFirstRecyclerListView(ViewGroup group) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child != null && "org.telegram.ui.Components.RecyclerListView".equals(child.getClass().getName())) {
+                return child;
+            }
+            if (child instanceof ViewGroup) {
+                View found = findFirstRecyclerListView((ViewGroup) child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private void hookBooleanMethod(ClassLoader classLoader, String className, String methodName, java.util.function.Supplier<Boolean> enabled, Object forcedResult) {

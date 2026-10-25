@@ -102,6 +102,8 @@ final class HostConfigPanel {
     private Switch downloadSpeedSwitch;
     private Switch localPremiumSwitch;
     private Switch autoTranslateSwitch;
+    private Switch pinnedHighlightSwitch;
+    private Switch classifyBarSwitch;
     private RadioGroup languageGroup;
     private RadioGroup actionGroup;
 
@@ -324,6 +326,7 @@ final class HostConfigPanel {
             buildChatAntiRecallCard(container);
         } else {
             buildEnhancementCard(container);
+            buildDialogListCard(container);
             buildTranslateCard(container);
         }
         buildRulesCard(container);
@@ -443,6 +446,17 @@ final class HostConfigPanel {
         addInfo(card, t("仅本地生效：让客户端认为你是 Premium，可突破置顶聊天数等客户端检查（实测为准，服务端仍可能限制）。服务端 Premium 功能（大文件上传、语音转文字等）仍需官方订阅，且开启本地 Premium 有封号风险，请自行决定。", "Local only: makes the client treat you as Premium, unlocking client-side checks such as the pinned-chat limit (verify on device; the server may still limit). Server Premium features still need a real subscription, and local Premium carries a ban risk."));
     }
 
+    private void buildDialogListCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("聊天列表", "Chat List"));
+        addInfo(card, t("只影响聊天列表的外观与筛选，不改动聊天内容与置顶本身。分类栏点“全部”即恢复全部聊天；关闭分类栏后，筛选即失效，重新打开聊天列表后生效。", "Only affects the chat list appearance and filtering, not chat content or pinning itself. Tapping All in the classify bar restores all chats; turning the bar off disables filtering after reopening the chat list."));
+        pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
+        pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
+        classifyBarSwitch = addSwitch(card, t("显示自动分类栏（全部 / 个人 / 群聊 / 频道）", "Show auto-classify bar (All / Personal / Groups / Channels)"));
+        classifyBarSwitch.setChecked(baseConfig.showClassifyBar);
+        addInfo(card, t("分类栏出现在文件夹栏下方，与文件夹分开；个人含机器人，群聊含普通群与超级群，频道为广播频道。", "The classify bar appears below the folder tabs, separate from folders; Personal includes bots, Groups include regular and supergroups, Channels are broadcast channels."));
+    }
+
     private void buildTranslateCard(LinearLayout container) {
         LinearLayout card = addCard(container);
         addTitle(card, t("翻译", "Translation"));
@@ -555,6 +569,8 @@ final class HostConfigPanel {
                 updated.boostDownloadSpeed = downloadSpeedSwitch != null && downloadSpeedSwitch.isChecked();
                 updated.localPremium = localPremiumSwitch != null && localPremiumSwitch.isChecked();
                 updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
+                updated.highlightPinnedDialogs = pinnedHighlightSwitch != null && pinnedHighlightSwitch.isChecked();
+                updated.showClassifyBar = classifyBarSwitch != null && classifyBarSwitch.isChecked();
             }
             saver.save(updated);
             if (afterSave != null) {

@@ -28,6 +28,11 @@ public final class FilterConfig {
     public boolean boostDownloadSpeed = false;
     public boolean localPremium = false;
     public boolean autoTranslateToChinese = false;
+    // Dialog list features (Build #14, user-selected low-risk route).
+    // All default OFF. classifyFilter: 0=全部, 1=个人, 2=群聊, 3=频道.
+    public boolean highlightPinnedDialogs = false;
+    public boolean showClassifyBar = false;
+    public int classifyFilter = 0;
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -102,6 +107,9 @@ public final class FilterConfig {
         copy.boostDownloadSpeed = boostDownloadSpeed;
         copy.localPremium = localPremium;
         copy.autoTranslateToChinese = autoTranslateToChinese;
+        copy.highlightPinnedDialogs = highlightPinnedDialogs;
+        copy.showClassifyBar = showClassifyBar;
+        copy.classifyFilter = classifyFilter;
         copy.updatedAtEpochMs = updatedAtEpochMs;
         for (RuleSpec rule : globalRules) {
             copy.globalRules.add(rule.deepCopy());
