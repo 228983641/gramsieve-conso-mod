@@ -6817,10 +6817,15 @@ final class TelegramHookInstaller {
         // (ArrayList, ArrayList, ArrayList, boolean, int) that processes
         // server updates. Filter TL_updateDeleteMessages /
         // TL_updateDeleteChannelMessages out of arg 0 before the original
-        // runs, via module.invokeOrigin with the filtered list. This is a
-        // second mechanism on top of GramSieve's proactive-loading
-        // anti-recall (which caches messages before deletion); both can
-        // be on, but this one keeps the message in the UI as well.
+        // runs. libxposed API 101 has no invokeOrigin-style call with
+        // replaced arguments (Build #5 failed to compile on exactly that,
+        // 2026-10-25), so instead mutate the incoming ArrayList in place
+        // and then chain.proceed(): the original method receives the
+        // filtered list through the same reference. If the list becomes
+        // empty, skip the original call entirely. This is a second
+        // mechanism on top of GramSieve's proactive-loading anti-recall
+        // (which caches messages before deletion); both can be on, but
+        // this one keeps the message in the UI as well.
         try {
             Class<?> clazz = classLoader.loadClass("org.telegram.messenger.MessagesController");
             for (Method candidate : clazz.getDeclaredMethods()) {
@@ -6839,27 +6844,29 @@ final class TelegramHookInstaller {
                     if (!(arg0 instanceof ArrayList<?>)) {
                         return chain.proceed();
                     }
-                    ArrayList<?> updates = (ArrayList<?>) arg0;
-                    ArrayList<Object> kept = new ArrayList<>();
-                    for (Object update : updates) {
-                        if (update == null) {
-                            continue;
-                        }
-                        String name = update.getClass().getName();
-                        if ("org.telegram.tgnet.TLRPC$TL_updateDeleteMessages".equals(name)
-                                || "org.telegram.tgnet.TLRPC$TL_updateDeleteChannelMessages".equals(name)) {
-                            continue;
-                        }
-                        kept.add(update);
-                    }
-                    if (kept.size() == updates.size()) {
+                    @SuppressWarnings("unchecked")
+                    ArrayList<Object> updates = (ArrayList<Object>) arg0;
+                    int before = updates.size();
+                    try {
+                        updates.removeIf(update -> {
+                            if (update == null) {
+                                return false;
+                            }
+                            String name = update.getClass().getName();
+                            return "org.telegram.tgnet.TLRPC$TL_updateDeleteMessages".equals(name)
+                                    || "org.telegram.tgnet.TLRPC$TL_updateDeleteChannelMessages".equals(name);
+                        });
+                    } catch (Throwable ignored) {
+                        // Unmodifiable list: leave the original call untouched.
                         return chain.proceed();
                     }
-                    if (kept.isEmpty()) {
+                    if (updates.size() == before) {
+                        return chain.proceed();
+                    }
+                    if (updates.isEmpty()) {
                         return null;
                     }
-                    return module.invokeOrigin(method, chain.getThisObject(),
-                            kept, chain.getArg(1), chain.getArg(2), chain.getArg(3), chain.getArg(4));
+                    return chain.proceed();
                 });
                 info("Enhancement: hooked MessagesController update-array for delete prevention");
             }
