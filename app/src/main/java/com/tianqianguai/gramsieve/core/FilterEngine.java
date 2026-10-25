@@ -23,6 +23,18 @@ public final class FilterEngine {
             "包赔",
             "赔率"
     };
+    // Conso adaptation: user-facing gambling terms that the upstream list misses.
+    // Upstream GAMBLING_KEYWORDS has no 赌博 / 百家乐 / 彩票, yet those are the
+    // terms the user actually wants filtered, so smart-block checks them too.
+    private static final String[] USER_GAMBLING_KEYWORDS = new String[]{
+            "赌博",
+            "百家乐",
+            "彩票",
+            "投注",
+            "下注",
+            "开奖",
+    };
+
     private static final String[] GAMBLING_PROMO_CUES = new String[]{
             "http://",
             "https://",
@@ -162,6 +174,37 @@ public final class FilterEngine {
             }
         }
         return null;
+    }
+
+    /**
+     * Returns the gambling / promo terms actually present in the snapshot, in
+     * first-seen order, deduplicated. Used by smart-block so the user can see
+     * and tick exactly which keywords will become global rules.
+     */
+    public static List<String> matchedGamblingTerms(MessageSnapshot snapshot) {
+        List<String> matched = new ArrayList<>();
+        if (snapshot == null) {
+            return matched;
+        }
+        String content = snapshot.combinedVisibleContent();
+        if (content == null || content.isBlank()) {
+            return matched;
+        }
+        String normalized = content.toLowerCase(Locale.ROOT);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String[] group : new String[][]{GAMBLING_KEYWORDS, USER_GAMBLING_KEYWORDS, GAMBLING_PROMO_CUES}) {
+            for (String term : group) {
+                if (term == null || term.isBlank()) {
+                    continue;
+                }
+                String key = term.toLowerCase(Locale.ROOT);
+                if (!seen.contains(key) && normalized.contains(key)) {
+                    seen.add(key);
+                    matched.add(term);
+                }
+            }
+        }
+        return matched;
     }
 
     public static boolean isLikelyGamblingPromotion(MessageSnapshot snapshot) {

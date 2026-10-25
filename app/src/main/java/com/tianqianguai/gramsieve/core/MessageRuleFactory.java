@@ -30,6 +30,35 @@ public final class MessageRuleFactory {
         return new ArrayList<>(rules.values());
     }
 
+    /**
+     * Smart-block candidates for one message, as GLOBAL rules (not per-chat).
+     * Order: gambling/user keywords first, then domains / t.me links / handles /
+     * brand tokens from automaticRules, then the sender name as a SENDER rule.
+     * Exact full-text regex rules are intentionally excluded: they only block
+     * the identical message, not similar ones, which is what smart-block is for.
+     * Already-duplicated or blank candidates are removed by the caller via
+     * containsEquivalentRule against the global rules.
+     */
+    public static List<FilterConfig.RuleSpec> smartRules(MessageSnapshot snapshot) {
+        Map<String, FilterConfig.RuleSpec> rules = new LinkedHashMap<>();
+        if (snapshot == null) {
+            return new ArrayList<>(rules.values());
+        }
+        for (String term : FilterEngine.matchedGamblingTerms(snapshot)) {
+            addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, term));
+        }
+        for (FilterConfig.RuleSpec rule : automaticRules(snapshot)) {
+            if (rule != null && rule.mode == FilterConfig.RuleMode.KEYWORD) {
+                addRule(rules, rule);
+            }
+        }
+        if (snapshot.senderName != null && !snapshot.senderName.isBlank()
+                && snapshot.senderName.trim().length() >= 2) {
+            addRule(rules, keywordRule(FilterConfig.RuleTarget.SENDER, snapshot.senderName.trim()));
+        }
+        return new ArrayList<>(rules.values());
+    }
+
     public static FilterConfig.RuleSpec exactContentRule(MessageSnapshot snapshot) {
         if (snapshot == null) {
             return null;

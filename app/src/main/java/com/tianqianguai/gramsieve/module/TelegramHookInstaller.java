@@ -1,6 +1,7 @@
 package com.tianqianguai.gramsieve.module;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.pm.ApplicationInfo;
 import android.content.ComponentName;
 import android.content.Context;
@@ -63,6 +64,7 @@ final class TelegramHookInstaller {
     private static final int MENU_ID_CHAT = 0x47530011;
     private static final int MENU_ID_GLOBAL = 0x47530012;
     private static final int MENU_ID_BLOCK_MESSAGE = 0x47530013;
+    private static final int MENU_ID_SMART_BLOCK = 0x4753001C;
     private static final int MENU_ID_SCROLL_TOP = 0x47530014;
     private static final int MENU_ID_SELECT_ALL = 0x47530015;
     private static final int MENU_ID_MARK_MESSAGE = 0x47530016;
@@ -854,33 +856,62 @@ final class TelegramHookInstaller {
     }
 
     private void hookMessageContextMenu(ClassLoader classLoader) {
+        // Conso fix: ChatActivity defines FOUR createMenu overloads in Conso
+        // 2.0.0 (6 / 7 / 8 / 10 params, verified from Conso's own dex):
+        //   (View, Z, Z, F, F, Z)
+        //   (View, Z, Z, F, F, Z, Z)
+        //   (View, Z, Z, F, F, Z, Z, Z)               <- the only one upstream hooked
+        //   (View, Z, Z, F, F, Z, Z, Z, MessageObject, MessageObject)
+        // Upstream only hooked the 8-param overload. If Conso's long-press path
+        // calls a different overload (the 10-param one carries the message
+        // objects, which is exactly what a message menu needs), the hook never
+        // fires and no Block/Mark/Smart-block item ever appears -- which is
+        // exactly what the user reported, while the chat menu (createView,
+        // a single stable method) kept working. Hook every boolean-returning
+        // createMenu overload whose first parameter is a View.
         try {
             Class<?> chatActivityClass = classLoader.loadClass("org.telegram.ui.ChatActivity");
-            Method createMenu = Reflect.method(
-                    chatActivityClass,
-                    "createMenu",
-                    View.class,
-                    boolean.class,
-                    boolean.class,
-                    float.class,
-                    float.class,
-                    boolean.class,
-                    boolean.class,
-                    boolean.class
-            );
-            deoptimize(createMenu, "ChatActivity.createMenu(View, boolean, boolean, float, float, boolean, boolean, boolean)");
-            hook(createMenu, chain -> {
-                Object result = chain.proceed();
-                try {
-                    if (Boolean.TRUE.equals(result) && chain.getArg(0) instanceof View) {
-                        injectMessageBlockMenu(chain.getThisObject(), (View) chain.getArg(0));
-                    }
-                } catch (Throwable throwable) {
-                    error("Message context menu injection failed", throwable);
+            int hooked = 0;
+            for (Method candidate : chatActivityClass.getDeclaredMethods()) {
+                if (!"createMenu".equals(candidate.getName())) {
+                    continue;
                 }
-                return result;
-            });
-            info("Hooked ChatActivity message context menu");
+                Class<?>[] params = candidate.getParameterTypes();
+                if (candidate.getReturnType() != boolean.class
+                        || params.length == 0
+                        || params[0] != View.class) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                deoptimize(candidate, "ChatActivity.createMenu/" + params.length + " params");
+                Method method = candidate;
+                hook(method, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        if (Boolean.TRUE.equals(result) && chain.getArg(0) instanceof View) {
+                            // For the 10-param overload, args 8/9 are MessageObjects;
+                            // prefer them over the selectedObject field when present.
+                            Object preferred = null;
+                            for (int i = 8; i < chain.getArgs().size(); i++) {
+                                Object arg = chain.getArg(i);
+                                if (arg != null && arg.getClass().getName().equals("org.telegram.messenger.MessageObject")) {
+                                    preferred = arg;
+                                    break;
+                                }
+                            }
+                            injectMessageBlockMenu(chain.getThisObject(), (View) chain.getArg(0), preferred);
+                        }
+                    } catch (Throwable throwable) {
+                        error("Message context menu injection failed", throwable);
+                    }
+                    return result;
+                });
+                hooked++;
+            }
+            if (hooked == 0) {
+                throw new NoSuchMethodException("No ChatActivity.createMenu(View, ...) overload found");
+            }
+            info("Hooked ChatActivity message context menu, overloads=" + hooked);
         } catch (Throwable throwable) {
             error("Failed to hook ChatActivity message context menu", throwable);
         }
@@ -4265,6 +4296,10 @@ final class TelegramHookInstaller {
     }
 
     private void injectMessageBlockMenu(Object chatActivity, View messageView) {
+        injectMessageBlockMenu(chatActivity, messageView, null);
+    }
+
+    private void injectMessageBlockMenu(Object chatActivity, View messageView, Object preferredMessageObject) {
         if (chatActivity == null || messageView == null) {
             return;
         }
@@ -4274,7 +4309,10 @@ final class TelegramHookInstaller {
             return;
         }
 
-        Object messageObject = Reflect.field(chatActivity, "selectedObject");
+        Object messageObject = preferredMessageObject;
+        if (messageObject == null) {
+            messageObject = Reflect.field(chatActivity, "selectedObject");
+        }
         if (messageObject == null) {
             messageObject = resolveMessageObject(messageView);
         }
@@ -4285,6 +4323,15 @@ final class TelegramHookInstaller {
         View blockItem = createMessageBlockMenuItem(((View) contentView).getContext(), chatActivity);
         if (blockItem == null) {
             return;
+        }
+        View smartItem = createSmartBlockMenuItem(((View) contentView).getContext(), chatActivity);
+        if (smartItem != null) {
+            smartItem.setTag(R.id.gramsieve_menu_item_id, MENU_ID_SMART_BLOCK);
+            Object selectedMessageObjectForSmart = messageObject;
+            smartItem.setOnClickListener(v -> {
+                dismissScrimPopup(chatActivity);
+                showSmartBlockConfirmation(v.getContext(), messageView, selectedMessageObjectForSmart);
+            });
         }
         Object selectedMessageObject = messageObject;
         blockItem.setTag(R.id.gramsieve_menu_item_id, MENU_ID_BLOCK_MESSAGE);
@@ -4318,16 +4365,22 @@ final class TelegramHookInstaller {
                     blockItem,
                     Math.min(insertionPoint.index + 1, insertionPoint.parent.getChildCount())
             );
+            if (smartItem != null) {
+                insertionPoint.parent.addView(
+                        smartItem,
+                        Math.min(insertionPoint.index + 2, insertionPoint.parent.getChildCount())
+                );
+            }
             if (markItem != null) {
                 insertionPoint.parent.addView(
                         markItem,
-                        Math.min(insertionPoint.index + 2, insertionPoint.parent.getChildCount())
+                        Math.min(insertionPoint.index + (smartItem != null ? 3 : 2), insertionPoint.parent.getChildCount())
                 );
             }
             if (editHistoryItem != null) {
                 insertionPoint.parent.addView(
                         editHistoryItem,
-                        Math.min(insertionPoint.index + 3, insertionPoint.parent.getChildCount())
+                        Math.min(insertionPoint.index + (smartItem != null ? 4 : 3), insertionPoint.parent.getChildCount())
                 );
             }
         } else {
@@ -4336,6 +4389,9 @@ final class TelegramHookInstaller {
                 return;
             }
             fallbackContainer.addView(blockItem);
+            if (smartItem != null) {
+                fallbackContainer.addView(smartItem);
+            }
             if (markItem != null) {
                 fallbackContainer.addView(markItem);
             }
@@ -4399,6 +4455,147 @@ final class TelegramHookInstaller {
             error("Failed to create block-message menu item", throwable);
             return null;
         }
+    }
+
+    private View createSmartBlockMenuItem(Context context, Object chatActivity) {
+        // Reuse the block-item construction so the smart item looks identical
+        // to the other message-menu items in Conso.
+        try {
+            ClassLoader classLoader = chatActivity.getClass().getClassLoader();
+            Class<?> itemClass = classLoader.loadClass("org.telegram.ui.ActionBar.ActionBarMenuSubItem");
+            Object themeDelegate = Reflect.field(chatActivity, "themeDelegate");
+            View item;
+            if (themeDelegate != null) {
+                Constructor<?> constructor = itemClass.getConstructor(
+                        Context.class,
+                        boolean.class,
+                        boolean.class,
+                        classLoader.loadClass("org.telegram.ui.ActionBar.Theme$ResourcesProvider")
+                );
+                item = (View) constructor.newInstance(context, false, true, themeDelegate);
+            } else {
+                Constructor<?> constructor = itemClass.getConstructor(Context.class, boolean.class, boolean.class);
+                item = (View) constructor.newInstance(context, false, true);
+            }
+            CharSequence label = localizedSmartBlockLabel(context);
+            int iconRes = resolveBlockMessageIcon(context);
+            Reflect.invokeIfExists(
+                    item,
+                    "setTextAndIcon",
+                    new Class<?>[]{CharSequence.class, int.class},
+                    label,
+                    iconRes
+            );
+            Reflect.invokeIfExists(item, "setText", new Class<?>[]{CharSequence.class}, label);
+            item.setMinimumWidth(dp(context, 160f));
+            return item;
+        } catch (Throwable throwable) {
+            error("Failed to create smart-block menu item", throwable);
+            return null;
+        }
+    }
+
+    private void showSmartBlockConfirmation(Context context, View messageView, Object messageObject) {
+        info("Smart-block menu clicked");
+        MessageSnapshot snapshot = TelegramMessageNormalizer.normalize(messageView, messageObject);
+        if (snapshot == null) {
+            Toast.makeText(context, localizedNoTextToast(context), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        FilterConfig existing = configProvider.getConfig(context);
+        List<FilterConfig.RuleSpec> candidates = new ArrayList<>();
+        for (FilterConfig.RuleSpec rule : MessageRuleFactory.smartRules(snapshot)) {
+            if (rule != null && !MessageRuleFactory.containsEquivalentRule(existing.globalRules, rule)) {
+                candidates.add(rule);
+            }
+        }
+        if (candidates.isEmpty()) {
+            Toast.makeText(
+                    context,
+                    isChineseLocale(context) ? "这条消息没有可提取的过滤词，或已全部在全局规则里" : "No new filter terms found for this message",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+        // Confirmation dialog with per-term checkboxes. If the host context
+        // cannot show a dialog (not an Activity), fall back to adding all
+        // candidates directly so the feature still works instead of crashing.
+        try {
+            Activity activity = null;
+            Context current = context;
+            while (current instanceof ContextWrapper) {
+                if (current instanceof Activity) {
+                    activity = (Activity) current;
+                    break;
+                }
+                current = ((ContextWrapper) current).getBaseContext();
+            }
+            if (activity == null || activity.isFinishing()) {
+                throw new IllegalStateException("No Activity context for smart-block dialog");
+            }
+            String[] labels = new String[candidates.size()];
+            for (int i = 0; i < candidates.size(); i++) {
+                FilterConfig.RuleSpec rule = candidates.get(i);
+                String targetLabel = rule.target == FilterConfig.RuleTarget.SENDER
+                        ? "发送者"
+                        : "文本关键词";
+                labels[i] = targetLabel + "：" + rule.pattern;
+            }
+            boolean[] checked = new boolean[candidates.size()];
+            java.util.Arrays.fill(checked, true);
+            new AlertDialog.Builder(activity)
+                    .setTitle(localizedSmartBlockDialogTitle(context))
+                    .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                    .setPositiveButton(
+                            isChineseLocale(context) ? "加入全局规则" : "Add to global rules",
+                            (dialog, which) -> {
+                                List<FilterConfig.RuleSpec> selected = new ArrayList<>();
+                                for (int i = 0; i < candidates.size(); i++) {
+                                    if (checked[i]) {
+                                        selected.add(candidates.get(i));
+                                    }
+                                }
+                                addSmartBlockGlobalRules(context, messageView, selected);
+                            }
+                    )
+                    .setNegativeButton(
+                            isChineseLocale(context) ? "取消" : "Cancel",
+                            null
+                    )
+                    .show();
+        } catch (Throwable throwable) {
+            error("Smart-block dialog failed, adding all candidates directly", throwable);
+            addSmartBlockGlobalRules(context, messageView, candidates);
+        }
+    }
+
+    private void addSmartBlockGlobalRules(Context context, View messageView, List<FilterConfig.RuleSpec> selected) {
+        if (selected == null || selected.isEmpty()) {
+            Toast.makeText(context, localizedNoTextToast(context), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        FilterConfig updated = configProvider.getConfig(context).deepCopy();
+        updated.enabled = true;
+        int added = 0;
+        for (FilterConfig.RuleSpec rule : selected) {
+            if (!MessageRuleFactory.containsEquivalentRule(updated.globalRules, rule)) {
+                updated.globalRules.add(rule);
+                added++;
+            }
+        }
+        updated.sanitize();
+        updated.updatedAtEpochMs = System.currentTimeMillis();
+        updated = saveUpdatedConfig(context, updated);
+        decisionCache.clear();
+        if (messageView != null) {
+            refreshFilteringAround(messageView);
+        }
+        info("Smart-block added global rules added=" + added + " selected=" + selected.size());
+        Toast.makeText(
+                context,
+                isChineseLocale(context) ? "已加入全局规则 " + added + " 条" : "Added " + added + " global rules",
+                Toast.LENGTH_SHORT
+        ).show();
     }
 
     private int resolveBlockMessageIcon(Context context) {
@@ -6174,6 +6371,14 @@ final class TelegramHookInstaller {
 
     private CharSequence localizedBlockMessageLabel(Context context) {
         return isChineseLocale(context) ? "屏蔽此消息" : "Block this message";
+    }
+
+    private CharSequence localizedSmartBlockLabel(Context context) {
+        return isChineseLocale(context) ? "智能分析并屏蔽" : "Smart block";
+    }
+
+    private CharSequence localizedSmartBlockDialogTitle(Context context) {
+        return isChineseLocale(context) ? "智能分析并屏蔽" : "Smart block";
     }
 
     private CharSequence localizedMarkMessageLabel(Context context) {
