@@ -524,6 +524,18 @@ final class HostConfigPanel {
         proxyExpiryInput = addInput(card, t("失效时间（小时，默认 24：超过此时间未测通即为失效）", "Expiry time (hours, default 24: untested longer than this counts as expired)"), Integer.toString(firstOpen ? 24 : baseConfig.proxyExpiryHours));
         proxyPastedInput = addInput(card, t("直接粘贴代理链接（每行一个 t.me/proxy 或 tg://proxy 链接）", "Paste proxy links directly (one t.me/proxy or tg://proxy link per line)"), baseConfig.proxyPastedLinks == null ? "" : baseConfig.proxyPastedLinks);
         proxyFolderInput = addInput(card, t("代理文件夹（只扫这个文件夹里的聊天，默认 节点）", "Proxy folder (only scan chats in this folder, default 节点)"), firstOpen ? "节点" : (baseConfig.proxyFolderName == null ? "节点" : baseConfig.proxyFolderName));
+        // Build #28: folder picker instead of typing. Tapping the
+        // field (or the button below) lists existing user folders and
+        // fills the field with the picked one, so a typo or a renamed
+        // folder cannot silently make the scan find nothing.
+        try {
+            proxyFolderInput.setFocusable(false);
+            proxyFolderInput.setFocusableInTouchMode(false);
+            proxyFolderInput.setOnClickListener(v -> showProxyFolderPicker());
+        } catch (Throwable ignored) {}
+        Button proxyFolderPickButton = toolbarButton(t("选择文件夹", "Pick folder"));
+        proxyFolderPickButton.setOnClickListener(v -> showProxyFolderPicker());
+        addView(card, proxyFolderPickButton, 4);
         addInfo(card, t("文件夹来源：刷新时会读取上面这个文件夹里各聊天最近的消息，提取其中的 t.me/proxy 链接；只扫这一个文件夹，不扫其他文件夹。文件夹不存在时，只用网址和粘贴来源，不会报错。", "Folder source: refresh reads recent messages from chats in the folder above and extracts t.me/proxy links; only this folder is scanned, not others. If the folder does not exist, only the URL and pasted sources are used, without error."));
         proxyWorkingEntries = new java.util.ArrayList<>();
         if (baseConfig.proxyEntries != null) {
@@ -911,6 +923,94 @@ final class HostConfigPanel {
                 ? t("未保存代理：先填来源或粘贴链接，再点“立即刷新”。", "No proxies saved: fill a source or paste links, then tap Refresh now.")
                 : t("已保存 " + total + " 个代理，可用 " + available + " 个" + (fastest != null ? "，最快 " + fastest.display() + "（" + fastest.pingMs + " ms）" : ""), "Saved " + total + " proxies, " + available + " available" + (fastest != null ? ", fastest " + fastest.display() + " (" + fastest.pingMs + " ms)" : ""));
         proxySummary.setText(text);
+    }
+
+    private void showProxyFolderPicker() {
+        try {
+            android.app.Activity activity = activityFromContext(context);
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, t("无法打开文件夹选择", "Cannot open folder picker"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            java.util.List<String> folderNames = new java.util.ArrayList<>();
+            try {
+                ClassLoader cl = context.getClassLoader();
+                Class<?> userConfigClass = cl.loadClass("org.telegram.messenger.UserConfig");
+                Object selected = Reflect.staticField(userConfigClass, "selectedAccount");
+                int account = selected instanceof Number ? ((Number) selected).intValue() : 0;
+                Class<?> mcClass = cl.loadClass("org.telegram.messenger.MessagesController");
+                Object controller = Reflect.invokeStatic(mcClass, "getInstance", new Class<?>[]{int.class}, account);
+                if (controller != null) {
+                    Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+                    if (filtersObj instanceof java.util.List) {
+                        for (Object filter : (java.util.List<?>) filtersObj) {
+                            String name = Reflect.asString(Reflect.field(filter, "name"));
+                            if (name == null || name.isBlank() || "ALL_CHATS".equalsIgnoreCase(name.trim())) {
+                                continue;
+                            }
+                            folderNames.add(name.trim());
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            if (folderNames.isEmpty()) {
+                Toast.makeText(context, t("没有找到文件夹，请先在 Telegram 里建一个文件夹", "No folders found, create one in Telegram first"), Toast.LENGTH_LONG).show();
+                return;
+            }
+            LinearLayout dialogView = new LinearLayout(context);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            TextView title = new TextView(context);
+            title.setText(t("选择代理文件夹", "Pick proxy folder"));
+            title.setTextColor(primaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            dialogView.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView hint = new TextView(context);
+            hint.setText(t("只扫选中的这一个文件夹里的聊天，其他文件夹不扫。", "Only chats in the picked folder are scanned, not other folders."));
+            hint.setTextColor(secondaryTextColor);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            dialogView.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                    .setView(dialogView)
+                    .create();
+            for (String folderName : folderNames) {
+                Button itemButton = new Button(context);
+                itemButton.setAllCaps(false);
+                itemButton.setText(folderName);
+                itemButton.setTextColor(primaryTextColor);
+                itemButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+                itemButton.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                itemButton.setBackgroundColor(Color.TRANSPARENT);
+                itemButton.setOnClickListener(v -> {
+                    try {
+                        if (proxyFolderInput != null) {
+                            proxyFolderInput.setText(folderName);
+                        }
+                    } catch (Throwable ignored) {}
+                    dialog.dismiss();
+                });
+                dialogView.addView(itemButton, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            Button cancelButton = toolbarButton(t("取消", "Cancel"));
+            cancelButton.setOnClickListener(v -> dialog.dismiss());
+            dialogView.addView(cancelButton, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialog.show();
+            try {
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(cardColor));
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("打开文件夹选择失败", "Failed to open folder picker"), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showProxyManageDialog() {

@@ -307,7 +307,20 @@ final class TgProxyManager {
                 return out;
             }
             TelegramHistoryApiAdapter adapter = probe.adapter;
-            Object controller = adapter.getController(0);
+            // Build #28: use the selected account, not hardcoded 0.
+            // If the user's selected account is not 0, account 0's
+            // folders do not contain 节点, so the scan silently finds
+            // nothing even though all proxy channels are in 节点.
+            int selectedAccount = 0;
+            try {
+                Class<?> userConfigClass = context.getClassLoader().loadClass("org.telegram.messenger.UserConfig");
+                Object selected = Reflect.staticField(userConfigClass, "selectedAccount");
+                if (selected instanceof Number) {
+                    selectedAccount = ((Number) selected).intValue();
+                }
+            } catch (Throwable ignored) {
+            }
+            Object controller = adapter.getController(selectedAccount);
             if (controller == null) {
                 lastFolderScanDiag = "控制器为空";
                 return out;
