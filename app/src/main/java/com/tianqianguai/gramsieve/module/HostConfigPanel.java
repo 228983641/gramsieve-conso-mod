@@ -93,6 +93,13 @@ final class HostConfigPanel {
     private Switch debugLoggingSwitch;
     private Switch excludeChatSwitch;
     private Switch chatAntiRecallSwitch;
+    private Switch sponsoredSwitch;
+    private Switch videoAdsSwitch;
+    private Switch forwardSaveSwitch;
+    private Switch saveStoriesSwitch;
+    private Switch preventDeleteSwitch;
+    private Switch downloadSpeedSwitch;
+    private Switch localPremiumSwitch;
     private RadioGroup languageGroup;
     private RadioGroup actionGroup;
 
@@ -313,6 +320,8 @@ final class HostConfigPanel {
         buildGeneralCard(container);
         if (chatMode) {
             buildChatAntiRecallCard(container);
+        } else {
+            buildEnhancementCard(container);
         }
         buildRulesCard(container);
 
@@ -397,6 +406,40 @@ final class HostConfigPanel {
         addView(card, actionGroup, 0);
     }
 
+    private void buildEnhancementCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("增强功能", "Enhancements"));
+        addInfo(card, t("从 NoAdsTelegram / TeleVip 移植的功能，按分类开关，默认全部关闭，开启后保存即生效（部分需重新打开聊天列表）。", "Features ported from NoAdsTelegram / TeleVip, grouped by category. All off by default; saving applies them (some need the chat list reopened)."));
+
+        addSectionLabel(card, t("广告", "Ads"));
+        sponsoredSwitch = addSwitch(card, t("去赞助消息", "Remove sponsored messages"));
+        sponsoredSwitch.setChecked(baseConfig.disableSponsoredMessages);
+        videoAdsSwitch = addSwitch(card, t("去视频广告", "Remove video ads"));
+        videoAdsSwitch.setChecked(baseConfig.disableVideoAds);
+
+        addSectionLabel(card, t("消息", "Messages"));
+        forwardSaveSwitch = addSwitch(card, t("允许转发和保存", "Allow forwarding and saving"));
+        forwardSaveSwitch.setChecked(baseConfig.enableForwardSave);
+        preventDeleteSwitch = addSwitch(card, t("防止消息删除", "Prevent message deletion"));
+        preventDeleteSwitch.setChecked(baseConfig.preventMessageDelete);
+        addInfo(card, t("防删除与主动加载防撤回是两套机制，可同时开；防删除会直接拦下服务端的删除更新。", "Delete prevention is a second mechanism alongside proactive-loading anti-recall; it blocks the server delete update itself."));
+
+        addSectionLabel(card, t("动态", "Stories"));
+        saveStoriesSwitch = addSwitch(card, t("允许保存动态", "Allow saving stories"));
+        saveStoriesSwitch.setChecked(baseConfig.enableSaveStories);
+        addInfo(card, t("本版为简化移植：允许动态截图、启用已有的保存菜单项；若 Conso 的动态菜单里本来就没有保存项，本开关单独不起作用，需后续再补。", "Simplified port in this build: allows story screenshots and enables an existing save menu item. If Conso's story menu has no save item at all, this switch alone will not add one."));
+
+        addSectionLabel(card, t("性能", "Performance"));
+        downloadSpeedSwitch = addSwitch(card, t("提升下载速度", "Boost download speed"));
+        downloadSpeedSwitch.setChecked(baseConfig.boostDownloadSpeed);
+        addInfo(card, t("只改客户端下载并行度（大文件分块 512 KiB、并行 8 路）；服务端限速仍在。", "Only changes client download parallelism (512 KiB chunks, 8 parallel requests); server limits still apply."));
+
+        addSectionLabel(card, t("本地 Premium", "Local Premium"));
+        localPremiumSwitch = addSwitch(card, t("本地 Premium 解锁", "Enable local Premium"));
+        localPremiumSwitch.setChecked(baseConfig.localPremium);
+        addInfo(card, t("仅本地生效：让客户端认为你是 Premium，可突破置顶聊天数等客户端检查（实测为准，服务端仍可能限制）。服务端 Premium 功能（大文件上传、语音转文字等）仍需官方订阅，且开启本地 Premium 有封号风险，请自行决定。", "Local only: makes the client treat you as Premium, unlocking client-side checks such as the pinned-chat limit (verify on device; the server may still limit). Server Premium features still need a real subscription, and local Premium carries a ban risk."));
+    }
+
     private void buildChatAntiRecallCard(LinearLayout container) {
         if (antiRecallConfigStore == null || dialogId == 0L) {
             return;
@@ -460,6 +503,13 @@ final class HostConfigPanel {
                         matchMatrix,
                         exclusionMatrix
                 );
+                updated.disableSponsoredMessages = sponsoredSwitch != null && sponsoredSwitch.isChecked();
+                updated.disableVideoAds = videoAdsSwitch != null && videoAdsSwitch.isChecked();
+                updated.enableForwardSave = forwardSaveSwitch != null && forwardSaveSwitch.isChecked();
+                updated.enableSaveStories = saveStoriesSwitch != null && saveStoriesSwitch.isChecked();
+                updated.preventMessageDelete = preventDeleteSwitch != null && preventDeleteSwitch.isChecked();
+                updated.boostDownloadSpeed = downloadSpeedSwitch != null && downloadSpeedSwitch.isChecked();
+                updated.localPremium = localPremiumSwitch != null && localPremiumSwitch.isChecked();
             }
             saver.save(updated);
             if (afterSave != null) {

@@ -17,6 +17,16 @@ public final class FilterConfig {
     public Action action = Action.HIDE;
     // Conso adaptation: force Simplified Chinese UI by default.
     public String appLanguageTag = APP_LANGUAGE_SIMPLIFIED_CHINESE;
+    // Enhancement features merged from NoAdsTelegram / TeleVip (Build #5).
+    // All default OFF: the user enables them one by one in Settings, so a
+    // Conso behaviour change is never a surprise after an update.
+    public boolean disableSponsoredMessages = false;
+    public boolean disableVideoAds = false;
+    public boolean enableForwardSave = false;
+    public boolean enableSaveStories = false;
+    public boolean preventMessageDelete = false;
+    public boolean boostDownloadSpeed = false;
+    public boolean localPremium = false;
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -83,6 +93,13 @@ public final class FilterConfig {
         copy.debugLogging = debugLogging;
         copy.action = action;
         copy.appLanguageTag = appLanguageTag;
+        copy.disableSponsoredMessages = disableSponsoredMessages;
+        copy.disableVideoAds = disableVideoAds;
+        copy.enableForwardSave = enableForwardSave;
+        copy.enableSaveStories = enableSaveStories;
+        copy.preventMessageDelete = preventMessageDelete;
+        copy.boostDownloadSpeed = boostDownloadSpeed;
+        copy.localPremium = localPremium;
         copy.updatedAtEpochMs = updatedAtEpochMs;
         for (RuleSpec rule : globalRules) {
             copy.globalRules.add(rule.deepCopy());

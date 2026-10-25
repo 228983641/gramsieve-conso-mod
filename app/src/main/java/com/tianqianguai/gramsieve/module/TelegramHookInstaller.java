@@ -14,6 +14,9 @@ import android.util.Base64;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.SubMenu;
 import android.view.ViewParent;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -149,6 +152,7 @@ final class TelegramHookInstaller {
         hookChatActivityPause(classLoader);
         hookScrollToLastMessage(classLoader);
         hookMessageContextMenu(classLoader);
+        hookEnhancements(classLoader);
         hookSettingsActivityMenu(classLoader);
         hookProfileSettingsMenu(classLoader);
         hookDownloadActivityMenu(classLoader);
@@ -6610,6 +6614,293 @@ final class TelegramHookInstaller {
         }
         String suffix = buildVersion.isBlank() ? "" : " build=" + buildVersion;
         info("Target Telegram package=" + applicationInfo.packageName + suffix + " source=" + applicationInfo.sourceDir);
+    }
+
+
+    // ------------------------------------------------------------------
+    // Enhancement features (Build #5): ported, one hook at a time, from
+    // NoAdsTelegram (sponsored/video ads, forward+save, save stories,
+    // prevent message deletion) and TeleVip (download speed, local
+    // premium via UserConfig.isPremium). Every hook first checks the
+    // current FilterConfig, so toggling a switch in Settings takes
+    // effect without reinstalling (config reload is throttled to 1.5s
+    // by XposedConfigProvider). Hooks that cannot find their target
+    // method in Conso simply log and skip -- they never crash the host.
+    // Local premium is deliberately client-side only: it makes
+    // UserConfig.isPremium() return true, which unlocks client-side
+    // checks (e.g. the pinned-chat limit UI, premium stickers/reactions
+    // locally). Server-side premium (bigger uploads, voice-to-text,
+    // faster server downloads, etc.) still requires a real subscription
+    // and will not work from this switch alone.
+    // ------------------------------------------------------------------
+    private FilterConfig currentEnhancementConfig() {
+        try {
+            if (configProvider == null) {
+                return FilterConfig.createDefault();
+            }
+            return configProvider.getConfig(resolveHostApplication());
+        } catch (Throwable throwable) {
+            return FilterConfig.createDefault();
+        }
+    }
+
+    private void hookEnhancements(ClassLoader classLoader) {
+        hookSponsoredAds(classLoader);
+        hookForwardSave(classLoader);
+        hookSaveStories(classLoader);
+        hookPreventMessageDelete(classLoader);
+        hookBoostDownloadSpeed(classLoader);
+        hookLocalPremium(classLoader);
+    }
+
+    private void hookBooleanMethod(ClassLoader classLoader, String className, String methodName, java.util.function.Supplier<Boolean> enabled, Object forcedResult) {
+        try {
+            Class<?> clazz = classLoader.loadClass(className);
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!methodName.equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    try {
+                        if (Boolean.TRUE.equals(enabled.get())) {
+                            return forcedResult;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    return chain.proceed();
+                });
+            }
+            info("Enhancement: hooked " + className + "." + methodName);
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook " + className + "." + methodName, throwable);
+        }
+    }
+
+    private void hookSponsoredAds(ClassLoader classLoader) {
+        // ChatActivity.addSponsoredMessages: void, return null without proceeding.
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.ui.ChatActivity");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"addSponsoredMessages".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    if (currentEnhancementConfig().disableSponsoredMessages) {
+                        return null;
+                    }
+                    return chain.proceed();
+                });
+            }
+            info("Enhancement: hooked ChatActivity.addSponsoredMessages");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook addSponsoredMessages", throwable);
+        }
+        hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "getSponsoredMessagesCount",
+                () -> currentEnhancementConfig().disableSponsoredMessages, 0);
+        // getSponsoredMessages returns a list; handled separately (empty list).
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.messenger.MessagesController");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"getSponsoredMessages".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    if (currentEnhancementConfig().disableSponsoredMessages) {
+                        return new ArrayList<>();
+                    }
+                    return chain.proceed();
+                });
+            }
+            hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "isSponsoredDisabled",
+                    () -> currentEnhancementConfig().disableVideoAds, true);
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook sponsored messages", throwable);
+        }
+        // VideoAds.load: void, skip loading video ads entirely.
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.messenger.video.VideoAds");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"load".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    if (currentEnhancementConfig().disableVideoAds) {
+                        return null;
+                    }
+                    return chain.proceed();
+                });
+            }
+            info("Enhancement: hooked VideoAds.load");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook VideoAds.load", throwable);
+        }
+    }
+
+    private void hookForwardSave(ClassLoader classLoader) {
+        hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "isChatNoForwards",
+                () -> currentEnhancementConfig().enableForwardSave, false);
+        hookBooleanMethod(classLoader, "org.telegram.ui.ChatActivity", "hasSelectedNoforwardsMessage",
+                () -> currentEnhancementConfig().enableForwardSave, false);
+        hookBooleanMethod(classLoader, "org.telegram.messenger.MessageObject", "canForwardMessage",
+                () -> currentEnhancementConfig().enableForwardSave, true);
+    }
+
+    private void hookSaveStories(ClassLoader classLoader) {
+        // Simplified port of NoAds EnableSaveStories: allow screenshots on
+        // story holders, and enable any already-present save/gallery menu
+        // item in the story viewer menu. This does NOT add a brand-new
+        // save item if Conso's story menu has none, and does NOT fake
+        // premium for stories (that is the separate local-premium switch).
+        hookBooleanMethod(classLoader, "org.telegram.ui.Stories.PeerStoriesView$StoryItemHolder", "allowScreenshots",
+                () -> currentEnhancementConfig().enableSaveStories, true);
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.ui.Stories.PeerStoriesView");
+            for (String name : new String[]{"createMenu", "fillMenu", "prepareMenu"}) {
+                for (Method candidate : clazz.getDeclaredMethods()) {
+                    if (!name.equals(candidate.getName())) {
+                        continue;
+                    }
+                    candidate.setAccessible(true);
+                    Method method = candidate;
+                    hook(method, chain -> {
+                        Object result = chain.proceed();
+                        try {
+                            if (currentEnhancementConfig().enableSaveStories && result instanceof Menu) {
+                                enableSaveMenuItems((Menu) result);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                        return result;
+                    });
+                }
+            }
+            info("Enhancement: hooked PeerStoriesView menus for save");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook PeerStoriesView menus", throwable);
+        }
+    }
+
+    private void enableSaveMenuItems(Menu menu) {
+        for (int i = 0; i < menu.size(); i++) {
+            MenuItem item = menu.getItem(i);
+            CharSequence title = item.getTitle();
+            if (title != null) {
+                String lower = title.toString().toLowerCase(Locale.ROOT);
+                if (lower.contains("save") || lower.contains("gallery")
+                        || lower.contains("保存") || lower.contains("相册")) {
+                    item.setEnabled(true);
+                }
+            }
+            SubMenu sub = item.getSubMenu();
+            if (sub != null) {
+                enableSaveMenuItems(sub);
+            }
+        }
+    }
+
+    private void hookPreventMessageDelete(ClassLoader classLoader) {
+        // Port of NoAds DisableDelete: MessagesController has a method
+        // (ArrayList, ArrayList, ArrayList, boolean, int) that processes
+        // server updates. Filter TL_updateDeleteMessages /
+        // TL_updateDeleteChannelMessages out of arg 0 before the original
+        // runs, via module.invokeOrigin with the filtered list. This is a
+        // second mechanism on top of GramSieve's proactive-loading
+        // anti-recall (which caches messages before deletion); both can
+        // be on, but this one keeps the message in the UI as well.
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.messenger.MessagesController");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                Class<?>[] params = candidate.getParameterTypes();
+                if (params.length != 5 || params[0] != ArrayList.class || params[1] != ArrayList.class
+                        || params[2] != ArrayList.class || params[3] != boolean.class || params[4] != int.class) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    if (!currentEnhancementConfig().preventMessageDelete) {
+                        return chain.proceed();
+                    }
+                    Object arg0 = chain.getArg(0);
+                    if (!(arg0 instanceof ArrayList<?>)) {
+                        return chain.proceed();
+                    }
+                    ArrayList<?> updates = (ArrayList<?>) arg0;
+                    ArrayList<Object> kept = new ArrayList<>();
+                    for (Object update : updates) {
+                        if (update == null) {
+                            continue;
+                        }
+                        String name = update.getClass().getName();
+                        if ("org.telegram.tgnet.TLRPC$TL_updateDeleteMessages".equals(name)
+                                || "org.telegram.tgnet.TLRPC$TL_updateDeleteChannelMessages".equals(name)) {
+                            continue;
+                        }
+                        kept.add(update);
+                    }
+                    if (kept.size() == updates.size()) {
+                        return chain.proceed();
+                    }
+                    if (kept.isEmpty()) {
+                        return null;
+                    }
+                    return module.invokeOrigin(method, chain.getThisObject(),
+                            kept, chain.getArg(1), chain.getArg(2), chain.getArg(3), chain.getArg(4));
+                });
+                info("Enhancement: hooked MessagesController update-array for delete prevention");
+            }
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook delete prevention", throwable);
+        }
+    }
+
+    private void hookBoostDownloadSpeed(ClassLoader classLoader) {
+        // Port of TeleVip DownloadSpeed: after FileLoadOperation.updateParams,
+        // raise the big-file chunk size to 512 KiB, parallel requests to 8,
+        // and CDN parts to cover a 2000 MB file. This only changes the
+        // client's download parallelism; server-side speed limits still apply.
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.messenger.FileLoadOperation");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"updateParams".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        if (currentEnhancementConfig().boostDownloadSpeed) {
+                            Object op = chain.getThisObject();
+                            Reflect.setField(op, "downloadChunkSizeBig", 1024 * 512);
+                            Reflect.setField(op, "maxDownloadRequests", 8);
+                            Reflect.setField(op, "maxDownloadRequestsBig", 8);
+                            Reflect.setField(op, "maxCdnParts", (int) (1024L * 1024L * 2000L / (1024 * 512)));
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    return result;
+                });
+            }
+            info("Enhancement: hooked FileLoadOperation.updateParams for download speed");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook download speed", throwable);
+        }
+    }
+
+    private void hookLocalPremium(ClassLoader classLoader) {
+        // Port of TeleVip TelePremium: UserConfig.isPremium() -> true.
+        // Client-side only, see the header comment above.
+        hookBooleanMethod(classLoader, "org.telegram.messenger.UserConfig", "isPremium",
+                () -> currentEnhancementConfig().localPremium, true);
     }
 
     private void hook(Method method, XposedInterface.Hooker hooker) {
