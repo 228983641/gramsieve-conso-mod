@@ -106,7 +106,7 @@ Filtering itself runs locally and does not upload your messages. Translation, pr
 1. 安装本模块 APK（见 Releases，或自行构建，见下）
 2. 在 LSPosed 中启用本模块，作用域**只选 Conso**（以及需要时选官方 Telegram）
 3. 强制停止 Conso，重新打开
-4. Conso 设置 → GramSieve，按需开启开关并保存；规则在“规则内容”里填，每行一条
+4. Conso 设置 → GramSieve，按需开启开关并保存；规则在“规则内容”里填，关键词用“、”分隔，点“编辑”进关键词编辑界面（外部只显示个数，不直接显示关键词）
 5. 首次安装或签名变更时需要卸载旧版再装；同签名系列的后续版本可直接覆盖安装（见“签名”）
 
 ## 自行构建 / Build
