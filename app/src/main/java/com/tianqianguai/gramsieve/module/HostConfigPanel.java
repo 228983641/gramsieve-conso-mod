@@ -826,17 +826,48 @@ final class HostConfigPanel {
         return hidden;
     }
 
+    // Keyword editor dialog (Build #16, UI sync fix): the old version used
+    // the system AlertDialog title/buttons, which did not match the panel's
+    // unified style (16dp rounded cards, theme-gray, 17sp bold titles,
+    // 13sp bold accent labels, 14sp accent buttons) and showed no parsed
+    // preview, so the dialog and the panel summary looked out of sync.
+    // This version builds the whole dialog in panel style, with a live
+    // preview that parses the input on every keystroke with the same
+    // RuleTextCodec save() uses, so the preview count, the panel summary
+    // after OK, and the actually saved rules are always the same.
     private void showKeywordEditorDialog(EditText hidden, TextView summary) {
         LinearLayout dialogView = new LinearLayout(context);
         dialogView.setOrientation(LinearLayout.VERTICAL);
-        dialogView.setPadding(dp(16), dp(8), dp(16), dp(8));
+        dialogView.setPadding(dp(16), dp(16), dp(16), dp(12));
+        try {
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+        } catch (Throwable ignored) {}
+        TextView title = new TextView(context);
+        title.setText(t("编辑关键词", "Edit keywords"));
+        title.setTextColor(primaryTextColor);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        dialogView.addView(title, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView hint = new TextView(context);
         hint.setText(t("用“、”分隔多个关键词，例如：百家乐、彩票、USDT。换行、中文逗号、英文逗号、分号也会被当成分隔符。关键词本身不要含这些分隔符。", "Separate keywords with 、, e.g. 百家乐、彩票、USDT. Newlines, Chinese/English commas and semicolons also work as separators. Do not use these separators inside a keyword."));
         hint.setTextColor(secondaryTextColor);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         try { hint.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
-        dialogView.addView(hint, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintParams.topMargin = dp(8);
+        dialogView.addView(hint, hintParams);
+        TextView inputLabel = new TextView(context);
+        inputLabel.setText(t("关键词", "Keywords"));
+        inputLabel.setTextColor(accentColor);
+        inputLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        inputLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelParams.topMargin = dp(12);
+        labelParams.bottomMargin = dp(4);
+        dialogView.addView(inputLabel, labelParams);
         EditText input = new EditText(context);
         input.setText(valueOf(hidden));
         input.setTextColor(primaryTextColor);
@@ -853,26 +884,78 @@ final class HostConfigPanel {
         input.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+        dialogView.addView(input, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView previewLabel = new TextView(context);
+        previewLabel.setText(t("预览（与保存时解析结果一致）", "Preview (same as saved parsing)"));
+        previewLabel.setTextColor(accentColor);
+        previewLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        previewLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams previewLabelParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        inputParams.topMargin = dp(8);
-        dialogView.addView(input, inputParams);
-        new AlertDialog.Builder(context)
-                .setTitle(t("编辑关键词", "Edit keywords"))
-                .setView(dialogView)
-                .setPositiveButton(t("确定", "OK"), (dialog, which) -> {
-                    String canonical = com.tianqianguai.gramsieve.core.RuleTextCodec.format(
-                            com.tianqianguai.gramsieve.core.RuleTextCodec.parse(
-                                    valueOf(input), com.tianqianguai.gramsieve.core.FilterConfig.RuleMode.KEYWORD));
-                    hidden.setText(canonical);
-                    updateKeywordSummary(summary, valueOf(hidden));
-                })
-                .setNeutralButton(t("清空", "Clear"), (dialog, which) -> {
-                    hidden.setText("");
-                    updateKeywordSummary(summary, "");
-                })
-                .setNegativeButton(t("取消", "Cancel"), null)
-                .show();
+        previewLabelParams.topMargin = dp(12);
+        previewLabelParams.bottomMargin = dp(4);
+        dialogView.addView(previewLabel, previewLabelParams);
+        TextView preview = new TextView(context);
+        preview.setTextColor(secondaryTextColor);
+        preview.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        try { preview.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
+        dialogView.addView(preview, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Runnable refreshPreview = () -> {
+            String canonical = canonicalKeywords(valueOf(input));
+            int count = countKeywords(canonical);
+            if (count == 0) {
+                preview.setText("未设置");
+            } else {
+                preview.setText("共 " + count + " 个：" + canonical);
+            }
+        };
+        refreshPreview.run();
+        input.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) { refreshPreview.run(); }
+        });
+        LinearLayout buttonRow = new LinearLayout(context);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        buttonRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams buttonRowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        buttonRowParams.topMargin = dp(12);
+        dialogView.addView(buttonRow, buttonRowParams);
+        AlertDialog dialog = new AlertDialog.Builder(context).setView(dialogView).create();
+        Button cancelButton = toolbarButton(t("取消", "Cancel"));
+        cancelButton.setOnClickListener(v -> dialog.dismiss());
+        buttonRow.addView(cancelButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button clearButton = toolbarButton(t("清空", "Clear"));
+        clearButton.setOnClickListener(v -> {
+            hidden.setText("");
+            updateKeywordSummary(summary, "");
+            dialog.dismiss();
+        });
+        buttonRow.addView(clearButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button okButton = toolbarButton(t("确定", "OK"));
+        okButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        okButton.setOnClickListener(v -> {
+            hidden.setText(canonicalKeywords(valueOf(input)));
+            updateKeywordSummary(summary, valueOf(hidden));
+            dialog.dismiss();
+        });
+        buttonRow.addView(okButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        dialog.show();
+    }
+
+    private static String canonicalKeywords(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        return com.tianqianguai.gramsieve.core.RuleTextCodec.format(
+                com.tianqianguai.gramsieve.core.RuleTextCodec.parse(
+                        raw, com.tianqianguai.gramsieve.core.FilterConfig.RuleMode.KEYWORD));
     }
 
     private static void updateKeywordSummary(TextView summary, String raw) {
