@@ -3,6 +3,10 @@ package com.tianqianguai.gramsieve.module;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Intent;
+import com.tianqianguai.gramsieve.config.ModuleConfigStore;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.res.ColorStateList;
@@ -356,6 +360,9 @@ final class HostConfigPanel {
             buildTranslateCard(container);
         }
         buildRulesCard(container);
+        if (!chatMode) {
+            buildBackupCard(container);
+        }
 
         root.addView(overlay, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -571,6 +578,298 @@ final class HostConfigPanel {
         addView(card, buttonRow, 4);
     }
 
+    private void buildBackupCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("规则备份", "Rules backup"));
+        addInfo(card, t("导出后把内容存到你自己的笔记或文件里，卸载重装后可以再导回来。备份只含规则（全局规则、保留规则、各聊天规则），不含开关、代理和大模型 key；导入时只合并规则，不会改动其他设置，已有的相同规则不会重复。", "Export the content to your own notes or a file, then import it back after a reinstall. The backup contains only rules (global rules, keep rules, per-chat rules), not switches, proxies or the LLM key; import only merges rules and never changes other settings, and existing identical rules are not duplicated."));
+        LinearLayout buttonRow = new LinearLayout(context);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button exportButton = toolbarButton(t("导出规则", "Export rules"));
+        exportButton.setOnClickListener(v -> showExportRulesDialog());
+        buttonRow.addView(exportButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button importButton = toolbarButton(t("导入规则", "Import rules"));
+        importButton.setOnClickListener(v -> showImportRulesDialog());
+        buttonRow.addView(importButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(card, buttonRow, 4);
+    }
+
+    private String rulesExportJson() {
+        try {
+            FilterConfig export = new FilterConfig();
+            FilterConfig source = baseConfig == null ? FilterConfig.createDefault() : baseConfig.deepCopy();
+            export.globalRules = new java.util.ArrayList<>();
+            if (source.globalRules != null) {
+                for (FilterConfig.RuleSpec rule : source.globalRules) {
+                    if (rule != null) export.globalRules.add(rule.deepCopy());
+                }
+            }
+            export.globalExclusions = new java.util.ArrayList<>();
+            if (source.globalExclusions != null) {
+                for (FilterConfig.RuleSpec rule : source.globalExclusions) {
+                    if (rule != null) export.globalExclusions.add(rule.deepCopy());
+                }
+            }
+            export.chatRules = new java.util.LinkedHashMap<>();
+            if (source.chatRules != null) {
+                for (java.util.Map.Entry<String, FilterConfig.ChatRuleSet> entry : source.chatRules.entrySet()) {
+                    if (entry.getKey() != null && entry.getValue() != null) {
+                        export.chatRules.put(entry.getKey(), entry.getValue().deepCopy());
+                    }
+                }
+            }
+            return ModuleConfigStore.toJson(export);
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private void showExportRulesDialog() {
+        try {
+            android.app.Activity activity = activityFromContext(context);
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, t("无法打开导出界面", "Cannot open export dialog"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String json = rulesExportJson();
+            if (json == null || json.isEmpty()) {
+                Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            LinearLayout dialogView = new LinearLayout(context);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            TextView title = new TextView(context);
+            title.setText(t("导出规则", "Export rules"));
+            title.setTextColor(primaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            dialogView.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView hint = new TextView(context);
+            hint.setText(t("下面就是全部规则的备份文本，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“分享”发给自己。", "Below is the full rules backup text. Tap Copy, then paste it into your own notes or a file to keep it; or tap Share to send it to yourself."));
+            hint.setTextColor(secondaryTextColor);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            dialogView.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            EditText jsonView = new EditText(context);
+            jsonView.setText(json);
+            jsonView.setTextColor(primaryTextColor);
+            jsonView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            jsonView.setTextIsSelectable(true);
+            jsonView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+            scroll.addView(jsonView, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
+            dialogView.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                    .setView(dialogView)
+                    .create();
+            LinearLayout buttonRow = new LinearLayout(context);
+            buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button copyButton = toolbarButton(t("复制", "Copy"));
+            copyButton.setOnClickListener(v -> {
+                try {
+                    ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText("GramSieve rules", json));
+                        Toast.makeText(context, t("已复制，请粘贴到笔记或文件里保存", "Copied, paste it into notes or a file to keep it"), Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Throwable ignored) {}
+            });
+            buttonRow.addView(copyButton);
+            Button shareButton = toolbarButton(t("分享", "Share"));
+            shareButton.setOnClickListener(v -> {
+                try {
+                    Intent share = new Intent(Intent.ACTION_SEND);
+                    share.setType("text/plain");
+                    share.putExtra(Intent.EXTRA_TEXT, json);
+                    context.startActivity(Intent.createChooser(share, t("分享规则备份", "Share rules backup")));
+                } catch (Throwable ignored) {}
+            });
+            buttonRow.addView(shareButton);
+            Button closeButton = toolbarButton(t("关闭", "Close"));
+            closeButton.setOnClickListener(v -> dialog.dismiss());
+            buttonRow.addView(closeButton);
+            dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialog.show();
+            try {
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(cardColor));
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private static String ruleMergeKey(FilterConfig.RuleSpec rule) {
+        if (rule == null) return "";
+        return rule.mode + "|" + rule.target + "|" + (rule.pattern == null ? "" : rule.pattern) + "|" + rule.caseSensitive;
+    }
+
+    private void showImportRulesDialog() {
+        try {
+            android.app.Activity activity = activityFromContext(context);
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, t("无法打开导入界面", "Cannot open import dialog"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            LinearLayout dialogView = new LinearLayout(context);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            TextView title = new TextView(context);
+            title.setText(t("导入规则", "Import rules"));
+            title.setTextColor(primaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            dialogView.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView hint = new TextView(context);
+            hint.setText(t("粘贴之前导出的规则备份文本，点导入后会合并到现有规则里，相同的规则不会重复；导入后面板会关闭，如需继续编辑请重新打开设置。", "Paste a previously exported rules backup, then tap Import to merge it into the existing rules; identical rules are not duplicated. The panel closes after import; reopen Settings to edit further."));
+            hint.setTextColor(secondaryTextColor);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            dialogView.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            EditText input = new EditText(context);
+            input.setHint(t("粘贴规则备份 JSON", "Paste rules backup JSON"));
+            input.setTextColor(primaryTextColor);
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            input.setMinLines(6);
+            android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+            scroll.addView(input, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
+            dialogView.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                    .setView(dialogView)
+                    .create();
+            LinearLayout buttonRow = new LinearLayout(context);
+            buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button importButton = toolbarButton(t("导入", "Import"));
+            importButton.setOnClickListener(v -> {
+                try {
+                    String pasted = valueOf(input);
+                    if (pasted == null || pasted.isBlank() || !pasted.contains("globalRules")) {
+                        Toast.makeText(context, t("不是有效的规则备份（里面应该有 globalRules）", "Not a valid rules backup (it should contain globalRules)"), Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    FilterConfig imported = ModuleConfigStore.fromJson(pasted);
+                    if (imported == null) {
+                        Toast.makeText(context, t("导入失败：无法解析", "Import failed: cannot parse"), Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    FilterConfig updated = (baseConfig == null ? FilterConfig.createDefault() : baseConfig.deepCopy()).sanitize();
+                    int addedGlobal = 0;
+                    int addedKeep = 0;
+                    int addedChat = 0;
+                    java.util.Set<String> existingGlobal = new java.util.HashSet<>();
+                    if (updated.globalRules != null) {
+                        for (FilterConfig.RuleSpec rule : updated.globalRules) existingGlobal.add(ruleMergeKey(rule));
+                    } else {
+                        updated.globalRules = new java.util.ArrayList<>();
+                    }
+                    if (imported.globalRules != null) {
+                        for (FilterConfig.RuleSpec rule : imported.globalRules) {
+                            if (rule == null) continue;
+                            FilterConfig.RuleSpec clean = rule.sanitize();
+                            if (clean.pattern.isBlank()) continue;
+                            if (existingGlobal.add(ruleMergeKey(clean))) {
+                                updated.globalRules.add(clean.deepCopy());
+                                addedGlobal++;
+                            }
+                        }
+                    }
+                    java.util.Set<String> existingKeep = new java.util.HashSet<>();
+                    if (updated.globalExclusions != null) {
+                        for (FilterConfig.RuleSpec rule : updated.globalExclusions) existingKeep.add(ruleMergeKey(rule));
+                    } else {
+                        updated.globalExclusions = new java.util.ArrayList<>();
+                    }
+                    if (imported.globalExclusions != null) {
+                        for (FilterConfig.RuleSpec rule : imported.globalExclusions) {
+                            if (rule == null) continue;
+                            FilterConfig.RuleSpec clean = rule.sanitize();
+                            if (clean.pattern.isBlank()) continue;
+                            if (existingKeep.add(ruleMergeKey(clean))) {
+                                updated.globalExclusions.add(clean.deepCopy());
+                                addedKeep++;
+                            }
+                        }
+                    }
+                    if (updated.chatRules == null) updated.chatRules = new java.util.LinkedHashMap<>();
+                    if (imported.chatRules != null) {
+                        for (java.util.Map.Entry<String, FilterConfig.ChatRuleSet> entry : imported.chatRules.entrySet()) {
+                            if (entry.getKey() == null || entry.getValue() == null) continue;
+                            FilterConfig.ChatRuleSet target = updated.chatRules.get(entry.getKey());
+                            if (target == null) {
+                                updated.chatRules.put(entry.getKey(), entry.getValue().deepCopy().sanitize());
+                                addedChat += entry.getValue().rules.size() + entry.getValue().exclusions.size();
+                                continue;
+                            }
+                            java.util.Set<String> existingRules = new java.util.HashSet<>();
+                            for (FilterConfig.RuleSpec rule : target.rules) existingRules.add(ruleMergeKey(rule));
+                            for (FilterConfig.RuleSpec rule : entry.getValue().rules) {
+                                if (rule == null) continue;
+                                FilterConfig.RuleSpec clean = rule.sanitize();
+                                if (clean.pattern.isBlank()) continue;
+                                if (existingRules.add(ruleMergeKey(clean))) {
+                                    target.rules.add(clean.deepCopy());
+                                    addedChat++;
+                                }
+                            }
+                            java.util.Set<String> existingExclusions = new java.util.HashSet<>();
+                            for (FilterConfig.RuleSpec rule : target.exclusions) existingExclusions.add(ruleMergeKey(rule));
+                            for (FilterConfig.RuleSpec rule : entry.getValue().exclusions) {
+                                if (rule == null) continue;
+                                FilterConfig.RuleSpec clean = rule.sanitize();
+                                if (clean.pattern.isBlank()) continue;
+                                if (existingExclusions.add(ruleMergeKey(clean))) {
+                                    target.exclusions.add(clean.deepCopy());
+                                    addedChat++;
+                                }
+                            }
+                        }
+                    }
+                    if (addedGlobal == 0 && addedKeep == 0 && addedChat == 0) {
+                        Toast.makeText(context, t("备份里没有新规则（都已存在）", "No new rules in the backup (all already exist)"), Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    updated.updatedAtEpochMs = System.currentTimeMillis();
+                    saver.save(updated);
+                    if (afterSave != null) afterSave.run();
+                    dialog.dismiss();
+                    Toast.makeText(context, t("已导入：全局 " + addedGlobal + " 条，保留 " + addedKeep + " 条，单聊 " + addedChat + " 条，面板已关闭", "Imported: global " + addedGlobal + ", keep " + addedKeep + ", per-chat " + addedChat + ", panel closed"), Toast.LENGTH_LONG).show();
+                    close();
+                } catch (Throwable throwable) {
+                    Toast.makeText(context, t("导入失败：请检查粘贴的内容", "Import failed: check the pasted content"), Toast.LENGTH_SHORT).show();
+                }
+            });
+            buttonRow.addView(importButton);
+            Button cancelButton = toolbarButton(t("取消", "Cancel"));
+            cancelButton.setOnClickListener(v -> dialog.dismiss());
+            buttonRow.addView(cancelButton);
+            dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialog.show();
+            try {
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(cardColor));
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("导入失败", "Import failed"), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void applyProxyUiToConfig(FilterConfig config) {
         if (config == null) return;
         config.proxyAutoAdd = proxyAutoAddSwitch != null && proxyAutoAddSwitch.isChecked();
@@ -638,6 +937,35 @@ final class HostConfigPanel {
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             dialogView.addView(hint, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            // Build #24: import Conso's own proxies when the dialog
+            // opens, not only on refresh, so a proxy added in Conso
+            // settings after the last refresh is visible immediately.
+            // Merge by address+port (host authoritative on secret).
+            try {
+                for (FilterConfig.ProxyEntry hostEntry : TgProxyManager.importHostProxies(context)) {
+                    boolean found = false;
+                    if (proxyWorkingEntries != null) {
+                        for (FilterConfig.ProxyEntry existing : proxyWorkingEntries) {
+                            if (existing != null && existing.address != null
+                                    && existing.address.equalsIgnoreCase(hostEntry.address)
+                                    && existing.port == hostEntry.port) {
+                                existing.secret = hostEntry.secret;
+                                if (existing.pingMs < 0 && hostEntry.pingMs >= 0) {
+                                    existing.pingMs = hostEntry.pingMs;
+                                    existing.available = hostEntry.available;
+                                    existing.lastTestedMs = hostEntry.lastTestedMs;
+                                }
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) {
+                        if (proxyWorkingEntries == null) proxyWorkingEntries = new java.util.ArrayList<>();
+                        proxyWorkingEntries.add(hostEntry.deepCopy());
+                    }
+                }
+            } catch (Throwable ignored) {}
             java.util.List<android.widget.CheckBox> boxes = new java.util.ArrayList<>();
             java.util.List<FilterConfig.ProxyEntry> entries = proxyWorkingEntries == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(proxyWorkingEntries);
             if (entries.isEmpty()) {

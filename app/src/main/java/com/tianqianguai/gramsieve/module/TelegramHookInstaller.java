@@ -106,6 +106,7 @@ final class TelegramHookInstaller {
     // Dialog list features (Build #14): last DialogsActivity, held weakly
     // only so the classify bar can trigger a list refresh on filter change.
     private java.lang.ref.WeakReference<Object> lastDialogsActivityRef;
+    private volatile long lastClassifyBarSyncMs = 0L;
     private final FilterEngine filterEngine = new FilterEngine();
     private final DecisionCache decisionCache = new DecisionCache();
     private final AtomicInteger bindingProbeBudget = new AtomicInteger(12);
@@ -3195,11 +3196,13 @@ final class TelegramHookInstaller {
         String title = isRecalled
                 ? (isChineseLocale(context) ? "此消息已被撤回" : "Message Recalled")
                 : (isChineseLocale(context) ? "原始消息内容" : "Original Message");
-        new android.app.AlertDialog.Builder(context)
+        android.app.AlertDialog originalDialog = new android.app.AlertDialog.Builder(context)
                 .setTitle(title)
                 .setMessage(originalText)
                 .setPositiveButton("OK", null)
-                .show();
+                .create();
+        originalDialog.show();
+        styleSystemDialog(originalDialog, context);
     }
 
     private void showEditDialog(View anchor, String originalText, String editedText) {
@@ -3223,11 +3226,13 @@ final class TelegramHookInstaller {
             body.append(edit);
         }
         if (body.length() == 0) return;
-        new android.app.AlertDialog.Builder(context)
+        android.app.AlertDialog editDialog = new android.app.AlertDialog.Builder(context)
                 .setTitle(title)
                 .setMessage(body.toString())
                 .setPositiveButton("OK", null)
-                .show();
+                .create();
+        editDialog.show();
+        styleSystemDialog(editDialog, context);
     }
 
     private void showEditHistoryDialog(View anchor, List<MessageCache.CachedMessage> history,
@@ -3273,11 +3278,13 @@ final class TelegramHookInstaller {
             showEditDialog(anchor, firstNonEmpty(fallback.text, fallback.caption), fallback.editedText);
             return;
         }
-        new android.app.AlertDialog.Builder(context)
+        android.app.AlertDialog historyDialog = new android.app.AlertDialog.Builder(context)
                 .setTitle(isChineseLocale(context) ? "编辑历史" : "Edit History")
                 .setMessage(body.toString())
                 .setPositiveButton("OK", null)
-                .show();
+                .create();
+        historyDialog.show();
+        styleSystemDialog(historyDialog, context);
     }
 
     private static String sanitizeDisplayText(String text) {
@@ -4559,6 +4566,7 @@ final class TelegramHookInstaller {
                 .setCancelable(false)
                 .create();
         loadingDialog.show();
+        styleSystemDialog(loadingDialog, context);
         new Thread(() -> {
             LlmAiAnalyzer.Result llmResult = LlmAiAnalyzer.analyze(
                     llmConfig, llmSnapshot.combinedVisibleContent());
@@ -4686,8 +4694,11 @@ final class TelegramHookInstaller {
             dialogView.setOrientation(LinearLayout.VERTICAL);
             int pad = dp(context, 16f);
             dialogView.setPadding(pad, pad, pad, 0);
+            int smartPrimaryColor = panelThemeColor(activity, android.R.attr.textColorPrimary, 0xFFFFFFFF);
+            int smartSecondaryColor = panelThemeColor(activity, android.R.attr.textColorSecondary, 0xFFAAAAAA);
             TextView summaryView = new TextView(activity);
             summaryView.setText(summary);
+            summaryView.setTextColor(smartPrimaryColor);
             summaryView.setTextSize(14f);
             try { summaryView.setLineSpacing(dp(context, 2f), 1.15f); } catch (Throwable ignored) {}
             dialogView.addView(summaryView, new LinearLayout.LayoutParams(
@@ -4783,6 +4794,7 @@ final class TelegramHookInstaller {
                             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     TextView itemText = new TextView(activity);
                     itemText.setText(candidates.get(idx).pattern);
+                    itemText.setTextColor(smartPrimaryColor);
                     itemText.setTextSize(15f);
                     row.addView(itemText, new LinearLayout.LayoutParams(
                             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -4828,6 +4840,7 @@ final class TelegramHookInstaller {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView footer = new TextView(activity);
             footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入上面所选的规则范围。");
+            footer.setTextColor(smartSecondaryColor);
             footer.setTextSize(13f);
             LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -4835,7 +4848,7 @@ final class TelegramHookInstaller {
             dialogView.addView(footer, footerParams);
             ScrollView scrollView = new ScrollView(activity);
             scrollView.addView(dialogView);
-            new AlertDialog.Builder(activity)
+            AlertDialog smartDialog = new AlertDialog.Builder(activity)
                     .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
                     .setView(scrollView)
                     .setPositiveButton(
@@ -4858,7 +4871,9 @@ final class TelegramHookInstaller {
                             isChineseLocale(context) ? "取消" : "Cancel",
                             null
                     )
-                    .show();
+                    .create();
+            smartDialog.show();
+            styleSystemDialog(smartDialog, context);
         } catch (Throwable throwable) {
             error("Smart-block dialog failed, adding all candidates directly", throwable);
             addSmartBlockGlobalRules(context, messageView, candidates);
@@ -7112,6 +7127,44 @@ final class TelegramHookInstaller {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    // Build #24 UI audit: every system AlertDialog in this module must
+    // go through this after show(), otherwise a dark host gets a white
+    // dialog with black text (the complaint from 2026-10-25). It forces
+    // the window to the host theme background and recolours title,
+    // message and buttons to the host theme text/accent colours.
+    private void styleSystemDialog(AlertDialog dialog, Context context) {
+        try {
+            if (dialog == null) {
+                return;
+            }
+            int card = panelThemeColor(context, android.R.attr.colorBackground, 0xFF121212);
+            int primary = panelThemeColor(context, android.R.attr.textColorPrimary, 0xFFFFFFFF);
+            int accent = panelThemeColor(context, android.R.attr.colorAccent, 0xFF2AABEE);
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(
+                        new android.graphics.drawable.ColorDrawable(card));
+            }
+            View titleView = dialog.findViewById(android.R.id.title);
+            if (titleView instanceof TextView) {
+                ((TextView) titleView).setTextColor(primary);
+            }
+            View messageView = dialog.findViewById(android.R.id.message);
+            if (messageView instanceof TextView) {
+                ((TextView) messageView).setTextColor(primary);
+            }
+            for (int which : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL}) {
+                try {
+                    android.widget.Button button = dialog.getButton(which);
+                    if (button != null) {
+                        button.setTextColor(accent);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private int panelThemeColor(Context context, int attr, int fallback) {
         try {
             android.util.TypedValue typedValue = new android.util.TypedValue();
@@ -7442,6 +7495,30 @@ final class TelegramHookInstaller {
                                 ((View) cell).setVisibility(View.VISIBLE);
                             } else {
                                 ((View) cell).setVisibility(View.GONE);
+                            }
+                            // Build #24: keep the bar's highlighted button
+                            // in sync when the user switches folder tabs.
+                            // Throttled to once per 300ms so binding a whole
+                            // list does not spam layout passes.
+                            try {
+                                long nowMs = System.currentTimeMillis();
+                                if (nowMs - lastClassifyBarSyncMs > 300L) {
+                                    lastClassifyBarSyncMs = nowMs;
+                                    View cellView = (View) cell;
+                                    cellView.post(() -> {
+                                        try {
+                                            View rootView = cellView.getRootView();
+                                            if (rootView instanceof ViewGroup) {
+                                                View bar = findViewWithTag((ViewGroup) rootView, "gramsieve_classify_bar");
+                                                if (bar instanceof ViewGroup) {
+                                                    updateClassifyBarButtons((ViewGroup) bar);
+                                                }
+                                            }
+                                        } catch (Throwable ignored) {
+                                        }
+                                    });
+                                }
+                            } catch (Throwable ignored) {
                             }
                         } catch (Throwable ignored) {
                         }
@@ -7983,6 +8060,18 @@ final class TelegramHookInstaller {
                 if (folderId instanceof Number && ((Number) folderId).intValue() == 1) {
                     return "归档";
                 }
+                // Build #24: prefer ViewPager page index over tab colour.
+                // Colour detection (Build #23) failed on hosts whose tabs
+                // do not differentiate selection by text colour, leaving
+                // every category mapped to "所有" (i.e. a global filter).
+                // Page 0 is All, page i+1 is the i-th user folder in
+                // getDialogFilters order (ALL_CHATS excluded, as it is not
+                // a tab). If no ViewPager is found, fall back to colour,
+                // then to "所有".
+                String byPage = classifyCategoryByViewPager(host);
+                if (byPage != null && !byPage.isBlank()) {
+                    return byPage.trim();
+                }
                 View rootView = resolveHostFragmentView(host);
                 if (rootView instanceof ViewGroup) {
                     View tabsView = findFilterTabsView((ViewGroup) rootView);
@@ -7997,6 +8086,76 @@ final class TelegramHookInstaller {
         } catch (Throwable ignored) {
         }
         return "所有";
+    }
+
+    private View findViewPager(ViewGroup group) {
+        if (group == null) {
+            return null;
+        }
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child != null && child.getClass().getName().contains("ViewPager")) {
+                try {
+                    java.lang.reflect.Method getCurrentItem =
+                            child.getClass().getMethod("getCurrentItem");
+                    if (getCurrentItem != null && getCurrentItem.getParameterCount() == 0) {
+                        return child;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            if (child instanceof ViewGroup) {
+                View found = findViewPager((ViewGroup) child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String classifyCategoryByViewPager(Object host) {
+        try {
+            View rootView = resolveHostFragmentView(host);
+            if (!(rootView instanceof ViewGroup)) {
+                return null;
+            }
+            View pager = findViewPager((ViewGroup) rootView);
+            if (pager == null) {
+                return null;
+            }
+            Object currentItem = Reflect.invokeIfExists(pager, "getCurrentItem", new Class<?>[0]);
+            if (!(currentItem instanceof Number)) {
+                return null;
+            }
+            int pageIndex = ((Number) currentItem).intValue();
+            if (pageIndex <= 0) {
+                return "所有";
+            }
+            Object controller = messagesControllerForChat(host);
+            if (controller == null) {
+                return null;
+            }
+            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (!(filtersObj instanceof List)) {
+                return null;
+            }
+            java.util.List<String> folderNames = new java.util.ArrayList<>();
+            for (Object filter : (List<?>) filtersObj) {
+                String name = Reflect.asString(Reflect.field(filter, "name"));
+                if (name == null || name.isBlank() || "ALL_CHATS".equalsIgnoreCase(name.trim())) {
+                    continue;
+                }
+                folderNames.add(name.trim());
+            }
+            int folderIndex = pageIndex - 1;
+            if (folderIndex >= 0 && folderIndex < folderNames.size()) {
+                return folderNames.get(folderIndex);
+            }
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private String selectedFilterTabText(ViewGroup tabsView) {

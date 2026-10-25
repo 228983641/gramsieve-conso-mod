@@ -445,7 +445,32 @@ final class TgProxyManager {
         for (FilterConfig.ProxyEntry hostEntry : importHostProxies(context)) {
             FilterConfig.ProxyEntry existing = byKey.get(hostEntry.key());
             if (existing == null) {
-                byKey.put(hostEntry.key(), hostEntry);
+                // Build #24: same address+port with a different secret
+                // format is the SAME proxy (host secret may carry a
+                // prefix or different case). The host entry is
+                // authoritative because it is the one actually in use.
+                FilterConfig.ProxyEntry sameHost = null;
+                for (FilterConfig.ProxyEntry candidate : byKey.values()) {
+                    if (candidate != null && candidate.address != null
+                            && candidate.address.equalsIgnoreCase(hostEntry.address)
+                            && candidate.port == hostEntry.port) {
+                        sameHost = candidate;
+                        break;
+                    }
+                }
+                if (sameHost != null) {
+                    sameHost.secret = hostEntry.secret;
+                    if (sameHost.pingMs < 0 && hostEntry.pingMs >= 0) {
+                        sameHost.pingMs = hostEntry.pingMs;
+                        sameHost.available = hostEntry.available;
+                        sameHost.lastTestedMs = hostEntry.lastTestedMs;
+                    }
+                    if (sameHost.source == null || sameHost.source.isEmpty()) {
+                        sameHost.source = "host";
+                    }
+                } else {
+                    byKey.put(hostEntry.key(), hostEntry);
+                }
             } else if (existing.source == null || existing.source.isEmpty()) {
                 existing.source = "host";
             }

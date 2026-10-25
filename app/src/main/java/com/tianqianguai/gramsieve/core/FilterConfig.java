@@ -189,7 +189,16 @@ public final class FilterConfig {
             List<ProxyEntry> cleaned = new ArrayList<>();
             for (ProxyEntry entry : proxyEntries) {
                 if (entry == null || entry.address == null || entry.address.isBlank()
-                        || entry.port < 1 || entry.port > 65535 || entry.secret == null || entry.secret.isBlank()) {
+                        || entry.port < 1 || entry.port > 65535) {
+                    continue;
+                }
+                // Build #24: a host SOCKS5 proxy has no MTProto secret but
+                // has username/password; dropping it made Conso-added
+                // SOCKS5 proxies invisible. Only drop entries with no
+                // secret AND no auth at all (an unusable MTProto entry).
+                if ((entry.secret == null || entry.secret.isBlank())
+                        && (entry.username == null || entry.username.isBlank())
+                        && (entry.password == null || entry.password.isBlank())) {
                     continue;
                 }
                 entry.address = entry.address.trim();
