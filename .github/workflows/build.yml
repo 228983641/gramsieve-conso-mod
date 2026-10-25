@@ -11,6 +11,11 @@ jobs:
           mkdir -p ~/.android
           base64 -d debug.keystore.b64 > ~/.android/debug.keystore
           chmod 600 ~/.android/debug.keystore
+          base64 -d debug.keystore.b64 > debug.keystore
+          chmod 600 debug.keystore
+          if [ -n "$ANDROID_HOME" ]; then mkdir -p "$ANDROID_HOME/.android" && base64 -d debug.keystore.b64 > "$ANDROID_HOME/.android/debug.keystore" && chmod 600 "$ANDROID_HOME/.android/debug.keystore"; fi
+          if [ -n "$ANDROID_SDK_HOME" ]; then mkdir -p "$ANDROID_SDK_HOME/.android" && base64 -d debug.keystore.b64 > "$ANDROID_SDK_HOME/.android/debug.keystore" && chmod 600 "$ANDROID_SDK_HOME/.android/debug.keystore"; fi
+          ls -l ~/.android/debug.keystore debug.keystore
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
