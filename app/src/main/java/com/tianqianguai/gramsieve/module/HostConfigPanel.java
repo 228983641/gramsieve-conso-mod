@@ -697,7 +697,10 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             TextView title = new TextView(context);
             title.setText(t("导出规则", "Export rules"));
             title.setTextColor(primaryTextColor);
@@ -781,7 +784,10 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             TextView title = new TextView(context);
             title.setText(t("导入规则", "Import rules"));
             title.setTextColor(primaryTextColor);
@@ -945,7 +951,10 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             TextView title = new TextView(context);
             title.setText(titleText);
             title.setTextColor(primaryTextColor);
@@ -1091,7 +1100,10 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             TextView title = new TextView(context);
             title.setText(t("导入完整备份", "Import full backup"));
             title.setTextColor(primaryTextColor);
@@ -1374,7 +1386,10 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             TextView title = new TextView(context);
             title.setText(t("选择代理文件夹", "Pick proxy folder"));
             title.setTextColor(primaryTextColor);
@@ -1437,7 +1452,10 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             TextView title = new TextView(context);
             title.setText(t("管理代理", "Manage proxies"));
             title.setTextColor(primaryTextColor);
@@ -1859,18 +1877,27 @@ final class HostConfigPanel {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        headerParams.leftMargin = dp(16);
-        headerParams.rightMargin = dp(16);
+        // Build #34: header text aligns with row text (group inset
+        // 16 + row padding 16 = 32), not with the group edge.
+        headerParams.leftMargin = dp(32);
+        headerParams.rightMargin = dp(32);
         headerParams.topMargin = dp(20);
         headerParams.bottomMargin = dp(6);
         parent.addView(header, headerParams);
         LinearLayout group = new LinearLayout(context);
         group.setOrientation(LinearLayout.VERTICAL);
-        group.setBackgroundColor(backgroundColor);
+        // Build #34: inset glass group, not a full-width flat slab.
+        // 16dp side inset on each side keeps the content width in
+        // proportion on a wide phone screen and gives the glass
+        // card a visible edge against the screen background.
+        group.setBackground(DialogTheme.glassBackground(
+                DialogTheme.resolve(context), context));
         LinearLayout.LayoutParams groupParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
+        groupParams.leftMargin = dp(16);
+        groupParams.rightMargin = dp(16);
         // Build #33: a gap after each group, so groups read as
         // separate blocks instead of one continuous sheet.
         groupParams.bottomMargin = dp(12);
@@ -2026,7 +2053,10 @@ final class HostConfigPanel {
         dialogView.setOrientation(LinearLayout.VERTICAL);
         dialogView.setPadding(dp(16), dp(16), dp(16), dp(12));
         try {
-            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
+            // Build #34: dialogView stays transparent; the glass card is
+            // the dialog window background set by styleAlertDialog after show(),
+            // so there is exactly one card edge, not two stacked ones.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         } catch (Throwable ignored) {}
         TextView title = new TextView(context);
         title.setText(t("编辑关键词", "Edit keywords"));

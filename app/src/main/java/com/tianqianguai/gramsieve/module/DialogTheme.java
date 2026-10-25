@@ -213,6 +213,23 @@ public final class DialogTheme {
         styleAlertDialog(dialog, resolve(context));
     }
 
+    // Build #34: glass card. Translucent fill over the screen
+    // background, a 1px rim-light stroke, 16dp rounded corners.
+    // Honest limit: a View overlay inside the host activity cannot
+    // blur the host content behind it, so panel glass is translucency
+    // + rim light, not a true backdrop blur. Dialog windows CAN blur
+    // (see styleAlertDialog), because they own their window.
+    public static android.graphics.drawable.GradientDrawable glassBackground(
+            Colors colors, Context context) {
+        android.graphics.drawable.GradientDrawable drawable =
+                new android.graphics.drawable.GradientDrawable();
+        drawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        drawable.setCornerRadius(dp(context, 16f));
+        drawable.setColor(adjustAlpha(colors.background, 0.88f));
+        drawable.setStroke(1, adjustAlpha(colors.primary, 0.12f));
+        return drawable;
+    }
+
     public static void styleAlertDialog(AlertDialog dialog, Colors colors) {
         try {
             if (dialog == null) {
@@ -220,7 +237,16 @@ public final class DialogTheme {
             }
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawable(
-                        new android.graphics.drawable.ColorDrawable(colors.background));
+                        glassBackground(colors, dialog.getContext()));
+                // Build #34: real backdrop blur for dialog windows on
+                // Android 12+. The blur radius is in pixels.
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    try {
+                        dialog.getWindow().setBackgroundBlurRadius(
+                                (int) dp(dialog.getContext(), 24f));
+                    } catch (Throwable ignored) {
+                    }
+                }
             }
             View titleView = dialog.findViewById(android.R.id.title);
             if (titleView instanceof TextView) {

@@ -4878,7 +4878,10 @@ final class TelegramHookInstaller {
             // inset dividers between rows, labels attached to their rows.
             DialogTheme.styleGroupRows(dialogView, DialogTheme.resolve(activity), activity);
             ScrollView scrollView = new ScrollView(activity);
-            scrollView.setBackgroundColor(smartBackgroundColor);
+            // Build #34: transparent, so the glass dialog window
+            // (styleSystemDialog after show) is the card, not a second
+            // opaque slab stacked on top of it.
+            scrollView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             scrollView.addView(dialogView);
             AlertDialog smartDialog = new AlertDialog.Builder(activity)
                     .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
