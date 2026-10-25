@@ -33,6 +33,16 @@ public final class FilterConfig {
     public boolean highlightPinnedDialogs = false;
     public boolean showClassifyBar = false;
     public int classifyFilter = 0;
+    // Pluggable AI analysis backend (Build #19). Default is local only.
+    // aiAnalysisMode: 0=local rules only, 1=LLM (user key) with local fallback.
+    // aiApiKey is stored ONLY on device in module private config, never in
+    // the repo, never logged, and only sent to aiApiBaseUrl when the user
+    // taps smart analysis (never for automatic per-message filtering).
+    public int aiAnalysisMode = 0;
+    public String aiApiBaseUrl = "https://api.openai.com/v1";
+    public String aiApiModel = "gpt-4o-mini";
+    public String aiApiKey = "";
+    public boolean aiFallbackToLocal = true;
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -110,6 +120,11 @@ public final class FilterConfig {
         copy.highlightPinnedDialogs = highlightPinnedDialogs;
         copy.showClassifyBar = showClassifyBar;
         copy.classifyFilter = classifyFilter;
+        copy.aiAnalysisMode = aiAnalysisMode;
+        copy.aiApiBaseUrl = aiApiBaseUrl;
+        copy.aiApiModel = aiApiModel;
+        copy.aiApiKey = aiApiKey;
+        copy.aiFallbackToLocal = aiFallbackToLocal;
         copy.updatedAtEpochMs = updatedAtEpochMs;
         for (RuleSpec rule : globalRules) {
             copy.globalRules.add(rule.deepCopy());

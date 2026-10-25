@@ -19,6 +19,11 @@ public final class MessageRuleFactory {
     // instead of a domain. The rule stores the IP alone (no scheme/port),
     // so a port rotation does not evade it.
     private static final Pattern IP_ADDRESS = Pattern.compile("\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b");
+    // Local strengthening (Build #19): contact / payment identifiers that
+    // are stable enough to become candidates (user confirms in dialog).
+    private static final Pattern QQ_NUMBER = Pattern.compile("(?i)\\bQQ\\s*[:：]?\\s*(\\d{5,12})\\b");
+    private static final Pattern USDT_ETH = Pattern.compile("\\b0x[0-9a-fA-F]{40}\\b");
+    private static final Pattern USDT_TRON = Pattern.compile("\\bT[0-9A-Za-z]{33}\\b");
     // Chinese brand token: a Latin/digit prefix + a brand suffix, or the
     // reverse, e.g. 122体育, N1国际. Deliberately NOT any digit+Han
     // sequence: game names and amounts (极速糖果1000, 特码49) would
@@ -28,6 +33,17 @@ public final class MessageRuleFactory {
     private static final Pattern BRANDISH_TOKEN = Pattern.compile("(?i)\\b[a-z0-9][a-z0-9._-]{2,}[a-z0-9]\\b");
 
     private MessageRuleFactory() {
+    }
+
+    private static String deobfuscate(String value) {
+        if (value == null) return "";
+        String out = value;
+        out = out.replace("[.]", ".").replace("(.)", ".").replace("[dot]", ".").replace("【.】", ".");
+        out = out.replace("。", ".");
+        out = out.replaceAll("(?i)\\bhxxps?://", "https://");
+        // "122 . com" -> "122.com": remove spaces around dots between alphanumerics.
+        out = out.replaceAll("(?<=[A-Za-z0-9])\\s+\\.\\s+(?=[A-Za-z0-9])", ".");
+        return out;
     }
 
     public static List<FilterConfig.RuleSpec> automaticRules(MessageSnapshot snapshot) {
@@ -86,6 +102,35 @@ public final class MessageRuleFactory {
                     addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, token));
                 }
             }
+        }
+        // De-obfuscated URLs (Build #19): spam hides domains as
+        // "122 [.] com", "122。com", "hxxps://122.com" or "122 . com".
+        // De-obfuscate a copy of the text, then re-run domain/IP/link
+        // extraction on it, so those identifiers become candidates too.
+        if (snapshot != null) {
+            String deob = deobfuscate(snapshot.combinedVisibleContent());
+            if (!deob.equals(snapshot.combinedVisibleContent())) {
+                addStableTokens(rules, deob);
+                Matcher ip2 = IP_ADDRESS.matcher(deob);
+                while (ip2.find()) {
+                    String ip = ip2.group();
+                    boolean valid = true;
+                    for (String octet : ip.split("\\.")) {
+                        try { if (Integer.parseInt(octet) > 255) valid = false; } catch (NumberFormatException ignored) { valid = false; }
+                    }
+                    if (valid) addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, ip));
+                }
+            }
+            // Contact / payment identifiers.
+            Matcher qq = QQ_NUMBER.matcher(snapshot.combinedVisibleContent());
+            while (qq.find()) {
+                String num = qq.group(1);
+                if (num != null && num.length() >= 5) addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, "QQ" + num));
+            }
+            Matcher eth = USDT_ETH.matcher(snapshot.combinedVisibleContent());
+            while (eth.find()) addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, eth.group()));
+            Matcher tron = USDT_TRON.matcher(snapshot.combinedVisibleContent());
+            while (tron.find()) addRule(rules, keywordRule(FilterConfig.RuleTarget.TEXT, tron.group()));
         }
         for (FilterConfig.RuleSpec rule : automaticRules(snapshot)) {
             if (rule != null && rule.mode == FilterConfig.RuleMode.KEYWORD) {

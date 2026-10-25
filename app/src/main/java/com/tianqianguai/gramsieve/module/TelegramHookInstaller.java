@@ -4533,6 +4533,82 @@ final class TelegramHookInstaller {
             ).show();
             return;
         }
+        // Pluggable AI backend (Build #19): local candidates are already
+        // built above. If the user enabled the LLM backend, call it on a
+        // background thread (never on the UI thread, never for automatic
+        // filtering), merge its suggestions into the local candidates,
+        // then show the same confirmation dialog. LLM failure never blocks
+        // the dialog: with fallback on (default) the local candidates are
+        // shown, with a toast noting the LLM failed.
+        if (!LlmAiAnalyzer.isLlmEnabled(existing)) {
+            showSmartBlockDialog(context, messageView, candidates);
+            return;
+        }
+        Activity loadingActivity = findActivity(context);
+        if (loadingActivity == null || loadingActivity.isFinishing()) {
+            showSmartBlockDialog(context, messageView, candidates);
+            return;
+        }
+        final List<FilterConfig.RuleSpec> localCandidates = new ArrayList<>(candidates);
+        final FilterConfig llmConfig = existing;
+        final MessageSnapshot llmSnapshot = snapshot;
+        android.app.AlertDialog loadingDialog = new android.app.AlertDialog.Builder(loadingActivity)
+                .setMessage(isChineseLocale(context) ? "AI 分析中…" : "AI analyzing…")
+                .setCancelable(false)
+                .create();
+        loadingDialog.show();
+        new Thread(() -> {
+            LlmAiAnalyzer.Result llmResult = LlmAiAnalyzer.analyze(
+                    llmConfig, llmSnapshot.combinedVisibleContent());
+            List<FilterConfig.RuleSpec> merged = new ArrayList<>(localCandidates);
+            if (llmResult != null && llmResult.isGambling && !llmResult.keywords.isEmpty()) {
+                for (String keyword : llmResult.keywords) {
+                    FilterConfig.RuleSpec rule = new FilterConfig.RuleSpec();
+                    rule.mode = FilterConfig.RuleMode.KEYWORD;
+                    rule.target = FilterConfig.RuleTarget.TEXT;
+                    rule.pattern = keyword;
+                    rule.caseSensitive = false;
+                    rule = rule.sanitize();
+                    if (rule != null
+                            && !MessageRuleFactory.containsEquivalentRule(llmConfig.globalRules, rule)
+                            && !MessageRuleFactory.containsEquivalentRule(merged, rule)) {
+                        merged.add(rule);
+                    }
+                }
+            }
+            final List<FilterConfig.RuleSpec> finalCandidates = merged;
+            final boolean llmFailed = llmResult == null || llmResult.error != null && !llmResult.error.isEmpty();
+            loadingActivity.runOnUiThread(() -> {
+                try {
+                    loadingDialog.dismiss();
+                } catch (Throwable ignored) {}
+                if (loadingActivity.isFinishing()) {
+                    return;
+                }
+                if (llmFailed && llmConfig.aiFallbackToLocal) {
+                    Toast.makeText(context, isChineseLocale(context) ? "AI 分析失败，已用本地规则" : "AI analysis failed, using local rules", Toast.LENGTH_SHORT).show();
+                }
+                if (finalCandidates.isEmpty()) {
+                    Toast.makeText(context, isChineseLocale(context) ? "这条消息没有可提取的过滤词，或已全部在全局规则里" : "No new filter terms found for this message", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                showSmartBlockDialog(context, messageView, finalCandidates);
+            });
+        }).start();
+    }
+
+    private Activity findActivity(Context context) {
+        Context current = context;
+        while (current instanceof ContextWrapper) {
+            if (current instanceof Activity) {
+                return (Activity) current;
+            }
+            current = ((ContextWrapper) current).getBaseContext();
+        }
+        return null;
+    }
+
+    private void showSmartBlockDialog(Context context, View messageView, List<FilterConfig.RuleSpec> candidates) {
         // Confirmation dialog with per-term checkboxes. If the host context
         // cannot show a dialog (not an Activity), fall back to adding all
         // candidates directly so the feature still works instead of crashing.

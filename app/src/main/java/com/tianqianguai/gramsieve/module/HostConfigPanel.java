@@ -104,6 +104,11 @@ final class HostConfigPanel {
     private Switch autoTranslateSwitch;
     private Switch pinnedHighlightSwitch;
     private Switch classifyBarSwitch;
+    private Switch aiLlmSwitch;
+    private Switch aiFallbackSwitch;
+    private EditText aiBaseUrlInput;
+    private EditText aiModelInput;
+    private EditText aiKeyInput;
     private RadioGroup languageGroup;
     private RadioGroup actionGroup;
 
@@ -334,6 +339,7 @@ final class HostConfigPanel {
         } else {
             buildEnhancementCard(container);
             buildDialogListCard(container);
+            buildAiCard(container);
             buildTranslateCard(container);
         }
         buildRulesCard(container);
@@ -462,6 +468,23 @@ final class HostConfigPanel {
         classifyBarSwitch = addSwitch(card, t("显示自动分类栏（全部 / 个人 / 群聊 / 频道）", "Show auto-classify bar (All / Personal / Groups / Channels)"));
         classifyBarSwitch.setChecked(baseConfig.showClassifyBar);
         addInfo(card, t("分类栏出现在文件夹栏下方，与文件夹分开；个人含机器人，群聊含普通群与超级群，频道为广播频道。", "The classify bar appears below the folder tabs, separate from folders; Personal includes bots, Groups include regular and supergroups, Channels are broadcast channels."));
+    }
+
+    private void buildAiCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("智能分析（AI）", "Smart Analysis (AI)"));
+        addInfo(card, t("默认是本地规则分析：离线、免费、私密、即时，关键词、域名、IP、@、混淆网址、QQ、USDT 地址都能识别。开启大模型后，智能分析会变成可插拔后端：本地先出候选，大模型再补充建议，两者去重后一起让你确认；大模型失败时按下面开关回退本地。", "Default is local rule analysis: offline, free, private, instant, covering keywords, domains, IPs, @handles, obfuscated URLs, QQ and USDT addresses. With the LLM on, smart analysis becomes a pluggable backend: local candidates first, LLM suggestions added and deduplicated, all confirmed by you; on LLM failure it falls back to local if the switch below is on."));
+        aiLlmSwitch = addSwitch(card, t("启用大模型智能分析（需自备 API Key）", "Enable LLM smart analysis (bring your own API key)"));
+        aiLlmSwitch.setChecked(baseConfig.aiAnalysisMode == 1);
+        addInfo(card, t("只在你点“智能分析并屏蔽”时才调用大模型，不会对每条消息自动过滤。每次只发消息正文/说明/按钮文字（最多 2000 字），不发发送者名、聊天 id、用户 id。消息会发给上面地址的服务方，按该服务方计费，并受其隐私政策约束；Key 只存在本机模块配置里，不进代码仓库，不打进日志。", "Only called when you tap smart analysis, never for automatic per-message filtering. Each call sends only message text / caption / button text (max 2000 chars), no sender name, chat id or user id. Messages go to the service at the base URL above, billed by that provider under its privacy policy; the key lives only in this device's module config, never in the repo, never in logs."));
+        aiBaseUrlInput = addInput(card, t("API 地址（OpenAI 兼容，形如 https://api.openai.com/v1）", "API base URL (OpenAI-compatible, e.g. https://api.openai.com/v1)"), baseConfig.aiApiBaseUrl == null || baseConfig.aiApiBaseUrl.isBlank() ? "https://api.openai.com/v1" : baseConfig.aiApiBaseUrl);
+        aiModelInput = addInput(card, t("模型", "Model"), baseConfig.aiApiModel == null || baseConfig.aiApiModel.isBlank() ? "gpt-4o-mini" : baseConfig.aiApiModel);
+        aiKeyInput = addInput(card, t("API Key（输入时掩码显示，保存后不回显在日志中）", "API key (masked while typing, never echoed in logs)"), baseConfig.aiApiKey == null ? "" : baseConfig.aiApiKey);
+        try {
+            aiKeyInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        } catch (Throwable ignored) {}
+        aiFallbackSwitch = addSwitch(card, t("大模型失败 / 超时时回退本地规则", "Fall back to local rules when the LLM fails or times out"));
+        aiFallbackSwitch.setChecked(baseConfig.aiFallbackToLocal);
     }
 
     private void buildTranslateCard(LinearLayout container) {
@@ -599,6 +622,11 @@ final class HostConfigPanel {
                 updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
                 updated.highlightPinnedDialogs = pinnedHighlightSwitch != null && pinnedHighlightSwitch.isChecked();
                 updated.showClassifyBar = classifyBarSwitch != null && classifyBarSwitch.isChecked();
+                updated.aiAnalysisMode = aiLlmSwitch != null && aiLlmSwitch.isChecked() ? 1 : 0;
+                updated.aiFallbackToLocal = aiFallbackSwitch == null || aiFallbackSwitch.isChecked();
+                if (aiBaseUrlInput != null) updated.aiApiBaseUrl = valueOf(aiBaseUrlInput).trim();
+                if (aiModelInput != null) updated.aiApiModel = valueOf(aiModelInput).trim();
+                if (aiKeyInput != null) updated.aiApiKey = valueOf(aiKeyInput).trim();
             }
             saver.save(updated);
             if (afterSave != null) {

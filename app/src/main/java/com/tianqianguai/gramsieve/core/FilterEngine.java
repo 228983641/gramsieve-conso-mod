@@ -75,6 +75,35 @@ public final class FilterEngine {
             "盘总",
             "USDT",
             "万U",
+            // Local strengthening (Build #19): more specific promo terms
+            // from common gambling spam patterns. These only become smart
+            // candidates (user confirms in dialog); they do not auto-block.
+            "首存",
+            "首充",
+            "充值送",
+            "注册送",
+            "提款秒到",
+            "秒到账",
+            "包赢",
+            "稳赢",
+            "带飞",
+            "跟单",
+            "计划群",
+            "倍投",
+            "梭哈",
+            "龙虎",
+            "牛牛",
+            "炸金花",
+            "轮盘",
+            "老虎机",
+            "电子游艺",
+            "真人娱乐",
+            "体育投注",
+            "开盘",
+            "盘口",
+            "水位",
+            "回水",
+            "银行卡",
     };
 
     // Weak terms: appear in gambling promos, but also in normal chats.
