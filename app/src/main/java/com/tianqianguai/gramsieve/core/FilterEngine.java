@@ -270,6 +270,7 @@ public final class FilterEngine {
             }
         }
         return matched;
+    }
 
     /** Letters/digits only (Han counts as a letter), for separator-proof matching. */
     static String compactLettersDigits(String value) {
@@ -284,7 +285,6 @@ public final class FilterEngine {
             }
         }
         return out.toString();
-    }
     }
 
     public static boolean isWeakGamblingTerm(String term) {
