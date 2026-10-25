@@ -363,6 +363,15 @@ final class HostConfigPanel {
         buildRulesCard(container);
         if (!chatMode) {
             buildBackupCard(container);
+        } else {
+            // Build #31: the backup card (and its log export) only
+            // existed in the global panel, so a user opening settings
+            // from inside a chat could never find log export at all.
+            // Log export is mode-independent, so chat mode gets its
+            // own log card; full backup stays global-only, because
+            // importing a full backup from a chat panel could replace
+            // global settings from the wrong context.
+            buildLogExportCard(container);
         }
 
         root.addView(overlay, new ViewGroup.LayoutParams(
@@ -588,6 +597,19 @@ final class HostConfigPanel {
         Button manageButton = toolbarButton(t("管理代理", "Manage proxies"));
         manageButton.setOnClickListener(v -> showProxyManageDialog());
         buttonRow.addView(manageButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(card, buttonRow, 4);
+    }
+
+    private void buildLogExportCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("日志导出", "Export log"));
+        addInfo(card, t("导出最近的日志（最多约 2000 行），点“导出日志”后选“导出为文件”，会保存为下载目录 GramSieve 下的 .log 文件并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key，发给排查时用。", "Export the recent log (up to about 2000 lines). Tap Export log, then Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."));
+        LinearLayout buttonRow = new LinearLayout(context);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button exportLogButton = toolbarButton(t("导出日志", "Export log"));
+        exportLogButton.setOnClickListener(v -> showExportLogDialog());
+        buttonRow.addView(exportLogButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(card, buttonRow, 4);
     }

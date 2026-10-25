@@ -6056,15 +6056,21 @@ final class TelegramHookInstaller {
         Reflect.invokeIfExists(popupWindow, "dismiss", new Class<?>[0]);
     }
 
+    // Build #31: per-headerItem record of chat menu ids already
+    // added. Weak keys so a discarded ChatActivity/headerItem can
+    // be collected; a fresh headerItem starts empty and injects once.
+    private final java.util.Map<Object, java.util.Set<Integer>> injectedChatMenuIds =
+            new java.util.WeakHashMap<>();
+
     private void injectChatMenu(Object chatActivity) {
         Object headerItem = Reflect.field(chatActivity, "headerItem");
         if (headerItem == null) {
             return;
         }
-        if (!hasMenuItem(headerItem, MENU_ID_CHAT)) {
+        if (!hasMenuItem(headerItem, MENU_ID_CHAT) && !isChatMenuRecorded(headerItem, MENU_ID_CHAT)) {
             Context context = contextFromMenuItem(headerItem);
             int iconRes = resolveIcon(context);
-            Object subItem = addMenuSubItem(headerItem, MENU_ID_CHAT, iconRes, localizedChatMenuLabel(context));
+            Object subItem = addChatMenuSubItem(chatActivity, headerItem, MENU_ID_CHAT, iconRes, localizedChatMenuLabel(context));
             if (subItem instanceof View) {
                 View subItemView = (View) subItem;
                 subItemView.setTag(R.id.gramsieve_menu_item_id, MENU_ID_CHAT);
@@ -6178,12 +6184,12 @@ final class TelegramHookInstaller {
     }
 
     private void injectScrollToTopMenu(Object chatActivity, Object headerItem) {
-        if (hasMenuItem(headerItem, MENU_ID_SCROLL_TOP)) {
+        if (hasMenuItem(headerItem, MENU_ID_SCROLL_TOP) || isChatMenuRecorded(headerItem, MENU_ID_SCROLL_TOP)) {
             return;
         }
         Context context = contextFromMenuItem(headerItem);
         int iconRes = resolveScrollTopIcon(context);
-        Object subItem = addMenuSubItem(headerItem, MENU_ID_SCROLL_TOP, iconRes, localizedScrollTopLabel(context));
+        Object subItem = addChatMenuSubItem(chatActivity, headerItem, MENU_ID_SCROLL_TOP, iconRes, localizedScrollTopLabel(context));
         if (!(subItem instanceof View)) {
             info("Scroll-to-top addSubItem unavailable on " + headerItem.getClass().getName());
             return;
@@ -6202,12 +6208,12 @@ final class TelegramHookInstaller {
     }
 
     private void injectJumpToMarkMenu(Object chatActivity, Object headerItem) {
-        if (hasMenuItem(headerItem, MENU_ID_JUMP_TO_MARK)) {
+        if (hasMenuItem(headerItem, MENU_ID_JUMP_TO_MARK) || isChatMenuRecorded(headerItem, MENU_ID_JUMP_TO_MARK)) {
             return;
         }
         Context context = contextFromMenuItem(headerItem);
         int iconRes = resolveJumpToMarkIcon(context);
-        Object subItem = addMenuSubItem(headerItem, MENU_ID_JUMP_TO_MARK, iconRes, localizedJumpToMarkLabel(context));
+        Object subItem = addChatMenuSubItem(chatActivity, headerItem, MENU_ID_JUMP_TO_MARK, iconRes, localizedJumpToMarkLabel(context));
         if (!(subItem instanceof View)) {
             info("Jump-to-mark addSubItem unavailable on " + headerItem.getClass().getName());
             return;
@@ -6234,7 +6240,7 @@ final class TelegramHookInstaller {
             info("Anti-recall: backgroundMessageLoader is null after init");
             return;
         }
-        if (hasMenuItem(headerItem, MENU_ID_ANTI_RECALL)) {
+        if (hasMenuItem(headerItem, MENU_ID_ANTI_RECALL) || isChatMenuRecorded(headerItem, MENU_ID_ANTI_RECALL)) {
             return;
         }
         if (backgroundMessageLoader == null) {
@@ -6258,7 +6264,7 @@ final class TelegramHookInstaller {
         int iconRes = resolveAntiRecallIcon(context);
         CharSequence label = antiRecallStatusLabel(context, dialogId);
         info("Anti-recall: label=" + label);
-        Object subItem = addMenuSubItem(headerItem, MENU_ID_ANTI_RECALL, iconRes, label);
+        Object subItem = addChatMenuSubItem(chatActivity, headerItem, MENU_ID_ANTI_RECALL, iconRes, label);
         if (!(subItem instanceof View)) {
             info("Anti-recall addSubItem unavailable on " + headerItem.getClass().getName());
             return;
@@ -6303,19 +6309,23 @@ final class TelegramHookInstaller {
     }
 
     private void injectAddToFolderMenu(Object chatActivity, Object headerItem) {
-        if (hasMenuItem(headerItem, MENU_ID_ADD_TO_FOLDER)) {
+        if (hasMenuItem(headerItem, MENU_ID_ADD_TO_FOLDER) || isChatMenuRecorded(headerItem, MENU_ID_ADD_TO_FOLDER)) {
             return;
         }
         long dialogId = Reflect.asLong(Reflect.invokeIfExists(chatActivity, "getDialogId", new Class<?>[0]), 0L);
         if (dialogId == 0L) {
             return;
         }
-        if (!isBroadcastChannel(chatActivity, dialogId)) {
+        // Build #31: was broadcast-only, so groups never saw the
+        // item. Now any chat/channel dialog qualifies (broadcast
+        // channels, megagroups, basic groups); private 1:1 chats
+        // (positive dialogId, no currentChat) still do not.
+        if (!isGroupChat(chatActivity, dialogId)) {
             return;
         }
         Context context = contextFromMenuItem(headerItem);
         int iconRes = resolveAddToFolderIcon(context);
-        Object subItem = addMenuSubItem(headerItem, MENU_ID_ADD_TO_FOLDER, iconRes, localizedAddToFolderLabel(context));
+        Object subItem = addChatMenuSubItem(chatActivity, headerItem, MENU_ID_ADD_TO_FOLDER, iconRes, localizedAddToFolderLabel(context));
         if (!(subItem instanceof View)) {
             info("Add-to-folder addSubItem unavailable on " + headerItem.getClass().getName());
             return;
@@ -6332,14 +6342,11 @@ final class TelegramHookInstaller {
         });
     }
 
-    private boolean isBroadcastChannel(Object chatActivity, long dialogId) {
+    private boolean isGroupChat(Object chatActivity, long dialogId) {
         try {
             Object currentChat = Reflect.field(chatActivity, "currentChat");
             if (currentChat != null) {
-                Object broadcast = Reflect.field(currentChat, "broadcast");
-                if (broadcast instanceof Boolean) {
-                    return (Boolean) broadcast;
-                }
+                return true;
             }
             if (dialogId < 0) {
                 Object controller = messagesControllerForChat(chatActivity);
@@ -6349,10 +6356,7 @@ final class TelegramHookInstaller {
                         chat = Reflect.invokeIfExists(controller, "getChat", new Class<?>[]{long.class}, -dialogId);
                     }
                     if (chat != null) {
-                        Object broadcast = Reflect.field(chat, "broadcast");
-                        if (broadcast instanceof Boolean) {
-                            return (Boolean) broadcast;
-                        }
+                        return true;
                     }
                 }
             }
@@ -6648,7 +6652,7 @@ final class TelegramHookInstaller {
         if (recallDetector == null) {
             initAntiRecallFromChat(chatActivity);
         }
-        if (recallDetector == null || hasMenuItem(headerItem, MENU_ID_CLEANUP_MODE)) {
+        if (recallDetector == null || hasMenuItem(headerItem, MENU_ID_CLEANUP_MODE) || isChatMenuRecorded(headerItem, MENU_ID_CLEANUP_MODE)) {
             return;
         }
         Context context = contextFromMenuItem(headerItem);
@@ -6657,7 +6661,7 @@ final class TelegramHookInstaller {
             return;
         }
         int iconRes = resolveCleanupModeIcon(context);
-        Object subItem = addMenuSubItem(headerItem, MENU_ID_CLEANUP_MODE, iconRes,
+        Object subItem = addChatMenuSubItem(chatActivity, headerItem, MENU_ID_CLEANUP_MODE, iconRes,
                 cleanupModeStatusLabel(context, dialogId));
         if (!(subItem instanceof View)) {
             info("CleanupMode addSubItem unavailable on " + headerItem.getClass().getName());
@@ -7017,18 +7021,82 @@ final class TelegramHookInstaller {
         if (!(popupLayout instanceof ViewGroup)) {
             return false;
         }
-        ViewGroup group = (ViewGroup) popupLayout;
+        return hasMenuItemInGroup((ViewGroup) popupLayout, targetId);
+    }
+
+    private boolean hasMenuItemInGroup(ViewGroup group, int targetId) {
         for (int i = 0; i < group.getChildCount(); i++) {
-            Object keyedTag = group.getChildAt(i).getTag(R.id.gramsieve_menu_item_id);
+            View child = group.getChildAt(i);
+            if (child == null) {
+                continue;
+            }
+            Object keyedTag = child.getTag(R.id.gramsieve_menu_item_id);
             if (keyedTag instanceof Integer && ((Integer) keyedTag) == targetId) {
                 return true;
             }
-            Object tag = group.getChildAt(i).getTag();
+            Object tag = child.getTag();
             if (tag instanceof Integer && ((Integer) tag) == targetId) {
+                return true;
+            }
+            if (child instanceof ViewGroup && hasMenuItemInGroup((ViewGroup) child, targetId)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean isChatMenuRecorded(Object headerItem, int menuId) {
+        synchronized (injectedChatMenuIds) {
+            java.util.Set<Integer> ids = injectedChatMenuIds.get(headerItem);
+            return ids != null && ids.contains(menuId);
+        }
+    }
+
+    // Build #31: the duplicate-menu fix. hasMenuItem alone cannot
+    // dedup: at createView/onResume time the popup is closed, so
+    // getPopupLayout is empty or null and the check always returns
+    // false, while addSubItem appends to the header's internal list
+    // every time (createView + every onResume since #27). The menu
+    // then shows one copy per injection, exactly as in the 23:44
+    // screenshot. This helper records each id per headerItem and
+    // refuses a second add for the same header, so re-injection is
+    // a no-op; an item skipped earlier (chat not loaded yet) is not
+    // recorded and is still added on a later resume.
+    private Object addChatMenuSubItem(Object chatActivity, Object headerItem, int menuId,
+            int iconRes, CharSequence title) {
+        try {
+            synchronized (injectedChatMenuIds) {
+                java.util.Set<Integer> ids = injectedChatMenuIds.get(headerItem);
+                if (ids != null && ids.contains(menuId)) {
+                    return null;
+                }
+            }
+            if (hasMenuItem(headerItem, menuId)) {
+                synchronized (injectedChatMenuIds) {
+                    java.util.Set<Integer> ids = injectedChatMenuIds.get(headerItem);
+                    if (ids == null) {
+                        ids = new java.util.HashSet<>();
+                        injectedChatMenuIds.put(headerItem, ids);
+                    }
+                    ids.add(menuId);
+                }
+                return null;
+            }
+            Object subItem = addMenuSubItem(headerItem, menuId, iconRes, title);
+            if (subItem instanceof View) {
+                synchronized (injectedChatMenuIds) {
+                    java.util.Set<Integer> ids = injectedChatMenuIds.get(headerItem);
+                    if (ids == null) {
+                        ids = new java.util.HashSet<>();
+                        injectedChatMenuIds.put(headerItem, ids);
+                    }
+                    ids.add(menuId);
+                }
+            }
+            return subItem;
+        } catch (Throwable ignored) {
+            return addMenuSubItem(headerItem, menuId, iconRes, title);
+        }
     }
 
     private Object addMenuSubItem(Object menuItem, int menuId, int iconRes, CharSequence title) {
@@ -7788,13 +7856,16 @@ final class TelegramHookInstaller {
             FilterConfig config = currentEnhancementConfig();
             if (!config.autoArchiveFolderChats) {
                 lastFolderMembership = null;
+                info("FolderArchive: auto-archive off, tracking cleared");
                 return;
             }
             Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
             if (!(filtersObj instanceof List)) {
+                info("FolderArchive: no filter list, sync skipped");
                 return;
             }
             Map<Long, Set<Integer>> current = new HashMap<>();
+            int userFilterCount = 0;
             for (Object filter : (List<?>) filtersObj) {
                 // Build #25: ALL_CHATS is Telegram's built-in "All Chats"
                 // pseudo-filter, not a user folder. Treating it as a folder
@@ -7804,6 +7875,7 @@ final class TelegramHookInstaller {
                 if (filterName != null && "ALL_CHATS".equalsIgnoreCase(filterName.trim())) {
                     continue;
                 }
+                userFilterCount++;
                 int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
                 Object dialogs = Reflect.field(filter, "dialogs");
                 if (!(dialogs instanceof List)) {
@@ -7884,6 +7956,22 @@ final class TelegramHookInstaller {
                     }
                 }
             }
+            // Build #31: one scan line per sync, counts only, so the
+            // next log file shows whether the sync is stable or keeps
+            // re-archiving (the duplicate-archive-rows question) and
+            // how many folder chats it sees, without any dialog ids.
+            int archiveCount = 0;
+            int unarchiveCount = 0;
+            for (Boolean value : changes.values()) {
+                if (value) {
+                    archiveCount++;
+                } else {
+                    unarchiveCount++;
+                }
+            }
+            info("FolderArchive: scan mode=" + (previous == null ? "first" : "delta")
+                    + " folders=" + userFilterCount + " chatsInFolders=" + current.size()
+                    + " changes=" + changes.size() + " archive=" + archiveCount + " unarchive=" + unarchiveCount);
             lastFolderMembership = current;
             boolean changed = false;
             if (!changes.isEmpty() && applyArchiveChanges(controller, changes)) {
@@ -7976,7 +8064,11 @@ final class TelegramHookInstaller {
                         if ("run".equals(method.getName())) {
                             try {
                                 Object error = args != null && args.length > 1 ? args[1] : null;
+                                if (error != null) {
+                                    info("FolderArchive: server rejected archive request");
+                                }
                                 if (error == null) {
+                                    info("FolderArchive: server applied archive changes=" + finalChanges.size());
                                     for (Map.Entry<Long, Boolean> entry : finalChanges.entrySet()) {
                                         try {
                                             Object dialog = Reflect.invokeIfExists(finalController, "getDialog",
