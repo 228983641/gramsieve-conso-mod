@@ -119,6 +119,7 @@ final class HostConfigPanel {
     private EditText proxyPastedInput;
     private EditText proxyFolderInput;
     private TextView proxySummary;
+    private String lastProxyFolderDiag = "";
     private java.util.List<FilterConfig.ProxyEntry> proxyWorkingEntries;
     private EditText aiBaseUrlInput;
     private EditText aiModelInput;
@@ -568,6 +569,7 @@ final class HostConfigPanel {
                                 if (entry != null) proxyWorkingEntries.add(entry.deepCopy());
                             }
                         }
+                        lastProxyFolderDiag = result.folderDiag == null ? "" : result.folderDiag;
                         updateProxySummary();
                         String msg = result.error != null && !result.error.isEmpty() && result.fetched == 0
                                 ? t("刷新失败（来源不可用），已保留旧列表", "Refresh failed (source unavailable), old list kept")
@@ -592,8 +594,8 @@ final class HostConfigPanel {
 
     private void buildBackupCard(LinearLayout container) {
         LinearLayout card = addCard(container);
-        addTitle(card, t("规则备份", "Rules backup"));
-        addInfo(card, t("导出后把内容存到你自己的笔记或文件里，卸载重装后可以再导回来。备份只含规则（全局规则、保留规则、各聊天规则），不含开关、代理和大模型 key；导入时只合并规则，不会改动其他设置，已有的相同规则不会重复。", "Export the content to your own notes or a file, then import it back after a reinstall. The backup contains only rules (global rules, keep rules, per-chat rules), not switches, proxies or the LLM key; import only merges rules and never changes other settings, and existing identical rules are not duplicated."));
+        addTitle(card, t("数据备份", "Data backup"));
+        addInfo(card, t("“导出规则 / 导入规则”只管规则，导入时合并，不会改动其他设置，已有的相同规则不会重复。“导出完整备份 / 导入完整备份”管全部设置：开关、规则、分类、翻译、代理列表、大模型地址 / 模型 / Key、文件夹设置，一起备份和恢复；导入完整备份会替换当前全部设置，不是合并。完整备份里有你的大模型 Key 和代理信息，不要发给别人，只存到你自己的地方。", "Export / Import rules only handles rules, merged on import without changing other settings, and identical rules are not duplicated. Export / Import full backup covers ALL settings: switches, rules, classify, translate, proxy list, LLM base URL / model / key, folder settings, backed up and restored together; importing a full backup REPLACES all current settings, it does not merge. A full backup contains your LLM key and proxy info, do not send it to anyone, keep it in your own place."));
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
         Button exportButton = toolbarButton(t("导出规则", "Export rules"));
@@ -605,6 +607,22 @@ final class HostConfigPanel {
         buttonRow.addView(importButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(card, buttonRow, 4);
+        LinearLayout buttonRow2 = new LinearLayout(context);
+        buttonRow2.setOrientation(LinearLayout.HORIZONTAL);
+        Button exportFullButton = toolbarButton(t("导出完整备份", "Export full backup"));
+        exportFullButton.setOnClickListener(v -> showExportFullDialog());
+        buttonRow2.addView(exportFullButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button importFullButton = toolbarButton(t("导入完整备份", "Import full backup"));
+        importFullButton.setOnClickListener(v -> showImportFullDialog());
+        buttonRow2.addView(importFullButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button exportLogButton = toolbarButton(t("导出日志", "Export log"));
+        exportLogButton.setOnClickListener(v -> showExportLogDialog());
+        buttonRow2.addView(exportLogButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(card, buttonRow2, 4);
+        addInfo(card, t("导出日志会取最近的日志（最多约 2000 行），里面有代理文件夹扫描的诊断（例如文件夹里几个聊天、历史成功几个、消息几条），发给排查时用；日志里不含大模型 Key。", "Export log takes the recent log (up to about 2000 lines), including the proxy folder scan diagnosis (for example how many chats in the folder, how many histories succeeded, how many messages); it does not contain the LLM key."));
     }
 
     private String rulesExportJson() {
@@ -882,6 +900,282 @@ final class HostConfigPanel {
         }
     }
 
+    private void showCopyShareDialog(String titleText, String hintText, String content,
+            String clipLabel, String shareTitle) {
+        try {
+            android.app.Activity activity = activityFromContext(context);
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, t("无法打开导出界面", "Cannot open export dialog"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            LinearLayout dialogView = new LinearLayout(context);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            TextView title = new TextView(context);
+            title.setText(titleText);
+            title.setTextColor(primaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            dialogView.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView hint = new TextView(context);
+            hint.setText(hintText);
+            hint.setTextColor(secondaryTextColor);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            dialogView.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            EditText contentView = new EditText(context);
+            contentView.setText(content);
+            contentView.setTextColor(primaryTextColor);
+            contentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            contentView.setTextIsSelectable(true);
+            contentView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+            scroll.addView(contentView, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
+            dialogView.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                    .setView(dialogView)
+                    .create();
+            LinearLayout buttonRow = new LinearLayout(context);
+            buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button copyButton = toolbarButton(t("复制", "Copy"));
+            copyButton.setOnClickListener(v -> {
+                try {
+                    ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText(clipLabel, content));
+                        Toast.makeText(context, t("已复制，请粘贴到笔记或文件里保存", "Copied, paste it into notes or a file to keep it"), Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Throwable ignored) {}
+            });
+            buttonRow.addView(copyButton);
+            Button shareButton = toolbarButton(t("分享", "Share"));
+            shareButton.setOnClickListener(v -> {
+                try {
+                    Intent share = new Intent(Intent.ACTION_SEND);
+                    share.setType("text/plain");
+                    share.putExtra(Intent.EXTRA_TEXT, content);
+                    context.startActivity(Intent.createChooser(share, shareTitle));
+                } catch (Throwable ignored) {}
+            });
+            buttonRow.addView(shareButton);
+            Button closeButton = toolbarButton(t("关闭", "Close"));
+            closeButton.setOnClickListener(v -> dialog.dismiss());
+            buttonRow.addView(closeButton);
+            dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialog.show();
+            try {
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(cardColor));
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String fullExportJson() {
+        try {
+            FilterConfig source = baseConfig == null ? FilterConfig.createDefault() : baseConfig.deepCopy();
+            return "{\"fullBackup\":true,\"config\":" + ModuleConfigStore.toJson(source) + "}";
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private void showExportFullDialog() {
+        String json = fullExportJson();
+        if (json == null || json.isEmpty()) {
+            Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        showCopyShareDialog(
+                t("导出完整备份", "Export full backup"),
+                t("下面是全部设置的完整备份，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“分享”发给自己。注意：里面有你的大模型 Key 和代理信息，不要发给别人。", "Below is the full backup of all settings. Tap Copy, then paste it into your own notes or a file to keep it; or tap Share to send it to yourself. Note: it contains your LLM key and proxy info, do not send it to anyone."),
+                json, "GramSieve full backup", t("分享完整备份", "Share full backup"));
+    }
+
+    private static String extractFullConfigJson(String pasted) {
+        if (pasted == null || !pasted.contains("\"fullBackup\"")) {
+            return null;
+        }
+        int configIdx = pasted.indexOf("\"config\"");
+        if (configIdx < 0) {
+            return null;
+        }
+        int braceIdx = pasted.indexOf('{', configIdx);
+        if (braceIdx < 0) {
+            return null;
+        }
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = braceIdx; i < pasted.length(); i++) {
+            char c = pasted.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else {
+                if (c == '"') {
+                    inString = true;
+                } else if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        return pasted.substring(braceIdx, i + 1);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private void showImportFullDialog() {
+        try {
+            android.app.Activity activity = activityFromContext(context);
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, t("无法打开导入界面", "Cannot open import dialog"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            LinearLayout dialogView = new LinearLayout(context);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            TextView title = new TextView(context);
+            title.setText(t("导入完整备份", "Import full backup"));
+            title.setTextColor(primaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            dialogView.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView hint = new TextView(context);
+            hint.setText(t("粘贴之前导出的完整备份文本，点导入后会替换当前全部设置（开关、规则、分类、翻译、代理、大模型 Key），不是合并；导入后面板会关闭，如需继续编辑请重新打开设置。只认完整备份，规则备份请走“导入规则”。", "Paste a previously exported full backup, then tap Import to REPLACE all current settings (switches, rules, classify, translate, proxies, LLM key), not merge; the panel closes after import, reopen Settings to edit further. Only full backups are accepted here, use Import rules for a rules backup."));
+            hint.setTextColor(secondaryTextColor);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            dialogView.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            EditText input = new EditText(context);
+            input.setHint(t("粘贴完整备份文本", "Paste full backup text"));
+            input.setTextColor(primaryTextColor);
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+            scroll.addView(input, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
+            dialogView.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                    .setView(dialogView)
+                    .create();
+            LinearLayout buttonRow = new LinearLayout(context);
+            buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button importButton = toolbarButton(t("导入", "Import"));
+            importButton.setOnClickListener(v -> {
+                try {
+                    String pasted = valueOf(input);
+                    String configJson = extractFullConfigJson(pasted);
+                    if (configJson == null) {
+                        Toast.makeText(context, t("不是有效的完整备份（里面应该有 fullBackup 和 config）", "Not a valid full backup (it should contain fullBackup and config)"), Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    FilterConfig imported = ModuleConfigStore.fromJson(configJson);
+                    if (imported == null) {
+                        Toast.makeText(context, t("导入失败：无法解析", "Import failed: cannot parse"), Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    imported.updatedAtEpochMs = System.currentTimeMillis();
+                    saver.save(imported);
+                    if (afterSave != null) afterSave.run();
+                    dialog.dismiss();
+                    Toast.makeText(context, t("完整备份已恢复，全部设置已替换，面板已关闭", "Full backup restored, all settings replaced, panel closed"), Toast.LENGTH_LONG).show();
+                    close();
+                } catch (Throwable throwable) {
+                    Toast.makeText(context, t("导入失败：请检查粘贴的内容", "Import failed: check the pasted content"), Toast.LENGTH_SHORT).show();
+                }
+            });
+            buttonRow.addView(importButton);
+            Button cancelButton = toolbarButton(t("取消", "Cancel"));
+            cancelButton.setOnClickListener(v -> dialog.dismiss());
+            buttonRow.addView(cancelButton);
+            dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialog.show();
+            try {
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(cardColor));
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("导入失败", "Import failed"), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String readLogTail() {
+        try {
+            java.io.File externalDir = context.getExternalFilesDir(null);
+            java.io.File internalDir = context.getFilesDir();
+            java.util.List<java.io.File> candidates = new java.util.ArrayList<>();
+            if (externalDir != null) {
+                candidates.add(new java.io.File(new java.io.File(externalDir, "GramSieve"), "gramsieve.log"));
+            }
+            if (internalDir != null) {
+                candidates.add(new java.io.File(internalDir, "gramsieve.log"));
+            }
+            for (java.io.File file : candidates) {
+                if (file == null || !file.exists() || file.length() == 0) {
+                    continue;
+                }
+                java.util.ArrayDeque<String> tail = new java.util.ArrayDeque<>();
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file));
+                try {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        tail.addLast(line);
+                        while (tail.size() > 2000) {
+                            tail.removeFirst();
+                        }
+                    }
+                } finally {
+                    reader.close();
+                }
+                if (!tail.isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(t("日志文件：", "Log file: ")).append(file.getAbsolutePath()).append("\n");
+                    for (String line : tail) {
+                        sb.append(line).append("\n");
+                    }
+                    return sb.toString();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "";
+    }
+
+    private void showExportLogDialog() {
+        String log = readLogTail();
+        if (log == null || log.isEmpty()) {
+            Toast.makeText(context, t("没有找到日志文件：请先打开“详细调试日志”，复现一次问题后再导出", "No log file found: turn on Verbose debug logging, reproduce the problem, then export again"), Toast.LENGTH_LONG).show();
+            return;
+        }
+        showCopyShareDialog(
+                t("导出日志", "Export log"),
+                t("下面是最近的日志，点“复制”后发给排查用；也可以点“分享”发给自己。日志里不含大模型 Key。", "Below is the recent log, tap Copy to send it for diagnosis; or tap Share to send it to yourself. The log does not contain the LLM key."),
+                log, "GramSieve log", t("分享日志", "Share log"));
+    }
+
     private void applyProxyUiToConfig(FilterConfig config) {
         if (config == null) return;
         config.proxyAutoAdd = proxyAutoAddSwitch != null && proxyAutoAddSwitch.isChecked();
@@ -922,6 +1216,11 @@ final class HostConfigPanel {
         String text = total == 0
                 ? t("未保存代理：先填来源或粘贴链接，再点“立即刷新”。", "No proxies saved: fill a source or paste links, then tap Refresh now.")
                 : t("已保存 " + total + " 个代理，可用 " + available + " 个" + (fastest != null ? "，最快 " + fastest.display() + "（" + fastest.pingMs + " ms）" : ""), "Saved " + total + " proxies, " + available + " available" + (fastest != null ? ", fastest " + fastest.display() + " (" + fastest.pingMs + " ms)" : ""));
+        // Build #29: the folder-scan diag lives in the summary, not
+        // only in a toast that gets truncated.
+        if (lastProxyFolderDiag != null && !lastProxyFolderDiag.isEmpty()) {
+            text += "\n" + t("上次文件夹扫描：" + lastProxyFolderDiag, "Last folder scan: " + lastProxyFolderDiag);
+        }
         proxySummary.setText(text);
     }
 

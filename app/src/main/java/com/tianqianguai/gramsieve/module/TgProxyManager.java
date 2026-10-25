@@ -2,6 +2,7 @@ package com.tianqianguai.gramsieve.module;
 
 import android.content.Context;
 
+import com.tianqianguai.gramsieve.config.ModuleLogger;
 import com.tianqianguai.gramsieve.core.FilterConfig;
 
 import java.io.BufferedReader;
@@ -583,6 +584,13 @@ final class TgProxyManager {
                 List<FilterConfig.ProxyEntry> folderEntries = scanFolderChats(context, updated.proxyFolderName.trim());
                 result.folderFetched = folderEntries.size();
                 result.folderDiag = lastFolderScanDiag == null ? "" : lastFolderScanDiag;
+                // Build #29: persist the diag to the log file, so a
+                // truncated toast cannot hide it anymore.
+                try {
+                    ModuleLogger.hook("TgProxy", "folder scan: " + result.folderDiag
+                            + ", fetched=" + result.folderFetched);
+                } catch (Throwable ignored) {
+                }
                 fresh.addAll(folderEntries);
             } catch (Throwable ignored) {
             }
