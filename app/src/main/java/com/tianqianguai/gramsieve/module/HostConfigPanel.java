@@ -605,7 +605,7 @@ final class HostConfigPanel {
 
     private void showProxyManageDialog() {
         try {
-            android.app.Activity activity = findActivity();
+            android.app.Activity activity = activityFromContext(context);
             if (activity == null || activity.isFinishing()) {
                 Toast.makeText(context, t("无法打开管理界面", "Cannot open management dialog"), Toast.LENGTH_SHORT).show();
                 return;
