@@ -7262,6 +7262,26 @@ final class TelegramHookInstaller {
                         // switches must take effect without reopening the list.
                         try { refreshDialogsUi(host); } catch (Throwable ignored) {}
                         try { syncClassifyBarWithConfig(host); } catch (Throwable ignored) {}
+                        // Build #26: if the panel was opened from Conso
+                        // Settings, host is SettingsActivity, not the chat
+                        // list, so also sync to the last DialogsActivity
+                        // instance, and run the folder-archive sync now
+                        // (it otherwise only runs on list recreation or a
+                        // folder change, so enabling it from Settings
+                        // looked like it did nothing).
+                        try {
+                            Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
+                            if (dialogsHost != null && dialogsHost != host) {
+                                try { refreshDialogsUi(dialogsHost); } catch (Throwable ignored) {}
+                                try { syncClassifyBarWithConfig(dialogsHost); } catch (Throwable ignored) {}
+                            }
+                            if (dialogsHost != null) {
+                                Object dialogsController = messagesControllerForChat(dialogsHost);
+                                if (dialogsController != null) {
+                                    syncFolderArchive(dialogsController);
+                                }
+                            }
+                        } catch (Throwable ignored) {}
                     }
                 }
         );
@@ -7594,6 +7614,42 @@ final class TelegramHookInstaller {
             });
         } catch (Throwable t) {
             error("Dialog list: DialogsActivity.createView hook failed", t);
+        }
+        // Build #26: returning to the chat list via back button does NOT
+        // recreate its view, so createView never re-runs and a switch
+        // toggled in Settings never took effect on the existing list.
+        // Re-sync on resume, posted so tabs/list are ready.
+        try {
+            java.lang.reflect.Method onResume = Reflect.method(dialogsClass, "onResume");
+            hook(onResume, chain -> {
+                Object result = chain.proceed();
+                try {
+                    Object host = chain.getThisObject();
+                    lastDialogsActivityRef = new java.lang.ref.WeakReference<>(host);
+                    View fragmentView = resolveHostFragmentView(host);
+                    if (fragmentView != null) {
+                        fragmentView.post(() -> {
+                            try {
+                                if (currentEnhancementConfig().showClassifyBar) {
+                                    syncClassifyBarWithConfig(host);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                            try {
+                                Object dialogsController = messagesControllerForChat(host);
+                                if (dialogsController != null) {
+                                    syncFolderArchive(dialogsController);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        });
+                    }
+                } catch (Throwable ignored) {
+                }
+                return result;
+            });
+        } catch (Throwable t) {
+            error("Dialog list: DialogsActivity.onResume hook failed", t);
         }
     }
 
@@ -7958,6 +8014,17 @@ final class TelegramHookInstaller {
     private void syncClassifyBarWithConfig(Object host) {
         try {
             View rootView = resolveHostFragmentView(host);
+            // Build #26: the global panel can be opened from Conso
+            // Settings, whose host is NOT DialogsActivity, so resolving
+            // the host's fragment view fails and the bar is never
+            // installed on the real chat list. Fall back to the last
+            // DialogsActivity instance in that case.
+            if (!(rootView instanceof ViewGroup)) {
+                Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
+                if (dialogsHost != null && dialogsHost != host) {
+                    rootView = resolveHostFragmentView(dialogsHost);
+                }
+            }
             if (!(rootView instanceof ViewGroup)) {
                 return;
             }
