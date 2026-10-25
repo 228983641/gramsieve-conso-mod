@@ -293,7 +293,7 @@ final class HostConfigPanel {
         overlay.setClickable(true);
         overlay.setFocusable(true);
         overlay.setFocusableInTouchMode(true);
-        overlay.setBackgroundColor(backgroundColor);
+        overlay.setBackgroundColor(cardColor);
         overlay.setOnApplyWindowInsetsListener((view, insets) -> {
             android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
             view.setPadding(0, bars.top, 0, bars.bottom);
@@ -321,7 +321,7 @@ final class HostConfigPanel {
 
         LinearLayout screen = new LinearLayout(context);
         screen.setOrientation(LinearLayout.VERTICAL);
-        screen.setBackgroundColor(backgroundColor);
+        screen.setBackgroundColor(cardColor);
         overlay.addView(screen, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -334,12 +334,14 @@ final class HostConfigPanel {
 
         ScrollView scrollView = new ScrollView(context);
         scrollView.setFillViewport(false);
-        scrollView.setBackgroundColor(backgroundColor);
+        scrollView.setBackgroundColor(cardColor);
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setBackgroundColor(backgroundColor);
-        int padding = dp(16);
-        container.setPadding(padding, dp(12), padding, dp(24));
+        // Build #32: iOS grouped-list screen: the gray grouped
+        // background fills the screen, groups are full-width solid
+        // blocks, so the container has no horizontal padding.
+        container.setBackgroundColor(cardColor);
+        container.setPadding(0, dp(8), 0, dp(24));
         scrollView.addView(container, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -351,18 +353,27 @@ final class HostConfigPanel {
         ));
 
         buildGeneralCard(container);
+        styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         if (chatMode) {
             buildChatAntiRecallCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         } else {
             buildEnhancementCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildDialogListCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildAiCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildProxyCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildTranslateCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         }
         buildRulesCard(container);
+        styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         if (!chatMode) {
             buildBackupCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         } else {
             // Build #31: the backup card (and its log export) only
             // existed in the global panel, so a user opening settings
@@ -372,6 +383,7 @@ final class HostConfigPanel {
             // importing a full backup from a chat panel could replace
             // global settings from the wrong context.
             buildLogExportCard(container);
+            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         }
 
         root.addView(overlay, new ViewGroup.LayoutParams(
@@ -413,8 +425,7 @@ final class HostConfigPanel {
     }
 
     private void buildGeneralCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, chatMode ? t("当前聊天", "Current Chat") : t("全局配置", "Global Settings"));
+        LinearLayout card = addGroup(container, chatMode ? t("当前聊天", "Current Chat") : t("全局配置", "Global Settings"));
 
         FilterConfig.ChatRuleSet chatRuleSet = chatMode
                 ? baseConfig.getOrCreateChatRuleSet(dialogId).deepCopy().sanitize()
@@ -456,8 +467,7 @@ final class HostConfigPanel {
     }
 
     private void buildEnhancementCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("增强功能", "Enhancements"));
+        LinearLayout card = addGroup(container, t("增强功能", "Enhancements"));
         addInfo(card, t("从 NoAdsTelegram / TeleVip 移植的功能，按分类开关，默认全部关闭，开启后保存即生效（部分需重新打开聊天列表）。", "Features ported from NoAdsTelegram / TeleVip, grouped by category. All off by default; saving applies them (some need the chat list reopened)."));
 
         addSectionLabel(card, t("广告", "Ads"));
@@ -490,8 +500,7 @@ final class HostConfigPanel {
     }
 
     private void buildDialogListCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("聊天列表", "Chat List"));
+        LinearLayout card = addGroup(container, t("聊天列表", "Chat List"));
         addInfo(card, t("只影响聊天列表的外观与筛选，不改动聊天内容与置顶本身。分类栏点“全部”即恢复全部聊天；关闭分类栏后，筛选即失效，重新打开聊天列表后生效。", "Only affects the chat list appearance and filtering, not chat content or pinning itself. Tapping All in the classify bar restores all chats; turning the bar off disables filtering after reopening the chat list."));
         pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
@@ -504,8 +513,7 @@ final class HostConfigPanel {
     }
 
     private void buildAiCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("智能分析（AI）", "Smart Analysis (AI)"));
+        LinearLayout card = addGroup(container, t("智能分析（AI）", "Smart Analysis (AI)"));
         addInfo(card, t("默认是本地规则分析：离线、免费、私密、即时，关键词、域名、IP、@、混淆网址、QQ、USDT 地址都能识别。开启大模型后，智能分析会变成可插拔后端：本地先出候选，大模型再补充建议，两者去重后一起让你确认；大模型失败时按下面开关回退本地。", "Default is local rule analysis: offline, free, private, instant, covering keywords, domains, IPs, @handles, obfuscated URLs, QQ and USDT addresses. With the LLM on, smart analysis becomes a pluggable backend: local candidates first, LLM suggestions added and deduplicated, all confirmed by you; on LLM failure it falls back to local if the switch below is on."));
         aiLlmSwitch = addSwitch(card, t("启用大模型智能分析（需自备 API Key）", "Enable LLM smart analysis (bring your own API key)"));
         aiLlmSwitch.setChecked(baseConfig.aiAnalysisMode == 1);
@@ -521,8 +529,7 @@ final class HostConfigPanel {
     }
 
     private void buildProxyCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("代理（TG 直链）", "Proxy (TG Links)"));
+        LinearLayout card = addGroup(container, t("代理（TG 直链）", "Proxy (TG Links)"));
         addInfo(card, t("自动抓取、测速、自动添加并切换到最快代理。来源不会硬编码某个第三方：填一个你信任的代理列表页地址（页面里含 t.me/proxy 链接即可），或在下面直接粘贴链接；模块按刷新间隔自动抓取，测速后把最快的设为当前代理。公开代理的运营者能看到你的 IP 和 Telegram 连接时间信息，但 MTProto 内容本身是加密的。", "Auto-fetch, test, auto-add and switch to the fastest proxy. No third-party source is hardcoded: fill a trusted proxy list page URL (containing t.me/proxy links) or paste links below; the module fetches on the refresh interval, tests, and sets the fastest as current. A proxy operator can see your IP and Telegram connection timing, but MTProto content stays encrypted."));
         boolean firstOpen = !baseConfig.proxyConfigured;
         proxyAutoAddSwitch = addSwitch(card, t("自动添加新代理", "Auto-add new proxies"));
@@ -602,8 +609,7 @@ final class HostConfigPanel {
     }
 
     private void buildLogExportCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("日志导出", "Export log"));
+        LinearLayout card = addGroup(container, t("日志导出", "Export log"));
         addInfo(card, t("导出最近的日志（最多约 2000 行），点“导出日志”后选“导出为文件”，会保存为下载目录 GramSieve 下的 .log 文件并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key，发给排查时用。", "Export the recent log (up to about 2000 lines). Tap Export log, then Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."));
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -615,8 +621,7 @@ final class HostConfigPanel {
     }
 
     private void buildBackupCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("数据备份", "Data backup"));
+        LinearLayout card = addGroup(container, t("数据备份", "Data backup"));
         addInfo(card, t("“导出规则 / 导入规则”只管规则，导入时合并，不会改动其他设置，已有的相同规则不会重复。“导出完整备份 / 导入完整备份”管全部设置：开关、规则、分类、翻译、代理列表、大模型地址 / 模型 / Key、文件夹设置，一起备份和恢复；导入完整备份会替换当前全部设置，不是合并。完整备份里有你的大模型 Key 和代理信息，不要发给别人，只存到你自己的地方。", "Export / Import rules only handles rules, merged on import without changing other settings, and identical rules are not duplicated. Export / Import full backup covers ALL settings: switches, rules, classify, translate, proxy list, LLM base URL / model / key, folder settings, backed up and restored together; importing a full backup REPLACES all current settings, it does not merge. A full backup contains your LLM key and proxy info, do not send it to anyone, keep it in your own place."));
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -692,7 +697,7 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
             TextView title = new TextView(context);
             title.setText(t("导出规则", "Export rules"));
             title.setTextColor(primaryTextColor);
@@ -749,10 +754,11 @@ final class HostConfigPanel {
             dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
+            DialogTheme.styleAlertDialog(dialog, context);
             try {
                 if (dialog.getWindow() != null) {
                     dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(cardColor));
+                            new android.graphics.drawable.ColorDrawable(backgroundColor));
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable throwable) {
@@ -775,7 +781,7 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
             TextView title = new TextView(context);
             title.setText(t("导入规则", "Import rules"));
             title.setTextColor(primaryTextColor);
@@ -911,10 +917,11 @@ final class HostConfigPanel {
             dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
+            DialogTheme.styleAlertDialog(dialog, context);
             try {
                 if (dialog.getWindow() != null) {
                     dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(cardColor));
+                            new android.graphics.drawable.ColorDrawable(backgroundColor));
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable throwable) {
@@ -938,7 +945,7 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
             TextView title = new TextView(context);
             title.setText(titleText);
             title.setTextColor(primaryTextColor);
@@ -1000,10 +1007,11 @@ final class HostConfigPanel {
             dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
+            DialogTheme.styleAlertDialog(dialog, context);
             try {
                 if (dialog.getWindow() != null) {
                     dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(cardColor));
+                            new android.graphics.drawable.ColorDrawable(backgroundColor));
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable throwable) {
@@ -1083,7 +1091,7 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
             TextView title = new TextView(context);
             title.setText(t("导入完整备份", "Import full backup"));
             title.setTextColor(primaryTextColor);
@@ -1143,10 +1151,11 @@ final class HostConfigPanel {
             dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
+            DialogTheme.styleAlertDialog(dialog, context);
             try {
                 if (dialog.getWindow() != null) {
                     dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(cardColor));
+                            new android.graphics.drawable.ColorDrawable(backgroundColor));
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable throwable) {
@@ -1332,7 +1341,7 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
             TextView title = new TextView(context);
             title.setText(t("选择代理文件夹", "Pick proxy folder"));
             title.setTextColor(primaryTextColor);
@@ -1373,10 +1382,11 @@ final class HostConfigPanel {
             dialogView.addView(cancelButton, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
+            DialogTheme.styleAlertDialog(dialog, context);
             try {
                 if (dialog.getWindow() != null) {
                     dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(cardColor));
+                            new android.graphics.drawable.ColorDrawable(backgroundColor));
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable throwable) {
@@ -1394,7 +1404,7 @@ final class HostConfigPanel {
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
             TextView title = new TextView(context);
             title.setText(t("管理代理", "Manage proxies"));
             title.setTextColor(primaryTextColor);
@@ -1499,10 +1509,11 @@ final class HostConfigPanel {
             dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
+            DialogTheme.styleAlertDialog(dialog, context);
             try {
                 if (dialog.getWindow() != null) {
                     dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(cardColor));
+                            new android.graphics.drawable.ColorDrawable(backgroundColor));
                 }
             } catch (Throwable ignored) {}
         } catch (Throwable throwable) {
@@ -1528,8 +1539,7 @@ final class HostConfigPanel {
     }
 
     private void buildTranslateCard(LinearLayout container) {
-        LinearLayout card = addCard(container);
-        addTitle(card, t("翻译", "Translation"));
+        LinearLayout card = addGroup(container, t("翻译", "Translation"));
         addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后，打开聊天时会自动把该聊天的翻译目标设为中文，并尝试开启整聊自动翻译；中文消息不受影响。", "Uses Conso's built-in translation service, no third-party translator. When on, opening a chat sets its translate target to Chinese and tries to enable whole-chat auto-translate; Chinese messages are unaffected."));
         autoTranslateSwitch = addSwitch(card, t("自动翻译外文为中文", "Auto-translate foreign messages to Chinese"));
         autoTranslateSwitch.setChecked(baseConfig.autoTranslateToChinese);
@@ -1540,8 +1550,7 @@ final class HostConfigPanel {
         if (antiRecallConfigStore == null || dialogId == 0L) {
             return;
         }
-        LinearLayout card = addCard(container);
-        addTitle(card, t("当前聊天主动加载", "Current Chat Proactive Loading"));
+        LinearLayout card = addGroup(container, t("当前聊天主动加载", "Current Chat Proactive Loading"));
         chatAntiRecallSwitch = addSwitch(card, t("为这个聊天启用主动加载/防撤回", "Enable proactive loading for this chat"));
         chatAntiRecallSwitch.setChecked(isChatAntiRecallEnabled());
         addInfo(card, t("保存后会立即同步到宿主里的后台加载器。", "Saving updates the host background loader immediately."));
@@ -1556,8 +1565,7 @@ final class HostConfigPanel {
         // Everything else (regex, and all other targets) lives in one
         // collapsible "高级规则" section, still created and still saved
         // when hidden, so existing rules are never lost by collapsing.
-        LinearLayout card = addCard(container);
-        addTitle(card, t("规则内容", "Rules"));
+        LinearLayout card = addGroup(container, t("规则内容", "Rules"));
         addInfo(card, chatMode
                 ? t("这里只影响当前聊天。关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
                 : t("关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
@@ -1803,6 +1811,50 @@ final class HostConfigPanel {
         return null;
     }
 
+    // Build #32: iOS-style grouped list. A "group" is a section
+    // header (small secondary text above the block) plus one
+    // full-width solid block (Telegram windowBackgroundWhite, so it
+    // follows light/dark mode) with thin inset dividers between
+    // rows. The old rounded-card addCard is kept only as a legacy
+    // helper; panel builders now use addGroup.
+    private LinearLayout addGroup(LinearLayout parent, String title) {
+        TextView header = new TextView(context);
+        header.setText(title);
+        header.setTextColor(secondaryTextColor);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        headerParams.leftMargin = dp(16);
+        headerParams.rightMargin = dp(16);
+        headerParams.topMargin = dp(20);
+        headerParams.bottomMargin = dp(6);
+        parent.addView(header, headerParams);
+        LinearLayout group = new LinearLayout(context);
+        group.setOrientation(LinearLayout.VERTICAL);
+        group.setBackgroundColor(backgroundColor);
+        parent.addView(group, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+        return group;
+    }
+
+    // Build #32: called by attach() right after each panel builder
+    // finishes a group. Gives every visible row uniform horizontal
+    // inset and vertical padding, then inserts a 1px divider (inset
+    // 16dp from the left, iOS style) between consecutive rows. A
+    // divider is never inserted after a label/section view, so a
+    // label stays attached to the input or row it describes, and
+    // hidden (GONE) views are ignored entirely.
+    // Build #32: delegates to DialogTheme, the one system shared
+    // with every dialog, so panel groups and dialog rows can no
+    // longer drift apart.
+    private void styleGroup(LinearLayout group) {
+        DialogTheme.styleGroupRows(group, DialogTheme.resolve(context), context);
+    }
+
     private LinearLayout addCard(LinearLayout parent) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -1831,6 +1883,7 @@ final class HostConfigPanel {
 
     private TextView addSectionLabel(LinearLayout parent, String text) {
         TextView label = new TextView(context);
+        label.setTag("gramsieve_section");
         label.setText(text);
         label.setTextColor(accentColor);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
@@ -1878,6 +1931,7 @@ final class HostConfigPanel {
     // EditText, so save()/collectMatrix() work unchanged.
     private EditText addKeywordEditorRow(LinearLayout parent, String label, String initialValue) {
         TextView title = new TextView(context);
+        title.setTag("gramsieve_row_label");
         title.setText(label);
         title.setTextColor(secondaryTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
@@ -1933,7 +1987,7 @@ final class HostConfigPanel {
         dialogView.setOrientation(LinearLayout.VERTICAL);
         dialogView.setPadding(dp(16), dp(16), dp(16), dp(12));
         try {
-            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            dialogView.setBackground(rounded(backgroundColor, dp(16), strokeColor));
         } catch (Throwable ignored) {}
         TextView title = new TextView(context);
         title.setText(t("编辑关键词", "Edit keywords"));
@@ -2040,6 +2094,7 @@ final class HostConfigPanel {
         buttonRow.addView(okButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         dialog.show();
+        DialogTheme.styleAlertDialog(dialog, context);
         // Window background fix (Build #18, from user screenshots): the
         // system AlertDialog window is light (white) while the panel is
         // dark, so white panel text on the white window was invisible and
@@ -2049,7 +2104,7 @@ final class HostConfigPanel {
         try {
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawable(
-                        new android.graphics.drawable.ColorDrawable(cardColor));
+                        new android.graphics.drawable.ColorDrawable(backgroundColor));
             }
         } catch (Throwable ignored) {}
     }
@@ -2085,6 +2140,7 @@ final class HostConfigPanel {
 
     private EditText addInput(LinearLayout parent, String label, String initialValue) {
         TextView title = new TextView(context);
+        title.setTag("gramsieve_row_label");
         title.setText(label);
         title.setTextColor(secondaryTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);

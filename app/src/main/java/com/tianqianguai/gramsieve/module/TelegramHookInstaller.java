@@ -4713,7 +4713,10 @@ final class TelegramHookInstaller {
             dialogView.setOrientation(LinearLayout.VERTICAL);
             dialogView.setBackgroundColor(smartBackgroundColor);
             int pad = dp(context, 16f);
-            dialogView.setPadding(pad, pad, pad, 0);
+            // Build #32: rows carry the inset themselves (see
+            // styleGroupRows below), so the container has no side
+            // padding of its own.
+            dialogView.setPadding(0, pad, 0, 0);
             TextView summaryView = new TextView(activity);
             summaryView.setText(summary);
             summaryView.setTextColor(smartPrimaryColor);
@@ -4787,6 +4790,7 @@ final class TelegramHookInstaller {
             dialogView.addView(actionRow);
             for (java.util.Map.Entry<String, List<Integer>> entry : groups.entrySet()) {
                 TextView sectionLabel = new TextView(activity);
+                sectionLabel.setTag("gramsieve_section");
                 sectionLabel.setText(entry.getKey());
                 sectionLabel.setTextColor(accent);
                 sectionLabel.setTextSize(13f);
@@ -4830,6 +4834,7 @@ final class TelegramHookInstaller {
             // method body referenced snapshot, which is out of scope here
             // after the LLM refactor split the dialog out).
             TextView targetLabel = new TextView(activity);
+            targetLabel.setTag("gramsieve_section");
             targetLabel.setText("添加到");
             targetLabel.setTextColor(accent);
             targetLabel.setTextSize(13f);
@@ -4866,6 +4871,10 @@ final class TelegramHookInstaller {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             footerParams.topMargin = dp(context, 12f);
             dialogView.addView(footer, footerParams);
+            // Build #32: smart dialog rows use the same grouped
+            // system as the settings panel: uniform row padding and
+            // inset dividers between rows, labels attached to their rows.
+            DialogTheme.styleGroupRows(dialogView, DialogTheme.resolve(activity), activity);
             ScrollView scrollView = new ScrollView(activity);
             scrollView.setBackgroundColor(smartBackgroundColor);
             scrollView.addView(dialogView);
@@ -6426,9 +6435,8 @@ final class TelegramHookInstaller {
             // readable too, unlike a one-time post-show recolour. Window
             // background, title and cancel button colours are set after
             // show(), when those views exist.
-            int folderCardColor = dialogBackgroundColor(activity);
-            int folderPrimaryColor = ensureDialogTextColor(dialogPrimaryColor(activity), folderCardColor);
-            int folderAccentColor = dialogAccentColor(activity);
+            int folderPrimaryColor = ensureDialogTextColor(
+                    dialogPrimaryColor(activity), dialogBackgroundColor(activity));
             android.widget.ArrayAdapter<String> folderAdapter =
                     new android.widget.ArrayAdapter<String>(activity, android.R.layout.simple_list_item_1, items) {
                         @Override
@@ -6490,22 +6498,9 @@ final class TelegramHookInstaller {
                     .setNegativeButton(localizedCancel(context), null)
                     .create();
             folderDialog.show();
-            try {
-                if (folderDialog.getWindow() != null) {
-                    folderDialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(folderCardColor));
-                }
-                View titleView = folderDialog.findViewById(android.R.id.title);
-                if (titleView instanceof TextView) {
-                    ((TextView) titleView).setTextColor(folderPrimaryColor);
-                }
-                android.widget.Button cancelButton =
-                        folderDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-                if (cancelButton != null) {
-                    cancelButton.setTextColor(folderAccentColor);
-                }
-            } catch (Throwable ignored) {
-            }
+            // Build #32: same system styling as every other dialog;
+            // the adapter above still sets each row's text colour.
+            styleSystemDialog(folderDialog, activity);
         } catch (Throwable throwable) {
             error("Add-to-folder dialog failed", throwable);
             Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
@@ -7287,38 +7282,19 @@ final class TelegramHookInstaller {
         return dialogLuminance(background) > 0.5f ? 0xFF000000 : 0xFFFFFFFF;
     }
 
+    // Build #32: delegates to DialogTheme, the one system for all
+    // dialogs, so this method can no longer drift from the panel's
+    // dialogs. The log line stays, so existing log greps keep working.
     private void styleSystemDialog(AlertDialog dialog, Context context) {
         try {
             if (dialog == null) {
                 return;
             }
-            int card = dialogBackgroundColor(context);
-            int primary = ensureDialogTextColor(dialogPrimaryColor(context), card);
-            int accent = dialogAccentColor(context);
-            info("Dialog theme: bg=#" + String.format("%08X", card)
-                    + " primary=#" + String.format("%08X", primary)
-                    + " accent=#" + String.format("%08X", accent));
-            if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(
-                        new android.graphics.drawable.ColorDrawable(card));
-            }
-            View titleView = dialog.findViewById(android.R.id.title);
-            if (titleView instanceof TextView) {
-                ((TextView) titleView).setTextColor(primary);
-            }
-            View messageView = dialog.findViewById(android.R.id.message);
-            if (messageView instanceof TextView) {
-                ((TextView) messageView).setTextColor(primary);
-            }
-            for (int which : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL}) {
-                try {
-                    android.widget.Button button = dialog.getButton(which);
-                    if (button != null) {
-                        button.setTextColor(accent);
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
+            DialogTheme.Colors colors = DialogTheme.resolve(context);
+            info("Dialog theme: bg=#" + String.format("%08X", colors.background)
+                    + " primary=#" + String.format("%08X", colors.primary)
+                    + " accent=#" + String.format("%08X", colors.accent));
+            DialogTheme.styleAlertDialog(dialog, colors);
         } catch (Throwable throwable) {
             error("Dialog theme: styleSystemDialog failed", throwable);
         }
