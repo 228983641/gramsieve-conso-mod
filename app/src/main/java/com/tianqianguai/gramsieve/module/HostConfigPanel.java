@@ -902,6 +902,11 @@ final class HostConfigPanel {
 
     private void showCopyShareDialog(String titleText, String hintText, String content,
             String clipLabel, String shareTitle) {
+        showCopyShareDialogInternal(titleText, hintText, content, clipLabel, shareTitle, null, null);
+    }
+
+    private void showCopyShareDialogInternal(String titleText, String hintText, String content,
+            String clipLabel, String shareTitle, String fileName, String fileContent) {
         try {
             android.app.Activity activity = activityFromContext(context);
             if (activity == null || activity.isFinishing()) {
@@ -962,6 +967,11 @@ final class HostConfigPanel {
                 } catch (Throwable ignored) {}
             });
             buttonRow.addView(shareButton);
+            if (fileContent != null && !fileContent.isEmpty()) {
+                Button fileButton = toolbarButton(t("导出为文件", "Export as file"));
+                fileButton.setOnClickListener(v -> exportLogToFile(fileContent, fileName));
+                buttonRow.addView(fileButton);
+            }
             Button closeButton = toolbarButton(t("关闭", "Close"));
             closeButton.setOnClickListener(v -> dialog.dismiss());
             buttonRow.addView(closeButton);
@@ -1164,16 +1174,56 @@ final class HostConfigPanel {
         return "";
     }
 
+    private void exportLogToFile(String content, String fileName) {
+        // Build #30: log as a real file, not pasted text. MediaStore
+        // Downloads needs no storage permission on minSdk 33, and the
+        // file survives after Conso is closed, unlike a pasted chat
+        // message. The panel runs in the host process, so no module
+        // FileProvider is available; the MediaStore Uri is shared
+        // with FLAG_GRANT_READ_URI_PERMISSION instead.
+        try {
+            String name = (fileName == null || fileName.isEmpty()) ? "gramsieve-log.log" : fileName;
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+            values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/GramSieve");
+            android.net.Uri uri = context.getContentResolver().insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) {
+                throw new IllegalStateException("MediaStore insert returned null");
+            }
+            java.io.OutputStream out = context.getContentResolver().openOutputStream(uri);
+            if (out == null) {
+                throw new IllegalStateException("MediaStore openOutputStream returned null");
+            }
+            try {
+                out.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } finally {
+                out.close();
+            }
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("text/plain");
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            context.startActivity(Intent.createChooser(share, t("分享日志文件", "Share log file")));
+            Toast.makeText(context, t("日志文件已保存到下载目录 GramSieve", "Log file saved to Download/GramSieve"), Toast.LENGTH_LONG).show();
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("导出文件失败，请用复制或分享文字方式", "File export failed, use Copy or Share text instead"), Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void showExportLogDialog() {
         String log = readLogTail();
         if (log == null || log.isEmpty()) {
             Toast.makeText(context, t("没有找到日志文件：请先打开“详细调试日志”，复现一次问题后再导出", "No log file found: turn on Verbose debug logging, reproduce the problem, then export again"), Toast.LENGTH_LONG).show();
             return;
         }
-        showCopyShareDialog(
+        String fileName = "gramsieve-log-" + new java.text.SimpleDateFormat(
+                "yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".log";
+        showCopyShareDialogInternal(
                 t("导出日志", "Export log"),
-                t("下面是最近的日志，点“复制”后发给排查用；也可以点“分享”发给自己。日志里不含大模型 Key。", "Below is the recent log, tap Copy to send it for diagnosis; or tap Share to send it to yourself. The log does not contain the LLM key."),
-                log, "GramSieve log", t("分享日志", "Share log"));
+                t("下面是最近的日志，点“导出为文件”会保存为下载目录 GramSieve 下的 .log 文件并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."),
+                log, "GramSieve log", t("分享日志", "Share log"), fileName, log);
     }
 
     private void applyProxyUiToConfig(FilterConfig config) {

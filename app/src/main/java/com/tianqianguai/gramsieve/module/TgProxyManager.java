@@ -332,10 +332,14 @@ final class TgProxyManager {
                 return out;
             }
             List<Long> dialogIds = null;
+            Object matchedFilter = null;
+            Object matchedDialogsRaw = null;
             for (Object filter : (List<?>) filtersObj) {
                 String name = Reflect.asString(Reflect.field(filter, "name"));
                 if (name != null && name.trim().equals(folderName.trim())) {
-                    Object dialogs = Reflect.field(filter, "dialogs");
+                    matchedFilter = filter;
+                    matchedDialogsRaw = Reflect.field(filter, "dialogs");
+                    Object dialogs = matchedDialogsRaw;
                     if (dialogs instanceof List) {
                         dialogIds = new ArrayList<>();
                         for (Object idObj : (List<?>) dialogs) {
@@ -346,6 +350,57 @@ final class TgProxyManager {
                         }
                     }
                     break;
+                }
+            }
+            // Build #30: when the folder is found but yields no chats,
+            // dump field shapes only (counts and types, never dialog
+            // ids or other user data). The 23:01 log proved the 节点
+            // filter was found by name yet its dialogs list read as
+            // empty, while the UI tab shows chats, so the raw list
+            // size vs the converted size and the element type are
+            // exactly the facts needed to find where Conso really
+            // exposes folder chats.
+            if (matchedFilter != null && (dialogIds == null || dialogIds.isEmpty())) {
+                try {
+                    StringBuilder dump = new StringBuilder();
+                    dump.append("folder scan fields: account=").append(selectedAccount);
+                    dump.append(" target=").append(folderName.trim());
+                    dump.append(" rawDialogs=").append(matchedDialogsRaw instanceof List
+                            ? String.valueOf(((List<?>) matchedDialogsRaw).size())
+                            : (matchedDialogsRaw == null ? "null" : matchedDialogsRaw.getClass().getSimpleName()));
+                    dump.append(" converted=").append(dialogIds == null ? "null" : String.valueOf(dialogIds.size()));
+                    dump.append(" filters=[");
+                    for (Object f : (List<?>) filtersObj) {
+                        String n = Reflect.asString(Reflect.field(f, "name"));
+                        Object d = Reflect.field(f, "dialogs");
+                        dump.append(n == null ? "?" : n.trim()).append(":dialogs=")
+                                .append(d instanceof List ? String.valueOf(((List<?>) d).size())
+                                        : (d == null ? "null" : d.getClass().getSimpleName())).append(";");
+                    }
+                    dump.append("] matchedFields=[");
+                    for (java.lang.reflect.Field field : matchedFilter.getClass().getDeclaredFields()) {
+                        try {
+                            field.setAccessible(true);
+                            Object value = field.get(matchedFilter);
+                            dump.append(field.getName()).append(":");
+                            if (value instanceof List) {
+                                List<?> list = (List<?>) value;
+                                dump.append("List(size=").append(list.size());
+                                if (!list.isEmpty() && list.get(0) != null) {
+                                    dump.append(",first=").append(list.get(0).getClass().getSimpleName());
+                                }
+                                dump.append(")");
+                            } else {
+                                dump.append(value == null ? "null" : value.getClass().getSimpleName());
+                            }
+                            dump.append(";");
+                        } catch (Throwable ignored) {
+                            dump.append(field.getName()).append(":?;");
+                        }
+                    }
+                    dump.append("]");
+                    ModuleLogger.hook("TgProxy", dump.toString());
+                } catch (Throwable ignored) {
                 }
             }
             if (dialogIds == null) {

@@ -4701,12 +4701,19 @@ final class TelegramHookInstaller {
             } else {
                 summary = "Analysed keywords: " + (keywordTerms.isEmpty() ? "none" : String.join(", ", keywordTerms));
             }
+            // Build #30: background and text from the same Telegram
+            // theme pair, contrast-guarded, and painted onto the
+            // custom content itself (the ScrollView/dialogView), not
+            // just the window, which is what the old code missed and
+            // why the 23:03 screenshot showed blank checkboxes.
+            int smartBackgroundColor = dialogBackgroundColor(activity);
+            int smartPrimaryColor = ensureDialogTextColor(dialogPrimaryColor(activity), smartBackgroundColor);
+            int smartSecondaryColor = ensureDialogTextColor(dialogSecondaryColor(activity), smartBackgroundColor);
             LinearLayout dialogView = new LinearLayout(activity);
             dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setBackgroundColor(smartBackgroundColor);
             int pad = dp(context, 16f);
             dialogView.setPadding(pad, pad, pad, 0);
-            int smartPrimaryColor = panelThemeColor(activity, android.R.attr.textColorPrimary, 0xFFFFFFFF);
-            int smartSecondaryColor = panelThemeColor(activity, android.R.attr.textColorSecondary, 0xFFAAAAAA);
             TextView summaryView = new TextView(activity);
             summaryView.setText(summary);
             summaryView.setTextColor(smartPrimaryColor);
@@ -4836,12 +4843,14 @@ final class TelegramHookInstaller {
             targetGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
             android.widget.RadioButton globalRadio = new android.widget.RadioButton(activity);
             globalRadio.setText("全局规则（所有聊天）");
+            globalRadio.setTextColor(smartPrimaryColor);
             globalRadio.setTextSize(15f);
             globalRadio.setChecked(true);
             targetGroup.addView(globalRadio, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             android.widget.RadioButton chatRadio = new android.widget.RadioButton(activity);
             chatRadio.setText(smartDialogId == 0L ? "当前聊天规则（仅本聊天，无法识别当前聊天）" : "当前聊天规则（仅本聊天）");
+            chatRadio.setTextColor(smartPrimaryColor);
             chatRadio.setTextSize(15f);
             chatRadio.setChecked(false);
             chatRadio.setEnabled(smartDialogId != 0L);
@@ -4858,6 +4867,7 @@ final class TelegramHookInstaller {
             footerParams.topMargin = dp(context, 12f);
             dialogView.addView(footer, footerParams);
             ScrollView scrollView = new ScrollView(activity);
+            scrollView.setBackgroundColor(smartBackgroundColor);
             scrollView.addView(dialogView);
             AlertDialog smartDialog = new AlertDialog.Builder(activity)
                     .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
@@ -6412,9 +6422,9 @@ final class TelegramHookInstaller {
             // readable too, unlike a one-time post-show recolour. Window
             // background, title and cancel button colours are set after
             // show(), when those views exist.
-            int folderCardColor = panelThemeColor(activity, android.R.attr.colorBackground, 0xFF121212);
-            int folderPrimaryColor = panelThemeColor(activity, android.R.attr.textColorPrimary, 0xFFFFFFFF);
-            int folderAccentColor = panelThemeColor(activity, android.R.attr.colorAccent, 0xFF2AABEE);
+            int folderCardColor = dialogBackgroundColor(activity);
+            int folderPrimaryColor = ensureDialogTextColor(dialogPrimaryColor(activity), folderCardColor);
+            int folderAccentColor = dialogAccentColor(activity);
             android.widget.ArrayAdapter<String> folderAdapter =
                     new android.widget.ArrayAdapter<String>(activity, android.R.layout.simple_list_item_1, items) {
                         @Override
@@ -7143,14 +7153,83 @@ final class TelegramHookInstaller {
     // dialog with black text (the complaint from 2026-10-25). It forces
     // the window to the host theme background and recolours title,
     // message and buttons to the host theme text/accent colours.
+    // Build #30 unified dialog theme: the repeated white-on-white
+    // bug came from two different theme sources. Installer dialogs
+    // took text from the Android theme attrs (white in a dark host)
+    // while the system AlertDialog kept a white content background,
+    // and styleSystemDialog only recoloured the window, not the
+    // content, swallowing every failure. From now on every installer
+    // dialog resolves background AND text from the SAME source,
+    // Telegram's own Theme keys (the same keys HostConfigPanel
+    // already uses, so panel and dialogs can no longer disagree),
+    // and any text colour that still fails 4.5:1 against its
+    // background is flipped to black or white, whichever reads.
+    // Resolved colours are logged (hex only) instead of swallowed,
+    // so the next log file shows what the dialog actually used.
+    private int telegramThemeColor(Context context, String keyFieldName, int fallback) {
+        try {
+            Class<?> themeClass = Class.forName("org.telegram.ui.ActionBar.Theme", false, context.getClassLoader());
+            java.lang.reflect.Field keyField = themeClass.getDeclaredField(keyFieldName);
+            keyField.setAccessible(true);
+            java.lang.reflect.Method getColor = themeClass.getDeclaredMethod("getColor", int.class);
+            getColor.setAccessible(true);
+            Object color = getColor.invoke(null, keyField.getInt(null));
+            return color instanceof Integer ? (Integer) color : fallback;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private int dialogBackgroundColor(Context context) {
+        return telegramThemeColor(context, "key_windowBackgroundWhite",
+                panelThemeColor(context, android.R.attr.colorBackground, 0xFF121212));
+    }
+
+    private int dialogPrimaryColor(Context context) {
+        return telegramThemeColor(context, "key_windowBackgroundWhiteBlackText",
+                panelThemeColor(context, android.R.attr.textColorPrimary, 0xFFFFFFFF));
+    }
+
+    private int dialogSecondaryColor(Context context) {
+        return telegramThemeColor(context, "key_windowBackgroundWhiteGrayText2",
+                panelThemeColor(context, android.R.attr.textColorSecondary, 0xFFAAAAAA));
+    }
+
+    private int dialogAccentColor(Context context) {
+        return telegramThemeColor(context, "key_dialogButton",
+                panelThemeColor(context, android.R.attr.colorAccent, 0xFF2AABEE));
+    }
+
+    private static float dialogLuminance(int color) {
+        float r = android.graphics.Color.red(color) / 255f;
+        float g = android.graphics.Color.green(color) / 255f;
+        float b = android.graphics.Color.blue(color) / 255f;
+        r = r <= 0.03928f ? r / 12.92f : (float) Math.pow((r + 0.055f) / 1.055f, 2.4);
+        g = g <= 0.03928f ? g / 12.92f : (float) Math.pow((g + 0.055f) / 1.055f, 2.4);
+        b = b <= 0.03928f ? b / 12.92f : (float) Math.pow((b + 0.055f) / 1.055f, 2.4);
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    }
+
+    private static int ensureDialogTextColor(int foreground, int background) {
+        float light = Math.max(dialogLuminance(foreground), dialogLuminance(background));
+        float dark = Math.min(dialogLuminance(foreground), dialogLuminance(background));
+        if ((light + 0.05f) / (dark + 0.05f) >= 4.5f) {
+            return foreground;
+        }
+        return dialogLuminance(background) > 0.5f ? 0xFF000000 : 0xFFFFFFFF;
+    }
+
     private void styleSystemDialog(AlertDialog dialog, Context context) {
         try {
             if (dialog == null) {
                 return;
             }
-            int card = panelThemeColor(context, android.R.attr.colorBackground, 0xFF121212);
-            int primary = panelThemeColor(context, android.R.attr.textColorPrimary, 0xFFFFFFFF);
-            int accent = panelThemeColor(context, android.R.attr.colorAccent, 0xFF2AABEE);
+            int card = dialogBackgroundColor(context);
+            int primary = ensureDialogTextColor(dialogPrimaryColor(context), card);
+            int accent = dialogAccentColor(context);
+            info("Dialog theme: bg=#" + String.format("%08X", card)
+                    + " primary=#" + String.format("%08X", primary)
+                    + " accent=#" + String.format("%08X", accent));
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawable(
                         new android.graphics.drawable.ColorDrawable(card));
@@ -7172,7 +7251,8 @@ final class TelegramHookInstaller {
                 } catch (Throwable ignored) {
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            error("Dialog theme: styleSystemDialog failed", throwable);
         }
     }
 
@@ -8039,6 +8119,12 @@ final class TelegramHookInstaller {
                 }
             }
             if (!(rootView instanceof ViewGroup)) {
+                // Build #30: log instead of silently returning, so the
+                // next exported log file shows exactly why the bar is
+                // missing (no root view is the prime suspect after
+                // #26/#27/#28 all ran without a bar appearing).
+                info("ClassifyBar: no root view, host=" + (host == null ? "null" : host.getClass().getSimpleName())
+                        + " show=" + currentEnhancementConfig().showClassifyBar);
                 return;
             }
             ViewGroup root = (ViewGroup) rootView;
@@ -8047,14 +8133,19 @@ final class TelegramHookInstaller {
                 if (existing != null && existing.getParent() instanceof ViewGroup) {
                     ((ViewGroup) existing.getParent()).removeView(existing);
                 }
+                info("ClassifyBar: show=off, removedExisting=" + (existing != null));
                 return;
             }
             if (existing != null) {
                 updateClassifyBarButtons((ViewGroup) existing);
+                info("ClassifyBar: existing bar, buttons refreshed");
                 return;
             }
+            info("ClassifyBar: installing, host=" + (host == null ? "null" : host.getClass().getSimpleName())
+                    + " root=" + root.getClass().getSimpleName());
             installClassifyBar(host, rootView);
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            error("ClassifyBar: sync failed", throwable);
         }
     }
 
@@ -8077,6 +8168,7 @@ final class TelegramHookInstaller {
     private void installClassifyBar(Object host, View root) {
         try {
             if (!(root instanceof ViewGroup)) {
+                info("ClassifyBar: install aborted, root not a ViewGroup");
                 return;
             }
             View tabsView = findFilterTabsView((ViewGroup) root);
@@ -8085,14 +8177,17 @@ final class TelegramHookInstaller {
             if (tabsView != null && tabsView.getParent() instanceof ViewGroup) {
                 parent = (ViewGroup) tabsView.getParent();
                 insertIndex = parent.indexOfChild(tabsView) + 1;
+                info("ClassifyBar: tabs found, parent=" + parent.getClass().getSimpleName());
             } else {
                 // Fallback: insert above the first dialog list view found.
                 View listView = findFirstRecyclerListView((ViewGroup) root);
                 if (listView == null || !(listView.getParent() instanceof ViewGroup)) {
+                    info("ClassifyBar: install aborted, tabs=null and no list view found");
                     return;
                 }
                 parent = (ViewGroup) listView.getParent();
                 insertIndex = parent.indexOfChild(listView);
+                info("ClassifyBar: tabs not found, falling back to list view, parent=" + parent.getClass().getSimpleName());
             }
             // Idempotent: do not install twice in the same parent.
             for (int i = 0; i < parent.getChildCount(); i++) {
@@ -8152,6 +8247,7 @@ final class TelegramHookInstaller {
                 parent.addView(bar, insertIndex, new ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
+            info("ClassifyBar: installed, parent=" + parent.getClass().getSimpleName() + " index=" + insertIndex);
         } catch (Throwable t) {
             error("Dialog list: install classify bar failed", t);
         }
