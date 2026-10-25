@@ -25,7 +25,14 @@ public final class RuleTextCodec {
         if (raw == null || raw.isBlank()) {
             return rules;
         }
-        String[] lines = raw.split("\\R");
+        // Keywords are symbol-separated (2026-10-25 UI change): split on
+        // 、 ， , ; ； and newlines, so both the new "、"-joined editor
+        // and old one-per-line text still parse. Regex patterns keep
+        // line splitting, because a regex may legitimately contain a
+        // comma or semicolon.
+        String[] lines = mode == FilterConfig.RuleMode.KEYWORD
+                ? raw.split("[\\n\\r、，,;；]+")
+                : raw.split("\\R");
         for (String line : lines) {
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.startsWith("#")) {
@@ -83,7 +90,7 @@ public final class RuleTextCodec {
                 }
             }
             if (builder.length() > 0) {
-                builder.append('\n');
+                builder.append(requiredMode == FilterConfig.RuleMode.KEYWORD ? '、' : '\n');
             }
             if (requiredTarget == null && rule.target != null && rule.target != FilterConfig.RuleTarget.ANY) {
                 builder.append(rule.target.prefix());

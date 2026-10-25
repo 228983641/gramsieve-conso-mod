@@ -2,6 +2,7 @@ package com.tianqianguai.gramsieve.module;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.res.ColorStateList;
@@ -474,8 +475,8 @@ final class HostConfigPanel {
         LinearLayout card = addCard(container);
         addTitle(card, t("规则内容", "Rules"));
         addInfo(card, chatMode
-                ? t("这里只影响当前聊天。每行一条。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. One rule per line. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
-                : t("每行一条。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "One rule per line. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
+                ? t("这里只影响当前聊天。关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
+                : t("关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
 
         FilterConfig.ChatRuleSet chatRuleSet = chatMode
                 ? baseConfig.getOrCreateChatRuleSet(dialogId).deepCopy().sanitize()
@@ -493,8 +494,8 @@ final class HostConfigPanel {
                 // Visible by default: only the two keyword boxes.
                 addSectionLabel(card, t("消息文字", "Message text"));
                 addInfo(card, t("只检查消息正文，绝大多数规则填这里就够了。", "Only checks message text; most rules belong here."));
-                inputs.matchKeywords = addInput(card, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-                inputs.keepKeywords = addInput(card, t("保留关键词（白名单）", "Keep keywords (allowlist)"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.matchKeywords = addKeywordEditorRow(card, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.keepKeywords = addKeywordEditorRow(card, t("保留关键词（白名单）", "Keep keywords (allowlist)"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
                 // Regex for text goes to Advanced, same RuleInputs object.
                 addSectionLabel(advancedContainer, t("消息文字 · 正则", "Message text · Regex"));
                 inputs.matchRegex = addInput(advancedContainer, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
@@ -503,9 +504,9 @@ final class HostConfigPanel {
                 addDivider(advancedContainer);
                 addSectionLabel(advancedContainer, targetLabel(target));
                 addInfo(advancedContainer, targetScope(target));
-                inputs.matchKeywords = addInput(advancedContainer, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.matchKeywords = addKeywordEditorRow(advancedContainer, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
                 inputs.matchRegex = addInput(advancedContainer, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
-                inputs.keepKeywords = addInput(advancedContainer, t("保留关键词", "Keep keywords"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.keepKeywords = addKeywordEditorRow(advancedContainer, t("保留关键词", "Keep keywords"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
                 inputs.keepRegex = addInput(advancedContainer, t("保留正则", "Keep regex"), exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX));
             }
             ruleInputs.put(target, inputs);
@@ -738,6 +739,124 @@ final class HostConfigPanel {
         } catch (Throwable ignored) {}
         addView(parent, toggle, 6);
         return toggle;
+    }
+
+    // Keyword editor row (2026-10-25 UI change): keywords are NOT shown
+    // directly in the rules card. The row shows only a count ("已设置 N 个
+    // 关键词") plus an Edit button; tapping it opens a dialog with a
+    // symbol-separated EditText. The actual value lives in a hidden
+    // EditText, so save()/collectMatrix() work unchanged.
+    private EditText addKeywordEditorRow(LinearLayout parent, String label, String initialValue) {
+        TextView title = new TextView(context);
+        title.setText(label);
+        title.setTextColor(secondaryTextColor);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        addView(parent, title, 2);
+
+        EditText hidden = new EditText(context);
+        hidden.setText(initialValue == null ? "" : initialValue);
+        hidden.setVisibility(View.GONE);
+        addView(parent, hidden, 0);
+
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        try {
+            row.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        } catch (Throwable ignored) {}
+        TextView summary = new TextView(context);
+        summary.setTextColor(primaryTextColor);
+        summary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        updateKeywordSummary(summary, valueOf(hidden));
+        row.addView(summary, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button editButton = new Button(context);
+        editButton.setAllCaps(false);
+        editButton.setText(t("编辑", "Edit"));
+        editButton.setTextColor(accentColor);
+        editButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        editButton.setMinHeight(0);
+        editButton.setMinimumHeight(0);
+        editButton.setPadding(dp(8), dp(4), dp(8), dp(4));
+        editButton.setBackgroundColor(Color.TRANSPARENT);
+        editButton.setOnClickListener(v -> showKeywordEditorDialog(hidden, summary));
+        row.addView(editButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // Tapping anywhere on the row opens the editor, not just the button.
+        row.setOnClickListener(v -> showKeywordEditorDialog(hidden, summary));
+        addView(parent, row, 8);
+        return hidden;
+    }
+
+    private void showKeywordEditorDialog(EditText hidden, TextView summary) {
+        LinearLayout dialogView = new LinearLayout(context);
+        dialogView.setOrientation(LinearLayout.VERTICAL);
+        dialogView.setPadding(dp(16), dp(8), dp(16), dp(8));
+        TextView hint = new TextView(context);
+        hint.setText(t("用“、”分隔多个关键词，例如：百家乐、彩票、USDT。换行、中文逗号、英文逗号、分号也会被当成分隔符。关键词本身不要含这些分隔符。", "Separate keywords with 、, e.g. 百家乐、彩票、USDT. Newlines, Chinese/English commas and semicolons also work as separators. Do not use these separators inside a keyword."));
+        hint.setTextColor(secondaryTextColor);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        try { hint.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
+        dialogView.addView(hint, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        EditText input = new EditText(context);
+        input.setText(valueOf(hidden));
+        input.setTextColor(primaryTextColor);
+        input.setHintTextColor(secondaryTextColor);
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try {
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        } catch (Throwable ignored) {}
+        input.setMinLines(3);
+        input.setMaxLines(6);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setHorizontallyScrolling(false);
+        input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        inputParams.topMargin = dp(8);
+        dialogView.addView(input, inputParams);
+        new AlertDialog.Builder(context)
+                .setTitle(t("编辑关键词", "Edit keywords"))
+                .setView(dialogView)
+                .setPositiveButton(t("确定", "OK"), (dialog, which) -> {
+                    hidden.setText(valueOf(input));
+                    updateKeywordSummary(summary, valueOf(hidden));
+                })
+                .setNeutralButton(t("清空", "Clear"), (dialog, which) -> {
+                    hidden.setText("");
+                    updateKeywordSummary(summary, "");
+                })
+                .setNegativeButton(t("取消", "Cancel"), null)
+                .show();
+    }
+
+    private static void updateKeywordSummary(TextView summary, String raw) {
+        int count = countKeywords(raw);
+        if (count == 0) {
+            summary.setText("未设置，点击编辑添加");
+        } else {
+            summary.setText("已设置 " + count + " 个关键词，点击编辑修改");
+        }
+    }
+
+    private static int countKeywords(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        String[] parts = raw.split("[\n\r、，,;；]+");
+        int count = 0;
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private EditText addInput(LinearLayout parent, String label, String initialValue) {

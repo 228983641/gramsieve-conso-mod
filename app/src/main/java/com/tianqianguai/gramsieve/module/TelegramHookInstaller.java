@@ -4583,6 +4583,12 @@ final class TelegramHookInstaller {
             // analysis summary at the top, in a custom view, followed by
             // the same multi-choice list, so the analysed keywords are
             // always visible before confirming.
+            // 2026-10-25 UI optimisation: group by category, use the
+            // same visual language as the settings panel (13sp bold
+            // accent section labels, 15sp item text, accent checkboxes),
+            // instead of the system multiple-choice list which looked
+            // nothing like the rest of the module. Summary stays on top
+            // so the analysed keywords are always visible before confirm.
             String summary;
             if (isChineseLocale(context)) {
                 StringBuilder sb = new StringBuilder();
@@ -4591,7 +4597,6 @@ final class TelegramHookInstaller {
                 if (!otherTerms.isEmpty()) {
                     sb.append("\n其他标识：").append(String.join("、", otherTerms));
                 }
-                sb.append("\n已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入全局规则，对所有聊天生效。");
                 summary = sb.toString();
             } else {
                 summary = "Analysed keywords: " + (keywordTerms.isEmpty() ? "none" : String.join(", ", keywordTerms));
@@ -4603,23 +4608,115 @@ final class TelegramHookInstaller {
             TextView summaryView = new TextView(activity);
             summaryView.setText(summary);
             summaryView.setTextSize(14f);
+            try { summaryView.setLineSpacing(dp(context, 2f), 1.15f); } catch (Throwable ignored) {}
             dialogView.addView(summaryView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            ListView listView = new ListView(activity);
-            listView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-            listView.setAdapter(new ArrayAdapter<>(activity,
-                    android.R.layout.simple_list_item_multiple_choice, labels));
+            // Group candidate indexes by category, in a fixed order, so
+            // the list reads as sections instead of one flat checkbox list.
+            java.util.Map<String, List<Integer>> groups = new java.util.LinkedHashMap<>();
             for (int i = 0; i < candidates.size(); i++) {
-                listView.setItemChecked(i, checked[i]);
+                String category = labels[i].contains("：")
+                        ? labels[i].substring(0, labels[i].indexOf("："))
+                        : "关键词";
+                groups.computeIfAbsent(category, k -> new ArrayList<>()).add(i);
             }
-            // Fixed height (ListView inside a ScrollView does not expand
-            // with WRAP_CONTENT); 48dp per row, capped so the dialog stays
-            // usable with many candidates.
-            int listHeight = dp(context, 48f * Math.min(candidates.size(), 7) + 8f);
-            LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, listHeight);
-            listParams.topMargin = dp(context, 12f);
-            dialogView.addView(listView, listParams);
+            List<android.widget.CheckBox> checkBoxes = new ArrayList<>();
+            for (int i = 0; i < candidates.size(); i++) {
+                checkBoxes.add(null);
+            }
+            int accent = 0xFF3390EC;
+            try {
+                Class<?> themeClass = Class.forName("org.telegram.ui.ActionBar.Theme", false, activity.getClassLoader());
+                java.lang.reflect.Field keyField = themeClass.getDeclaredField("key_dialogButton");
+                keyField.setAccessible(true);
+                java.lang.reflect.Method getColor = themeClass.getDeclaredMethod("getColor", int.class);
+                getColor.setAccessible(true);
+                Object color = getColor.invoke(null, keyField.getInt(null));
+                if (color instanceof Integer) {
+                    accent = (Integer) color;
+                }
+            } catch (Throwable ignored) {}
+            // Quick actions: select all / strong-only, same accent text
+            // style as the settings panel's toolbar buttons.
+            LinearLayout actionRow = new LinearLayout(activity);
+            actionRow.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            actionParams.topMargin = dp(context, 12f);
+            actionRow.setLayoutParams(actionParams);
+            android.widget.Button selectAll = new android.widget.Button(activity);
+            selectAll.setAllCaps(false);
+            selectAll.setText("全选");
+            selectAll.setTextColor(accent);
+            selectAll.setTextSize(14f);
+            selectAll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            selectAll.setOnClickListener(v -> {
+                for (android.widget.CheckBox box : checkBoxes) {
+                    if (box != null) {
+                        box.setChecked(true);
+                    }
+                }
+            });
+            actionRow.addView(selectAll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            android.widget.Button strongOnly = new android.widget.Button(activity);
+            strongOnly.setAllCaps(false);
+            strongOnly.setText("仅强信号");
+            strongOnly.setTextColor(accent);
+            strongOnly.setTextSize(14f);
+            strongOnly.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            strongOnly.setOnClickListener(v -> {
+                for (int i = 0; i < candidates.size(); i++) {
+                    if (checkBoxes.get(i) != null) {
+                        checkBoxes.get(i).setChecked(checked[i]);
+                    }
+                }
+            });
+            actionRow.addView(strongOnly, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialogView.addView(actionRow);
+            for (java.util.Map.Entry<String, List<Integer>> entry : groups.entrySet()) {
+                TextView sectionLabel = new TextView(activity);
+                sectionLabel.setText(entry.getKey());
+                sectionLabel.setTextColor(accent);
+                sectionLabel.setTextSize(13f);
+                sectionLabel.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+                LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                labelParams.topMargin = dp(context, 12f);
+                labelParams.bottomMargin = dp(context, 4f);
+                dialogView.addView(sectionLabel, labelParams);
+                for (int idx : entry.getValue()) {
+                    LinearLayout row = new LinearLayout(activity);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                    android.widget.CheckBox box = new android.widget.CheckBox(activity);
+                    box.setChecked(checked[idx]);
+                    try {
+                        int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
+                        int[] colors = new int[]{accent, 0xFF8A8A8A};
+                        box.setButtonTintList(new android.content.res.ColorStateList(states, colors));
+                    } catch (Throwable ignored) {}
+                    checkBoxes.set(idx, box);
+                    row.addView(box, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    TextView itemText = new TextView(activity);
+                    itemText.setText(candidates.get(idx).pattern);
+                    itemText.setTextSize(15f);
+                    row.addView(itemText, new LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                    row.setOnClickListener(v -> box.setChecked(!box.isChecked()));
+                    dialogView.addView(row, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+            }
+            TextView footer = new TextView(activity);
+            footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入全局规则，对所有聊天生效。");
+            footer.setTextSize(13f);
+            LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            footerParams.topMargin = dp(context, 12f);
+            dialogView.addView(footer, footerParams);
             ScrollView scrollView = new ScrollView(activity);
             scrollView.addView(dialogView);
             new AlertDialog.Builder(activity)
@@ -4630,7 +4727,7 @@ final class TelegramHookInstaller {
                             (dialog, which) -> {
                                 List<FilterConfig.RuleSpec> selected = new ArrayList<>();
                                 for (int i = 0; i < candidates.size(); i++) {
-                                    if (listView.isItemChecked(i)) {
+                                    if (checkBoxes.get(i) != null && checkBoxes.get(i).isChecked()) {
                                         selected.add(candidates.get(i));
                                     }
                                 }
