@@ -43,6 +43,22 @@ public final class FilterConfig {
     public String aiApiModel = "gpt-4o-mini";
     public String aiApiKey = "";
     public boolean aiFallbackToLocal = true;
+    // TG proxy auto-management (Build #20, user chose auto-add + auto-switch
+    // to fastest on 2026-10-25). Defaults are OFF in code so an upgrade never
+    // changes network routing by surprise; the user turns the switches on in
+    // Settings, or the panel's first-open defaults (see HostConfigPanel) do.
+    // proxyExpiryHours is the user-custom time: an entry whose last
+    // successful test is older than this is "expired" and can be
+    // select-all-deleted in the management dialog.
+    public boolean proxyAutoAdd = false;
+    public boolean proxyAutoSwitch = false;
+    public int proxyRefreshHours = 6;
+    public int proxyExpiryHours = 24;
+    public String proxySourceUrl = "";
+    public String proxyPastedLinks = "";
+    public long proxyLastRefreshMs = 0L;
+    public boolean proxyConfigured = false;
+    public List<ProxyEntry> proxyEntries = new ArrayList<>();
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -96,6 +112,29 @@ public final class FilterConfig {
             sanitizedChats.put(entry.getKey(), chatRuleSet);
         }
         chatRules = sanitizedChats;
+        if (proxyRefreshHours < 1) proxyRefreshHours = 1;
+        if (proxyRefreshHours > 72) proxyRefreshHours = 72;
+        if (proxyExpiryHours < 1) proxyExpiryHours = 1;
+        if (proxyExpiryHours > 168) proxyExpiryHours = 168;
+        if (proxySourceUrl == null) proxySourceUrl = "";
+        if (proxyPastedLinks == null) proxyPastedLinks = "";
+        if (proxyEntries == null) {
+            proxyEntries = new ArrayList<>();
+        } else {
+            List<ProxyEntry> cleaned = new ArrayList<>();
+            for (ProxyEntry entry : proxyEntries) {
+                if (entry == null || entry.address == null || entry.address.isBlank()
+                        || entry.port < 1 || entry.port > 65535 || entry.secret == null || entry.secret.isBlank()) {
+                    continue;
+                }
+                entry.address = entry.address.trim();
+                entry.secret = entry.secret.trim();
+                if (entry.username == null) entry.username = "";
+                if (entry.password == null) entry.password = "";
+                cleaned.add(entry);
+            }
+            proxyEntries = cleaned;
+        }
         if (updatedAtEpochMs <= 0L) {
             updatedAtEpochMs = System.currentTimeMillis();
         }
@@ -125,6 +164,20 @@ public final class FilterConfig {
         copy.aiApiModel = aiApiModel;
         copy.aiApiKey = aiApiKey;
         copy.aiFallbackToLocal = aiFallbackToLocal;
+        copy.proxyAutoAdd = proxyAutoAdd;
+        copy.proxyAutoSwitch = proxyAutoSwitch;
+        copy.proxyRefreshHours = proxyRefreshHours;
+        copy.proxyExpiryHours = proxyExpiryHours;
+        copy.proxySourceUrl = proxySourceUrl;
+        copy.proxyPastedLinks = proxyPastedLinks;
+        copy.proxyLastRefreshMs = proxyLastRefreshMs;
+        copy.proxyConfigured = proxyConfigured;
+        copy.proxyEntries = new ArrayList<>();
+        if (proxyEntries != null) {
+            for (ProxyEntry entry : proxyEntries) {
+                if (entry != null) copy.proxyEntries.add(entry.deepCopy());
+            }
+        }
         copy.updatedAtEpochMs = updatedAtEpochMs;
         for (RuleSpec rule : globalRules) {
             copy.globalRules.add(rule.deepCopy());
@@ -269,6 +322,41 @@ public final class FilterConfig {
 
         public boolean isSemanticallyEmpty() {
             return enabled && !excludeFromGlobal && rules.isEmpty() && exclusions.isEmpty();
+        }
+    }
+    public static final class ProxyEntry {
+        public String address = "";
+        public int port = 0;
+        public String username = "";
+        public String password = "";
+        public String secret = "";
+        public long pingMs = -1L;
+        public long lastTestedMs = 0L;
+        public long addedMs = 0L;
+        public boolean available = false;
+        public String source = "";
+
+        public ProxyEntry deepCopy() {
+            ProxyEntry copy = new ProxyEntry();
+            copy.address = address;
+            copy.port = port;
+            copy.username = username;
+            copy.password = password;
+            copy.secret = secret;
+            copy.pingMs = pingMs;
+            copy.lastTestedMs = lastTestedMs;
+            copy.addedMs = addedMs;
+            copy.available = available;
+            copy.source = source;
+            return copy;
+        }
+
+        public String key() {
+            return (address == null ? "" : address.toLowerCase(java.util.Locale.ROOT)) + ":" + port + ":" + (secret == null ? "" : secret);
+        }
+
+        public String display() {
+            return (address == null ? "" : address) + ":" + port;
         }
     }
 }

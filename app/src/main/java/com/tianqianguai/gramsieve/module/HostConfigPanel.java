@@ -67,7 +67,7 @@ final class HostConfigPanel {
 
     private final Context context;
     private final ViewGroup root;
-    private final FilterConfig baseConfig;
+    private FilterConfig baseConfig;
     private final boolean chatMode;
     private final long dialogId;
     private final String chatTitle;
@@ -106,6 +106,14 @@ final class HostConfigPanel {
     private Switch classifyBarSwitch;
     private Switch aiLlmSwitch;
     private Switch aiFallbackSwitch;
+    private Switch proxyAutoAddSwitch;
+    private Switch proxyAutoSwitchSwitch;
+    private EditText proxySourceInput;
+    private EditText proxyRefreshInput;
+    private EditText proxyExpiryInput;
+    private EditText proxyPastedInput;
+    private TextView proxySummary;
+    private java.util.List<FilterConfig.ProxyEntry> proxyWorkingEntries;
     private EditText aiBaseUrlInput;
     private EditText aiModelInput;
     private EditText aiKeyInput;
@@ -342,6 +350,7 @@ final class HostConfigPanel {
             buildEnhancementCard(container);
             buildDialogListCard(container);
             buildAiCard(container);
+            buildProxyCard(container);
             buildTranslateCard(container);
         }
         buildRulesCard(container);
@@ -489,6 +498,225 @@ final class HostConfigPanel {
         aiFallbackSwitch.setChecked(baseConfig.aiFallbackToLocal);
     }
 
+    private void buildProxyCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("代理（TG 直链）", "Proxy (TG Links)"));
+        addInfo(card, t("自动抓取、测速、自动添加并切换到最快代理。来源不会硬编码某个第三方：填一个你信任的代理列表页地址（页面里含 t.me/proxy 链接即可），或在下面直接粘贴链接；模块按刷新间隔自动抓取，测速后把最快的设为当前代理。公开代理的运营者能看到你的 IP 和 Telegram 连接时间信息，但 MTProto 内容本身是加密的。", "Auto-fetch, test, auto-add and switch to the fastest proxy. No third-party source is hardcoded: fill a trusted proxy list page URL (containing t.me/proxy links) or paste links below; the module fetches on the refresh interval, tests, and sets the fastest as current. A proxy operator can see your IP and Telegram connection timing, but MTProto content stays encrypted."));
+        boolean firstOpen = !baseConfig.proxyConfigured;
+        proxyAutoAddSwitch = addSwitch(card, t("自动添加新代理", "Auto-add new proxies"));
+        proxyAutoAddSwitch.setChecked(firstOpen || baseConfig.proxyAutoAdd);
+        proxyAutoSwitchSwitch = addSwitch(card, t("自动切换到最快代理", "Auto-switch to the fastest proxy"));
+        proxyAutoSwitchSwitch.setChecked(firstOpen || baseConfig.proxyAutoSwitch);
+        proxySourceInput = addInput(card, t("代理来源地址（可空，页面需含 t.me/proxy 链接）", "Proxy source URL (optional, page must contain t.me/proxy links)"), baseConfig.proxySourceUrl == null ? "" : baseConfig.proxySourceUrl);
+        proxyRefreshInput = addInput(card, t("刷新间隔（小时，默认 6）", "Refresh interval (hours, default 6)"), Integer.toString(firstOpen ? 6 : baseConfig.proxyRefreshHours));
+        proxyExpiryInput = addInput(card, t("失效时间（小时，默认 24：超过此时间未测通即为失效）", "Expiry time (hours, default 24: untested longer than this counts as expired)"), Integer.toString(firstOpen ? 24 : baseConfig.proxyExpiryHours));
+        proxyPastedInput = addInput(card, t("直接粘贴代理链接（每行一个 t.me/proxy 或 tg://proxy 链接）", "Paste proxy links directly (one t.me/proxy or tg://proxy link per line)"), baseConfig.proxyPastedLinks == null ? "" : baseConfig.proxyPastedLinks);
+        proxyWorkingEntries = new java.util.ArrayList<>();
+        if (baseConfig.proxyEntries != null) {
+            for (FilterConfig.ProxyEntry entry : baseConfig.proxyEntries) {
+                if (entry != null) proxyWorkingEntries.add(entry.deepCopy());
+            }
+        }
+        proxySummary = new TextView(context);
+        proxySummary.setTextColor(secondaryTextColor);
+        proxySummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        addView(card, proxySummary, 8);
+        updateProxySummary();
+        LinearLayout buttonRow = new LinearLayout(context);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button refreshButton = toolbarButton(t("立即刷新", "Refresh now"));
+        refreshButton.setOnClickListener(v -> {
+            refreshButton.setEnabled(false);
+            refreshButton.setText(t("刷新中…", "Refreshing…"));
+            FilterConfig temp = baseConfig.deepCopy().sanitize();
+            applyProxyUiToConfig(temp);
+            new Thread(() -> {
+                TgProxyManager.Result result = TgProxyManager.refresh(context, temp);
+                root.post(() -> {
+                    try {
+                        FilterConfig saved = result.updated == null ? temp : result.updated;
+                        saver.save(saved);
+                        proxyWorkingEntries = new java.util.ArrayList<>();
+                        if (saved.proxyEntries != null) {
+                            for (FilterConfig.ProxyEntry entry : saved.proxyEntries) {
+                                if (entry != null) proxyWorkingEntries.add(entry.deepCopy());
+                            }
+                        }
+                        updateProxySummary();
+                        String msg = result.error != null && !result.error.isEmpty() && result.fetched == 0
+                                ? t("刷新失败（来源不可用），已保留旧列表", "Refresh failed (source unavailable), old list kept")
+                                : t("刷新完成：抓到 " + result.fetched + " 个，测通 " + result.availableCount + " 个" + (result.switched && result.fastest != null ? "，已切到最快 " + result.fastest.display() + "（" + result.fastest.pingMs + " ms）" : ""), "Refresh done: fetched " + result.fetched + ", available " + result.availableCount + (result.switched && result.fastest != null ? ", switched to fastest " + result.fastest.display() + " (" + result.fastest.pingMs + " ms)" : ""));
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show();
+                    } catch (Throwable ignored) {
+                    } finally {
+                        refreshButton.setEnabled(true);
+                        refreshButton.setText(t("立即刷新", "Refresh now"));
+                    }
+                });
+            }).start();
+        });
+        buttonRow.addView(refreshButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button manageButton = toolbarButton(t("管理代理", "Manage proxies"));
+        manageButton.setOnClickListener(v -> showProxyManageDialog());
+        buttonRow.addView(manageButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(card, buttonRow, 4);
+    }
+
+    private void applyProxyUiToConfig(FilterConfig config) {
+        if (config == null) return;
+        config.proxyAutoAdd = proxyAutoAddSwitch != null && proxyAutoAddSwitch.isChecked();
+        config.proxyAutoSwitch = proxyAutoSwitchSwitch != null && proxyAutoSwitchSwitch.isChecked();
+        config.proxyRefreshHours = proxyInt(proxyRefreshInput, 6);
+        config.proxyExpiryHours = proxyInt(proxyExpiryInput, 24);
+        if (proxySourceInput != null) config.proxySourceUrl = valueOf(proxySourceInput).trim();
+        if (proxyPastedInput != null) config.proxyPastedLinks = valueOf(proxyPastedInput);
+        config.proxyConfigured = true;
+    }
+
+    private int proxyInt(EditText input, int fallback) {
+        try {
+            int value = Integer.parseInt(valueOf(input).trim());
+            return value > 0 ? value : fallback;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private void updateProxySummary() {
+        if (proxySummary == null) return;
+        int total = proxyWorkingEntries == null ? 0 : proxyWorkingEntries.size();
+        int available = 0;
+        FilterConfig.ProxyEntry fastest = null;
+        if (proxyWorkingEntries != null) {
+            for (FilterConfig.ProxyEntry entry : proxyWorkingEntries) {
+                if (entry != null && entry.available && entry.pingMs >= 0) {
+                    available++;
+                    if (fastest == null || entry.pingMs < fastest.pingMs) fastest = entry;
+                }
+            }
+        }
+        String text = total == 0
+                ? t("未保存代理：先填来源或粘贴链接，再点“立即刷新”。", "No proxies saved: fill a source or paste links, then tap Refresh now.")
+                : t("已保存 " + total + " 个代理，可用 " + available + " 个" + (fastest != null ? "，最快 " + fastest.display() + "（" + fastest.pingMs + " ms）" : ""), "Saved " + total + " proxies, " + available + " available" + (fastest != null ? ", fastest " + fastest.display() + " (" + fastest.pingMs + " ms)" : ""));
+        proxySummary.setText(text);
+    }
+
+    private void showProxyManageDialog() {
+        try {
+            android.app.Activity activity = findActivity();
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, t("无法打开管理界面", "Cannot open management dialog"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            LinearLayout dialogView = new LinearLayout(context);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setBackground(rounded(cardColor, dp(16), strokeColor));
+            TextView title = new TextView(context);
+            title.setText(t("管理代理", "Manage proxies"));
+            title.setTextColor(primaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            dialogView.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView hint = new TextView(context);
+            hint.setText(t("勾选后点“删除所选”；“删除失效”会删掉所有过期或测不通的代理（过期按上面自定义的失效时间算）。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick and tap Delete selected; Delete expired removes all expired or unreachable proxies (expired per the custom expiry time above). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+            hint.setTextColor(secondaryTextColor);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            dialogView.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            java.util.List<android.widget.CheckBox> boxes = new java.util.ArrayList<>();
+            java.util.List<FilterConfig.ProxyEntry> entries = proxyWorkingEntries == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(proxyWorkingEntries);
+            if (entries.isEmpty()) {
+                TextView empty = new TextView(context);
+                empty.setText(t("暂无代理", "No proxies"));
+                empty.setTextColor(primaryTextColor);
+                empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+                dialogView.addView(empty);
+            }
+            FilterConfig refConfig = baseConfig.deepCopy().sanitize();
+            applyProxyUiToConfig(refConfig);
+            for (FilterConfig.ProxyEntry entry : entries) {
+                android.widget.CheckBox box = new android.widget.CheckBox(context);
+                boolean expired = TgProxyManager.isExpired(entry, refConfig);
+                box.setText(entry.display() + "（" + (entry.available && !expired ? entry.pingMs + " ms" : t("失效", "expired")) + "）");
+                box.setTextColor(primaryTextColor);
+                box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+                box.setTag(entry);
+                boxes.add(box);
+                dialogView.addView(box, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                    .setView(dialogView)
+                    .create();
+            LinearLayout buttonRow = new LinearLayout(context);
+            buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button selectAll = toolbarButton(t("全选", "Select all"));
+            selectAll.setOnClickListener(v -> { for (android.widget.CheckBox b : boxes) b.setChecked(true); });
+            buttonRow.addView(selectAll);
+            Button deleteSelected = toolbarButton(t("删除所选", "Delete selected"));
+            deleteSelected.setOnClickListener(v -> {
+                java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
+                int deleted = 0;
+                for (int i = 0; i < entries.size(); i++) {
+                    if (boxes.get(i).isChecked()) deleted++;
+                    else remaining.add(entries.get(i));
+                }
+                saveProxyEntries(remaining);
+                Toast.makeText(context, t("已删除 " + deleted + " 个", "Deleted " + deleted), Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+            });
+            buttonRow.addView(deleteSelected);
+            Button deleteExpired = toolbarButton(t("删除失效", "Delete expired"));
+            deleteExpired.setOnClickListener(v -> {
+                java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
+                int deleted = 0;
+                for (FilterConfig.ProxyEntry entry : entries) {
+                    if (TgProxyManager.isExpired(entry, refConfig)) deleted++;
+                    else remaining.add(entry);
+                }
+                saveProxyEntries(remaining);
+                Toast.makeText(context, t("已删除失效 " + deleted + " 个", "Deleted expired " + deleted), Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+            });
+            buttonRow.addView(deleteExpired);
+            Button close = toolbarButton(t("关闭", "Close"));
+            close.setOnClickListener(v -> dialog.dismiss());
+            buttonRow.addView(close);
+            dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialog.show();
+            try {
+                if (dialog.getWindow() != null) {
+                    dialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(cardColor));
+                }
+            } catch (Throwable ignored) {}
+        } catch (Throwable throwable) {
+            Toast.makeText(context, t("管理界面打开失败", "Failed to open management dialog"), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void saveProxyEntries(java.util.List<FilterConfig.ProxyEntry> remaining) {
+        try {
+            FilterConfig updated = baseConfig.deepCopy().sanitize();
+            applyProxyUiToConfig(updated);
+            updated.proxyEntries = remaining == null ? new java.util.ArrayList<>() : remaining;
+            updated.updatedAtEpochMs = System.currentTimeMillis();
+            saver.save(updated);
+            proxyWorkingEntries = new java.util.ArrayList<>();
+            for (FilterConfig.ProxyEntry entry : updated.proxyEntries) {
+                if (entry != null) proxyWorkingEntries.add(entry.deepCopy());
+            }
+            baseConfig = updated.deepCopy().sanitize();
+            updateProxySummary();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void buildTranslateCard(LinearLayout container) {
         LinearLayout card = addCard(container);
         addTitle(card, t("翻译", "Translation"));
@@ -629,6 +857,19 @@ final class HostConfigPanel {
                 if (aiBaseUrlInput != null) updated.aiApiBaseUrl = valueOf(aiBaseUrlInput).trim();
                 if (aiModelInput != null) updated.aiApiModel = valueOf(aiModelInput).trim();
                 if (aiKeyInput != null) updated.aiApiKey = valueOf(aiKeyInput).trim();
+                updated.proxyAutoAdd = proxyAutoAddSwitch != null && proxyAutoAddSwitch.isChecked();
+                updated.proxyAutoSwitch = proxyAutoSwitchSwitch != null && proxyAutoSwitchSwitch.isChecked();
+                updated.proxyRefreshHours = proxyInt(proxyRefreshInput, 6);
+                updated.proxyExpiryHours = proxyInt(proxyExpiryInput, 24);
+                if (proxySourceInput != null) updated.proxySourceUrl = valueOf(proxySourceInput).trim();
+                if (proxyPastedInput != null) updated.proxyPastedLinks = valueOf(proxyPastedInput);
+                updated.proxyConfigured = true;
+                if (proxyWorkingEntries != null) {
+                    updated.proxyEntries = new java.util.ArrayList<>();
+                    for (FilterConfig.ProxyEntry entry : proxyWorkingEntries) {
+                        if (entry != null) updated.proxyEntries.add(entry.deepCopy());
+                    }
+                }
             }
             saver.save(updated);
             if (afterSave != null) {

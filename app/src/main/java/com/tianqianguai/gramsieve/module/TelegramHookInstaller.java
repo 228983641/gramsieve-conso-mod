@@ -7111,6 +7111,13 @@ final class TelegramHookInstaller {
                                 }
                             } catch (Throwable ignored) {
                             }
+                            // TG proxy auto-refresh (Build #20): only when
+                            // auto-add is on and the interval has passed;
+                            // TgProxyManager guards against spamming.
+                            try {
+                                maybeAutoRefreshProxies(chain.getThisObject());
+                            } catch (Throwable ignored) {
+                            }
                         });
                     }
                 } catch (Throwable t) {
@@ -7120,6 +7127,39 @@ final class TelegramHookInstaller {
             });
         } catch (Throwable t) {
             error("Dialog list: DialogsActivity.createView hook failed", t);
+        }
+    }
+
+    private void maybeAutoRefreshProxies(Object host) {
+        try {
+            if (host == null || configProvider == null) {
+                return;
+            }
+            Context hostContext = null;
+            try {
+                if (host instanceof View) {
+                    hostContext = ((View) host).getContext();
+                }
+            } catch (Throwable ignored) {
+            }
+            if (hostContext == null) {
+                hostContext = resolveHostApplication();
+            }
+            if (hostContext == null) {
+                return;
+            }
+            final Context appContext = hostContext.getApplicationContext() != null
+                    ? hostContext.getApplicationContext() : hostContext;
+            FilterConfig config = configProvider.getConfig(appContext);
+            TgProxyManager.maybeAutoRefresh(appContext, config, result -> {
+                try {
+                    if (result != null && result.updated != null) {
+                        saveUpdatedConfig(appContext, result.updated);
+                    }
+                } catch (Throwable ignored) {
+                }
+            });
+        } catch (Throwable ignored) {
         }
     }
 
