@@ -4711,7 +4711,10 @@ final class TelegramHookInstaller {
             int smartSecondaryColor = ensureDialogTextColor(dialogSecondaryColor(activity), smartBackgroundColor);
             LinearLayout dialogView = new LinearLayout(activity);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setBackgroundColor(smartBackgroundColor);
+            // Build #34 fix: the content layer itself must also stay
+            // transparent, otherwise this opaque slab covers the glass
+            // dialog window completely and only its edges show.
+            dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             int pad = dp(context, 16f);
             // Build #32: rows carry the inset themselves (see
             // styleGroupRows below), so the container has no side
