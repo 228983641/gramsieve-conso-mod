@@ -38,6 +38,24 @@ android {
     }
 
     signingConfigs {
+        // Fixed debug keystore for upgrade continuity (Build #7 fix):
+        // Build #6 succeeded but its APK signature did NOT match the fixed
+        // keystore (cert fingerprint 80:A6:... vs fixed 24:F7:...), because
+        // AGP did not pick up ~/.android/debug.keystore on the CI runner
+        // (it likely looks under ANDROID_SDK_HOME instead). Pin the debug
+        // signing config explicitly to a repo-root debug.keystore file when
+        // it exists (the workflow decodes debug.keystore.b64 to that file
+        // before building). When the file is absent (local dev), AGP's
+        // default debug keystore behaviour is left untouched.
+        getByName("debug") {
+            val fixedDebugKeystore = rootProject.file("debug.keystore")
+            if (fixedDebugKeystore.exists()) {
+                storeFile = fixedDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             if (hasReleaseSigning) {
                 val candidateStoreFile = rootProject.file(releaseStoreFile!!)
