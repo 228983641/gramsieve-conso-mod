@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">GramSieve</string>
-    <string name="module_description">Local Telegram spam filter for LSPosed</string>
+    <string name="app_name">GramSieve Conso</string>
+    <string name="module_description">GramSieve Conso - Conso adaptation (global.xfinite.conso), local Telegram spam filter for LSPosed</string>
     <string name="dialog_title_global">GramSieve Global Filter Settings</string>
     <string name="dialog_title_chat">GramSieve Current Chat Filter Settings</string>
     <string name="dialog_save">Save</string>

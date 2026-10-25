@@ -84,3 +84,8 @@ Untested on a real device. Known risks:
 - 新增设置 → GramSieve → 聊天列表卡片，两个开关默认关闭：置顶聊天区分显示（左侧色条 + 浅色背景）、显示自动分类栏（全部 / 个人 / 群聊 / 频道）。
 - 置顶：勾 DialogCell.onDraw，置顶且非文件夹项时，在已绘制内容上叠加浅色主题蓝 tint（0x1A3390EC）+ 左侧 4dp 实色主题蓝条，头像与文字不受遮挡；判断用 DialogCell.getIsPinned，非置顶不画。
 - 分类：勾 DialogsActivity.createView，在文件夹栏下方插入独立分类栏（与文件夹分开），按钮为全部/个人/群聊/频道，选中为主题蓝底白字，未选中为灰字透明底；点按钮保存 classifyFilter（0=全部，1=个人，2=群聊，3=频道）并刷新聊天列表；DialogCell.setDialog 勾子按分类隐藏不匹配项（GONE，回收后匹配项恢复显示），分类用 DialogObject.isUserDialog / isChatDialog + MessagesController.getUserOrChat（User=个人含机器人，TL_chat 或 megagroup 频道=群聊，广播频道=频道，未知/未加载项永不隐藏）；分类栏关闭时筛选完全失效。文件夹栏本身未改（多行自适应排布风险高，未按激进路线做）。
+
+## 2026-10-25 UI 同步修复 + 安装包区分（Build #15 待构建，取代 Build #14）
+- UI 同步：打开设置前先使配置缓存失效（绕过 1.5 秒节流），刚用智能屏蔽加的规则立刻可见；高级规则有内容时打开设置默认展开高级区，不再看起来像丢了；关键词编辑对话框确定时把输入规范化为解析后的“、”连接形式再写回，外部个数改用与保存相同的 RuleTextCodec 解析计数，对话框/外部个数/实际保存三处同一文本；全局设置保存后立即刷新聊天列表并同步分类栏的出现/消失。
+- 全 UI 检查：所有设置开关均在打开面板时从最新配置初始化（缓存失效后），翻译/增强/聊天列表/规则卡片同此；智能屏蔽对话框、长按菜单、聊天列表分类栏的选中态均在点击时即时刷新，不依赖重启。
+- 安装包区分：包名保持 com.tianqianguai.gramsieve 不变（保证与 Build #13 同签名密钥直接覆盖安装、规则与 LSPosed 启用不丢）；versionCode 5→1000（高于上游 2.6.10-beta 的 349，上游不再被当作更新），versionName 0.1.4→1.0.0-conso，应用名 GramSieve→GramSieve Conso。更新提示的根因是版本号，不是签名；签名不同只会让那个错误更新装不上。

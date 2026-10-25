@@ -74,8 +74,15 @@ android {
         applicationId = "com.tianqianguai.gramsieve"
         minSdk = 33
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.1.4"
+        // Conso adaptation version scheme (Build #15): versionCode 1000
+        // is deliberately above upstream GramSieve 2.6.10-beta (349), so
+        // the upstream package is never offered as an 'update' for this
+        // build. applicationId is intentionally UNCHANGED, so this build
+        // still upgrades over Build #13/#14 with the same Secret key and
+        // keeps rules and LSPosed activation. Changing applicationId
+        // would force an uninstall + re-enable + rule loss.
+        versionCode = 1000
+        versionName = "1.0.0-conso"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

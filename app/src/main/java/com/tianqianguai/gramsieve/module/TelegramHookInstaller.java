@@ -6674,6 +6674,10 @@ final class TelegramHookInstaller {
         AntiRecallConfigStore antiStore = antiRecallConfigStore != null
                 ? antiRecallConfigStore
                 : new AntiRecallConfigStore(hostContext);
+        // UI sync (Build #15): bypass the 1500ms config cache throttle when
+        // opening Settings, so rules just added (e.g. via smart-block) are
+        // visible immediately instead of showing the previous count.
+        try { configProvider.invalidate(); } catch (Throwable ignored) {}
         FilterConfig config = configProvider.getConfig(hostContext).deepCopy();
         boolean shown = HostConfigPanel.show(
                 context,
@@ -6693,6 +6697,11 @@ final class TelegramHookInstaller {
                     decisionCache.clear();
                     if (chatMode) {
                         refreshChatActivityFiltering(host);
+                    } else {
+                        // UI sync (Build #15): pinned highlight / classify bar
+                        // switches must take effect without reopening the list.
+                        try { refreshDialogsUi(host); } catch (Throwable ignored) {}
+                        try { syncClassifyBarWithConfig(host); } catch (Throwable ignored) {}
                     }
                 }
         );
@@ -7011,6 +7020,45 @@ final class TelegramHookInstaller {
         } catch (Throwable ignored) {
             return 0;
         }
+    }
+
+    private void syncClassifyBarWithConfig(Object host) {
+        try {
+            View rootView = resolveHostFragmentView(host);
+            if (!(rootView instanceof ViewGroup)) {
+                return;
+            }
+            ViewGroup root = (ViewGroup) rootView;
+            View existing = findViewWithTag(root, "gramsieve_classify_bar");
+            if (!currentEnhancementConfig().showClassifyBar) {
+                if (existing != null && existing.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) existing.getParent()).removeView(existing);
+                }
+                return;
+            }
+            if (existing != null) {
+                updateClassifyBarButtons((ViewGroup) existing);
+                return;
+            }
+            installClassifyBar(host, rootView);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private View findViewWithTag(ViewGroup group, String tag) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child != null && tag.equals(child.getTag())) {
+                return child;
+            }
+            if (child instanceof ViewGroup) {
+                View found = findViewWithTag((ViewGroup) child, tag);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private void installClassifyBar(Object host, View root) {

@@ -528,7 +528,28 @@ final class HostConfigPanel {
 
         addDivider(card);
         Switch advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
-        advancedSwitch.setChecked(false);
+        // UI sync (Build #15): advanced rules must not look lost on reopen.
+        // If any advanced rule exists (any non-TEXT target, or TEXT regex),
+        // open the panel with Advanced already expanded.
+        boolean hasAdvanced = false;
+        for (FilterConfig.RuleTarget target : editorTargets(chatMode)) {
+            boolean isText = target == FilterConfig.RuleTarget.TEXT;
+            if (!isText) {
+                if (!matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD).isBlank()
+                        || !matchMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()
+                        || !exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD).isBlank()
+                        || !exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()) {
+                    hasAdvanced = true;
+                }
+            } else {
+                if (!matchMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()
+                        || !exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()) {
+                    hasAdvanced = true;
+                }
+            }
+        }
+        advancedSwitch.setChecked(hasAdvanced);
+        advancedContainer.setVisibility(hasAdvanced ? View.VISIBLE : View.GONE);
         advancedSwitch.setOnCheckedChangeListener((button, isChecked) ->
                 advancedContainer.setVisibility(isChecked ? View.VISIBLE : View.GONE));
         addInfo(card, t("高级规则包括：消息文字的正则，以及媒体说明、按钮、发送者、聊天、全字段的关键词与正则。", "Advanced rules include: message-text regex, plus keywords and regex for caption, buttons, sender, chat, and any field."));
@@ -840,7 +861,10 @@ final class HostConfigPanel {
                 .setTitle(t("编辑关键词", "Edit keywords"))
                 .setView(dialogView)
                 .setPositiveButton(t("确定", "OK"), (dialog, which) -> {
-                    hidden.setText(valueOf(input));
+                    String canonical = com.tianqianguai.gramsieve.core.RuleTextCodec.format(
+                            com.tianqianguai.gramsieve.core.RuleTextCodec.parse(
+                                    valueOf(input), com.tianqianguai.gramsieve.core.FilterConfig.RuleMode.KEYWORD));
+                    hidden.setText(canonical);
                     updateKeywordSummary(summary, valueOf(hidden));
                 })
                 .setNeutralButton(t("清空", "Clear"), (dialog, which) -> {
@@ -861,18 +885,14 @@ final class HostConfigPanel {
     }
 
     private static int countKeywords(String raw) {
+        // UI sync (Build #15): count with the same parser save() uses, so
+        // the outside count always equals the number of rules that will
+        // actually be saved, not an independent split estimate.
         if (raw == null || raw.isBlank()) {
             return 0;
         }
-        String[] parts = raw.split("[\n\r、，,;；]+");
-        int count = 0;
-        for (String part : parts) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
-                count++;
-            }
-        }
-        return count;
+        return com.tianqianguai.gramsieve.core.RuleTextCodec.parse(
+                raw, com.tianqianguai.gramsieve.core.FilterConfig.RuleMode.KEYWORD).size();
     }
 
     private EditText addInput(LinearLayout parent, String label, String initialValue) {
