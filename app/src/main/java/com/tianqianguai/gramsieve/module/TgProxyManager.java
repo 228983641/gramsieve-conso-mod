@@ -63,6 +63,7 @@ final class TgProxyManager {
     static final class Result {
         FilterConfig updated;
         int fetched = 0;
+        int folderFetched = 0;
         int tested = 0;
         int availableCount = 0;
         FilterConfig.ProxyEntry fastest;
