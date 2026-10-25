@@ -7039,12 +7039,35 @@ final class TelegramHookInstaller {
         if (cachedZhCode != null) {
             return cachedZhCode;
         }
+        // 2026-10-25 fix for Build #9 feedback "translation exists but is
+        // not correct": the old code took the FIRST zh* code from the host
+        // language list, which can be Traditional Chinese (zh-TW / zh-Hant)
+        // or a generic "zh" that the server maps unpredictably. Prefer
+        // Simplified Chinese explicitly, in order, and never pick a
+        // Traditional variant when a Simplified one exists.
         try {
             Object langs = Reflect.invokeIfExists(translateController, "getLanguages", new Class<?>[0]);
             if (langs instanceof List<?>) {
+                List<String> codes = new ArrayList<>();
                 for (Object lang : (List<?>) langs) {
                     String code = Reflect.asString(Reflect.field(lang, "code"));
-                    if (code != null && !code.isBlank() && code.toLowerCase(Locale.ROOT).startsWith("zh")) {
+                    if (code != null && !code.isBlank()) {
+                        codes.add(code);
+                    }
+                }
+                String[] preferred = new String[]{"zh-CN", "zh-cn", "zh_CN", "zh-Hans", "zh-Hans-CN", "zh"};
+                for (String want : preferred) {
+                    for (String code : codes) {
+                        if (want.equalsIgnoreCase(code)) {
+                            cachedZhCode = code;
+                            return code;
+                        }
+                    }
+                }
+                // Fallback: any zh* that is not Traditional.
+                for (String code : codes) {
+                    String lower = code.toLowerCase(Locale.ROOT);
+                    if (lower.startsWith("zh") && !lower.contains("tw") && !lower.contains("hant") && !lower.contains("hk")) {
                         cachedZhCode = code;
                         return code;
                     }

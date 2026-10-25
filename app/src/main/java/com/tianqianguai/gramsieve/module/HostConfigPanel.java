@@ -448,7 +448,7 @@ final class HostConfigPanel {
         addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后，打开聊天时会自动把该聊天的翻译目标设为中文，并尝试开启整聊自动翻译；中文消息不受影响。", "Uses Conso's built-in translation service, no third-party translator. When on, opening a chat sets its translate target to Chinese and tries to enable whole-chat auto-translate; Chinese messages are unaffected."));
         autoTranslateSwitch = addSwitch(card, t("自动翻译外文为中文", "Auto-translate foreign messages to Chinese"));
         autoTranslateSwitch.setChecked(baseConfig.autoTranslateToChinese);
-        addInfo(card, t("整聊自动翻译在宿主里是 Premium 功能，若未自动翻译，请同时开启“增强功能”里的本地 Premium，或点聊天顶部的翻译按钮手动翻译整聊。", "Whole-chat auto-translate is a Premium-gated host feature. If a chat still does not auto-translate, also enable Local Premium in Enhancements, or use the chat's Translate button."));
+        addInfo(card, t("目标语言固定为简体中文。翻译由 Telegram 服务端完成，首次打开聊天、消息多时需要几秒到十几秒，属正常；若长时间不翻，退出重进该聊天再试一次。整聊自动翻译在宿主里是 Premium 功能，若未自动翻译，请同时开启“增强功能”里的本地 Premium，或点聊天顶部的翻译按钮手动翻译整聊。", "Target language is Simplified Chinese. Translation runs on Telegram's servers, so the first open of a chat with many messages can take seconds to tens of seconds; if it still does not translate, leave and reopen the chat. Whole-chat auto-translate is a Premium-gated host feature; also enable Local Premium in Enhancements, or use the chat's Translate button."));
     }
 
     private void buildChatAntiRecallCard(LinearLayout container) {
@@ -463,11 +463,19 @@ final class HostConfigPanel {
     }
 
     private void buildRulesCard(LinearLayout container) {
+        // Simplified 2026-10-25: the old card showed 4 inputs for EVERY
+        // target (text / caption / buttons / sender / chat / any = up to
+        // 24 boxes), which is why users called it cluttered. Now only
+        // the two boxes most people actually use are visible by default:
+        // message-text filter keywords and message-text keep keywords.
+        // Everything else (regex, and all other targets) lives in one
+        // collapsible "高级规则" section, still created and still saved
+        // when hidden, so existing rules are never lost by collapsing.
         LinearLayout card = addCard(container);
         addTitle(card, t("规则内容", "Rules"));
         addInfo(card, chatMode
-                ? t("这里只影响当前聊天。每行一条；输入框已经固定检查目标，不需要 text:、sender: 这类前缀。", "This editor only affects the current chat. One rule per line; each box already has a fixed target, so prefixes are not needed.")
-                : t("每行一条；输入框已经固定检查目标，不需要 text:、sender:、chat: 这类前缀。", "One rule per line. Each box already has a fixed target, so text:, sender:, and chat: prefixes are not needed."));
+                ? t("这里只影响当前聊天。每行一条。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. One rule per line. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
+                : t("每行一条。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "One rule per line. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
 
         FilterConfig.ChatRuleSet chatRuleSet = chatMode
                 ? baseConfig.getOrCreateChatRuleSet(dialogId).deepCopy().sanitize()
@@ -475,18 +483,42 @@ final class HostConfigPanel {
         RuleDraftMatrix matchMatrix = RuleDraftMatrix.fromRules(chatMode ? chatRuleSet.rules : baseConfig.globalRules);
         RuleDraftMatrix exclusionMatrix = RuleDraftMatrix.fromRules(chatMode ? chatRuleSet.exclusions : baseConfig.globalExclusions);
 
-        for (FilterConfig.RuleTarget target : editorTargets(chatMode)) {
-            addDivider(card);
-            addSectionLabel(card, targetLabel(target));
-            addInfo(card, targetScope(target));
+        LinearLayout advancedContainer = new LinearLayout(context);
+        advancedContainer.setOrientation(LinearLayout.VERTICAL);
+        advancedContainer.setVisibility(View.GONE);
 
+        for (FilterConfig.RuleTarget target : editorTargets(chatMode)) {
             RuleInputs inputs = new RuleInputs();
-            inputs.matchKeywords = addInput(card, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-            inputs.matchRegex = addInput(card, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
-            inputs.keepKeywords = addInput(card, t("保留关键词", "Keep keywords"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-            inputs.keepRegex = addInput(card, t("保留正则", "Keep regex"), exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX));
+            if (target == FilterConfig.RuleTarget.TEXT) {
+                // Visible by default: only the two keyword boxes.
+                addSectionLabel(card, t("消息文字", "Message text"));
+                addInfo(card, t("只检查消息正文，绝大多数规则填这里就够了。", "Only checks message text; most rules belong here."));
+                inputs.matchKeywords = addInput(card, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.keepKeywords = addInput(card, t("保留关键词（白名单）", "Keep keywords (allowlist)"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                // Regex for text goes to Advanced, same RuleInputs object.
+                addSectionLabel(advancedContainer, t("消息文字 · 正则", "Message text · Regex"));
+                inputs.matchRegex = addInput(advancedContainer, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
+                inputs.keepRegex = addInput(advancedContainer, t("保留正则", "Keep regex"), exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX));
+            } else {
+                addDivider(advancedContainer);
+                addSectionLabel(advancedContainer, targetLabel(target));
+                addInfo(advancedContainer, targetScope(target));
+                inputs.matchKeywords = addInput(advancedContainer, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.matchRegex = addInput(advancedContainer, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
+                inputs.keepKeywords = addInput(advancedContainer, t("保留关键词", "Keep keywords"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
+                inputs.keepRegex = addInput(advancedContainer, t("保留正则", "Keep regex"), exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX));
+            }
             ruleInputs.put(target, inputs);
         }
+
+        addDivider(card);
+        Switch advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
+        advancedSwitch.setChecked(false);
+        advancedSwitch.setOnCheckedChangeListener((button, isChecked) ->
+                advancedContainer.setVisibility(isChecked ? View.VISIBLE : View.GONE));
+        addInfo(card, t("高级规则包括：消息文字的正则，以及媒体说明、按钮、发送者、聊天、全字段的关键词与正则。", "Advanced rules include: message-text regex, plus keywords and regex for caption, buttons, sender, chat, and any field."));
+        card.addView(advancedContainer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private void save() {

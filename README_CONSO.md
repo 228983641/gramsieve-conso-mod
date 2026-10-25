@@ -62,3 +62,8 @@ Untested on a real device. Known risks:
 ## 签名修复第二步（Build #7）
 - Build #6 虽然成功，但核对发现 APK 签名证书指纹是 80:A6:EF:...（主题 CN=Android Debug, O=Android, C=US，即 CI 现场生成的临时调试密钥），不是固定密钥的 24:F7:92:...（主题含 OU/L/ST）。原因是 AGP 在 CI 上没有用 ~/.android/debug.keystore（很可能它查的是 ANDROID_SDK_HOME 下的 .android）。
 - 修复：app/build.gradle.kts 里把 debug 签名显式指向仓库根目录的 debug.keystore（工作流在构建前从 debug.keystore.b64 解码出来）；同时工作流把密钥还原到 ~/.android、$ANDROID_HOME/.android、$ANDROID_SDK_HOME/.android 三处。Build #7 交付前必须核对 APK 签名指纹等于 24:F7:...，否则不发版。Build #6 因此不发版，避免用户多卸载一次、多丢一次规则。
+
+## 2026-10-25 翻译目标语言修复 + 规则界面简化 + 开源准备（Build #10 待构建）
+- 翻译：Build #9 后用户反馈翻译功能有了但翻得不对/慢。可能原因之一：旧代码取宿主语言列表里第一个 zh* 代码，可能是繁体（zh-TW/zh-Hant）或泛 zh，服务端映射不可靠。本次改为优先简体中文顺序 zh-CN、zh-cn、zh_CN、zh-Hans、zh-Hans-CN、zh，繁体只有在无简体时才作备选，默认仍为 zh-CN。另在翻译卡片里说明：翻译由 Telegram 服务端完成，首次打开、消息多时几秒到十几秒属正常，长时间不翻请退出重进。翻译慢本身是服务端耗时，客户端无法把服务端变快，只能保证目标语言和触发时机正确。
+- 规则界面简化：旧规则卡片对每个目标（消息文字/媒体说明/按钮/发送者/聊天/全字段）各显示 4 个输入框，最多 24 个框。本次默认只显示消息文字的过滤关键词和保留关键词两个框；“显示高级规则”开关展开后才显示消息文字正则及其他目标的全部输入框，收起时高级规则照常创建和保存，不会丢失已有规则。保存逻辑未改，仍按原矩阵收集。
+- 开源准备（尚未公开）：新增 README_CONSO_PUBLIC.md（中英双语、按实际代码写的功能与效果说明、诚实限制、安装/构建/签名/风险/来源致谢、截图占位表）和 docs/screenshots/README.md（真机截图待补充说明）。LICENSE 已是 GPL-3.0 全文。公开前必须做的事（见下条）尚未执行，仓库仍为私有。
