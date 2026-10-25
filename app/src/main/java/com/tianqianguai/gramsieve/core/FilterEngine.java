@@ -249,6 +249,11 @@ public final class FilterEngine {
         }
         String raw = content.toLowerCase(Locale.ROOT);
         String cleaned = raw.replaceAll("[\\p{So}\\p{Sk}\\p{Cf}\\uFE0F]", "");
+        // 2026-10-25 optimisation for Build #7 feedback: spam splits a
+        // keyword with emoji, spaces, dots or other separators
+        // ("百🤩家乐", "百 家 乐", "百.家.乐"). Compact both sides to
+        // letters/digits only, so the clean keyword still matches.
+        String compacted = compactLettersDigits(raw);
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (String[] group : new String[][]{GAMBLING_KEYWORDS, USER_GAMBLING_KEYWORDS, WEAK_GAMBLING_KEYWORDS}) {
             for (String term : group) {
@@ -256,13 +261,30 @@ public final class FilterEngine {
                     continue;
                 }
                 String key = term.toLowerCase(Locale.ROOT);
-                if (!seen.contains(key) && (raw.contains(key) || cleaned.contains(key))) {
+                String keyCompact = compactLettersDigits(key);
+                if (!seen.contains(key) && (raw.contains(key) || cleaned.contains(key)
+                        || (!keyCompact.isBlank() && compacted.contains(keyCompact)))) {
                     seen.add(key);
                     matched.add(term);
                 }
             }
         }
         return matched;
+
+    /** Letters/digits only (Han counts as a letter), for separator-proof matching. */
+    static String compactLettersDigits(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
     }
 
     public static boolean isWeakGamblingTerm(String term) {
@@ -352,6 +374,13 @@ public final class FilterEngine {
                 } else {
                     String haystack = caseSensitive ? value : value.toLowerCase(Locale.ROOT);
                     if (haystack.contains(normalizedKeyword)) {
+                        return true;
+                    }
+                    // Separator-proof fallback (see matchedGamblingTerms):
+                    // a rule for 百家乐 must also catch 百🤩家乐 / 百 家 乐.
+                    String compactKeyword = compactLettersDigits(normalizedKeyword);
+                    if (compactKeyword.length() >= 2
+                            && compactLettersDigits(haystack).contains(compactKeyword)) {
                         return true;
                     }
                 }

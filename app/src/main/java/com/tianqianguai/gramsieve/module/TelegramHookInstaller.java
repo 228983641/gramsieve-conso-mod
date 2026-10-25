@@ -18,8 +18,12 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.SubMenu;
 import android.view.ViewParent;
+import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.PopupWindow;
@@ -4543,6 +4547,8 @@ final class TelegramHookInstaller {
                 throw new IllegalStateException("No Activity context for smart-block dialog");
             }
             String[] labels = new String[candidates.size()];
+            List<String> keywordTerms = new ArrayList<>();
+            List<String> otherTerms = new ArrayList<>();
             for (int i = 0; i < candidates.size(); i++) {
                 FilterConfig.RuleSpec rule = candidates.get(i);
                 String targetLabel;
@@ -4550,10 +4556,17 @@ final class TelegramHookInstaller {
                     targetLabel = "IP 地址";
                 } else if (rule.target == FilterConfig.RuleTarget.SENDER) {
                     targetLabel = "发送者";
+                } else if (rule.pattern != null && rule.pattern.contains(".")) {
+                    targetLabel = "域名/链接";
                 } else {
-                    targetLabel = "文本关键词";
+                    targetLabel = "关键词";
                 }
                 labels[i] = targetLabel + "：" + rule.pattern;
+                if ("关键词".equals(targetLabel)) {
+                    keywordTerms.add(rule.pattern);
+                } else {
+                    otherTerms.add(targetLabel + "：" + rule.pattern);
+                }
             }
             // Strong terms are pre-checked; weak generic terms (体育 / 电子 /
             // 红包) are offered unchecked, so confirming by habit does not
@@ -4562,18 +4575,62 @@ final class TelegramHookInstaller {
             for (int i = 0; i < candidates.size(); i++) {
                 checked[i] = !FilterEngine.isWeakGamblingTerm(candidates.get(i).pattern);
             }
+            // 2026-10-25 redesign for Build #7 feedback "smart analysis
+            // does not show the analysed keywords": the old dialog used
+            // setMessage + setMultiChoiceItems together, and on some
+            // hosts the message (and the keyword summary) was swallowed,
+            // leaving only bare checkboxes. Now the dialog has an explicit
+            // analysis summary at the top, in a custom view, followed by
+            // the same multi-choice list, so the analysed keywords are
+            // always visible before confirming.
+            String summary;
+            if (isChineseLocale(context)) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("分析出的关键词：");
+                sb.append(keywordTerms.isEmpty() ? "无" : String.join("、", keywordTerms));
+                if (!otherTerms.isEmpty()) {
+                    sb.append("\n其他标识：").append(String.join("、", otherTerms));
+                }
+                sb.append("\n已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入全局规则，对所有聊天生效。");
+                summary = sb.toString();
+            } else {
+                summary = "Analysed keywords: " + (keywordTerms.isEmpty() ? "none" : String.join(", ", keywordTerms));
+            }
+            LinearLayout dialogView = new LinearLayout(activity);
+            dialogView.setOrientation(LinearLayout.VERTICAL);
+            int pad = dp(context, 16f);
+            dialogView.setPadding(pad, pad, pad, 0);
+            TextView summaryView = new TextView(activity);
+            summaryView.setText(summary);
+            summaryView.setTextSize(14f);
+            dialogView.addView(summaryView, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            ListView listView = new ListView(activity);
+            listView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
+            listView.setAdapter(new ArrayAdapter<>(activity,
+                    android.R.layout.simple_list_item_multiple_choice, labels));
+            for (int i = 0; i < candidates.size(); i++) {
+                listView.setItemChecked(i, checked[i]);
+            }
+            // Fixed height (ListView inside a ScrollView does not expand
+            // with WRAP_CONTENT); 48dp per row, capped so the dialog stays
+            // usable with many candidates.
+            int listHeight = dp(context, 48f * Math.min(candidates.size(), 7) + 8f);
+            LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, listHeight);
+            listParams.topMargin = dp(context, 12f);
+            dialogView.addView(listView, listParams);
+            ScrollView scrollView = new ScrollView(activity);
+            scrollView.addView(dialogView);
             new AlertDialog.Builder(activity)
                     .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
-                    .setMessage(isChineseLocale(context)
-                            ? "已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入全局规则，对所有聊天生效。"
-                            : "Checked terms are strong signals; unchecked terms are generic. Confirmed terms become global rules.")
-                    .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                    .setView(scrollView)
                     .setPositiveButton(
                             isChineseLocale(context) ? "加入全局规则" : "Add to global rules",
                             (dialog, which) -> {
                                 List<FilterConfig.RuleSpec> selected = new ArrayList<>();
                                 for (int i = 0; i < candidates.size(); i++) {
-                                    if (checked[i]) {
+                                    if (listView.isItemChecked(i)) {
                                         selected.add(candidates.get(i));
                                     }
                                 }
@@ -6705,9 +6762,19 @@ final class TelegramHookInstaller {
         } catch (Throwable throwable) {
             error("Enhancement: failed to hook addSponsoredMessages", throwable);
         }
-        hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "getSponsoredMessagesCount",
+        // Conso's sponsored gates, verified in Conso 2.0.0 dex (2026-10-25
+        // fix for Build #7 feedback "ads not recognised"):
+        // - MessagesController.getSponsoredMessages(long) returns
+        //   SponsoredMessagesInfo, NOT a list. Returning an ArrayList here
+        //   was a type mismatch; return null instead, which is the
+        //   caller's "no sponsored messages" path.
+        // - MessagesController.getSponsoredMessagesCount does NOT exist;
+        //   the count lives on ChatActivity.getSponsoredMessagesCount().
+        // - isSponsoredDisabled was previously gated on disableVideoAds
+        //   by mistake; it must follow disableSponsoredMessages.
+        // - MessageObject.isSponsored() marks sponsored message cells.
+        hookBooleanMethod(classLoader, "org.telegram.ui.ChatActivity", "getSponsoredMessagesCount",
                 () -> currentEnhancementConfig().disableSponsoredMessages, 0);
-        // getSponsoredMessages returns a list; handled separately (empty list).
         try {
             Class<?> clazz = classLoader.loadClass("org.telegram.messenger.MessagesController");
             for (Method candidate : clazz.getDeclaredMethods()) {
@@ -6718,16 +6785,18 @@ final class TelegramHookInstaller {
                 Method method = candidate;
                 hook(method, chain -> {
                     if (currentEnhancementConfig().disableSponsoredMessages) {
-                        return new ArrayList<>();
+                        return null;
                     }
                     return chain.proceed();
                 });
             }
             hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "isSponsoredDisabled",
-                    () -> currentEnhancementConfig().disableVideoAds, true);
+                    () -> currentEnhancementConfig().disableSponsoredMessages, true);
         } catch (Throwable throwable) {
             error("Enhancement: failed to hook sponsored messages", throwable);
         }
+        hookBooleanMethod(classLoader, "org.telegram.messenger.MessageObject", "isSponsored",
+                () -> currentEnhancementConfig().disableSponsoredMessages, false);
         // VideoAds.load: void, skip loading video ads entirely.
         try {
             Class<?> clazz = classLoader.loadClass("org.telegram.messenger.video.VideoAds");
@@ -6912,8 +6981,41 @@ final class TelegramHookInstaller {
     private void hookLocalPremium(ClassLoader classLoader) {
         // Port of TeleVip TelePremium: UserConfig.isPremium() -> true.
         // Client-side only, see the header comment above.
+        // Expanded 2026-10-25 for Build #7 feedback "pin >5 not working":
+        // Conso also gates Premium features through
+        // MessagesController.isPremiumUser(User),
+        // MessagesController.premiumFeaturesBlocked(), and
+        // DialogsActivity.showPremiumBlockedToast(). Hook all of them so a
+        // client-side Premium check cannot fail on a different gate.
+        // NOTE: if the server still rejects the 6th pin
+        // (messages.toggleDialogPin error), no client hook can force it:
+        // the server knows the account is not really Premium. That case
+        // must be reported as a server limit, not a client bug.
         hookBooleanMethod(classLoader, "org.telegram.messenger.UserConfig", "isPremium",
                 () -> currentEnhancementConfig().localPremium, true);
+        hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "isPremiumUser",
+                () -> currentEnhancementConfig().localPremium, true);
+        hookBooleanMethod(classLoader, "org.telegram.messenger.MessagesController", "premiumFeaturesBlocked",
+                () -> currentEnhancementConfig().localPremium, false);
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.ui.DialogsActivity");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"showPremiumBlockedToast".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    if (currentEnhancementConfig().localPremium) {
+                        return null;
+                    }
+                    return chain.proceed();
+                });
+            }
+            info("Enhancement: hooked DialogsActivity.showPremiumBlockedToast");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook showPremiumBlockedToast", throwable);
+        }
     }
 
 
@@ -6981,9 +7083,15 @@ final class TelegramHookInstaller {
             Reflect.invokeIfExists(tc, "setChatTranslateEnabled", new Class<?>[]{boolean.class}, true);
             Reflect.invokeIfExists(tc, "setDialogTranslateTo", new Class<?>[]{long.class, String.class}, dialogId, zh);
             Object toggled = Reflect.invokeIfExists(tc, "toggleTranslatingDialog", new Class<?>[]{long.class, boolean.class}, dialogId, true);
-            if (toggled == null) {
+            if (toggled == null || Boolean.FALSE.equals(toggled)) {
                 Reflect.invokeIfExists(tc, "toggleTranslatingDialog", new Class<?>[]{long.class}, dialogId);
             }
+            // 2026-10-25 fix for Build #7 feedback "no translate item in
+            // chat, no translation": toggling alone does not refresh the
+            // chat UI. Ask the ChatActivity itself to re-check translation
+            // for visible messages and to refresh the translate button.
+            Reflect.invokeIfExists(chatActivity, "checkTranslation", new Class<?>[]{boolean.class}, true);
+            Reflect.invokeIfExists(chatActivity, "updateTranslateItemVisibility", new Class<?>[0]);
             info("Auto-translate: enabled for dialog " + dialogId + " to " + zh);
         } catch (Throwable throwable) {
             error("Auto-translate enable failed", throwable);
@@ -6997,6 +7105,42 @@ final class TelegramHookInstaller {
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
         hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isChatAutoTranslated",
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
+        hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isDialogTranslatable",
+                () -> currentEnhancementConfig().autoTranslateToChinese, true);
+        // Force the chat translate button/item visible after the host
+        // recomputes visibility, so the translate item actually appears
+        // in the chat interface when auto-translate is on.
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.ui.ChatActivity");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"updateTranslateItemVisibility".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        if (currentEnhancementConfig().autoTranslateToChinese) {
+                            Object chatActivity = chain.getThisObject();
+                            Object translateItem = Reflect.field(chatActivity, "translateItem");
+                            if (translateItem instanceof android.view.View) {
+                                ((android.view.View) translateItem).setVisibility(android.view.View.VISIBLE);
+                            }
+                            Object translateButton = Reflect.field(chatActivity, "translateButton");
+                            if (translateButton instanceof android.view.View) {
+                                ((android.view.View) translateButton).setVisibility(android.view.View.VISIBLE);
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    return result;
+                });
+            }
+            info("Enhancement: hooked ChatActivity.updateTranslateItemVisibility");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook updateTranslateItemVisibility", throwable);
+        }
         try {
             Class<?> clazz = classLoader.loadClass("org.telegram.messenger.TranslateController");
             for (Method candidate : clazz.getDeclaredMethods()) {
