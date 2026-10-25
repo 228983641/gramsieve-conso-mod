@@ -104,6 +104,7 @@ final class HostConfigPanel {
     private Switch autoTranslateSwitch;
     private Switch pinnedHighlightSwitch;
     private Switch classifyBarSwitch;
+    private Switch autoArchiveFolderSwitch;
     private Switch aiLlmSwitch;
     private Switch aiFallbackSwitch;
     private Switch proxyAutoAddSwitch;
@@ -478,6 +479,9 @@ final class HostConfigPanel {
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
         classifyBarSwitch = addSwitch(card, t("显示自动分类栏（全部 / 个人 / 群聊 / 频道）", "Show auto-classify bar (All / Personal / Groups / Channels)"));
         classifyBarSwitch.setChecked(baseConfig.showClassifyBar);
+        autoArchiveFolderSwitch = addSwitch(card, t("文件夹聊天自动归档", "Auto-archive chats in folders"));
+        autoArchiveFolderSwitch.setChecked(baseConfig.autoArchiveFolderChats);
+        addInfo(card, t("进文件夹的聊天自动归档（主列表不再出现，只在文件夹和归档里看）；从所有文件夹移出后自动取消归档回到主列表。只动模块自己归档的聊天：你手动归档的聊天不会被自动取消归档，你手动取消归档的文件夹聊天也不会被重新归档（除非把它移出文件夹再加回来）。", "Chats in a folder are auto-archived (hidden from the main list, visible in the folder and in Archive); removed from all folders, they auto-unarchive back to the main list. Only chats this module archived are touched: a chat you archived manually is never auto-unarchived, and a folder chat you unarchived manually is not re-archived (unless you remove it from the folder and add it back)."));
         addInfo(card, t("分类栏出现在文件夹栏下方，与文件夹分开；个人含机器人，群聊含普通群与超级群，频道为广播频道。", "The classify bar appears below the folder tabs, separate from folders; Personal includes bots, Groups include regular and supergroups, Channels are broadcast channels."));
     }
 
@@ -852,6 +856,7 @@ final class HostConfigPanel {
                 updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
                 updated.highlightPinnedDialogs = pinnedHighlightSwitch != null && pinnedHighlightSwitch.isChecked();
                 updated.showClassifyBar = classifyBarSwitch != null && classifyBarSwitch.isChecked();
+                updated.autoArchiveFolderChats = autoArchiveFolderSwitch != null && autoArchiveFolderSwitch.isChecked();
                 updated.aiAnalysisMode = aiLlmSwitch != null && aiLlmSwitch.isChecked() ? 1 : 0;
                 updated.aiFallbackToLocal = aiFallbackSwitch == null || aiFallbackSwitch.isChecked();
                 if (aiBaseUrlInput != null) updated.aiApiBaseUrl = valueOf(aiBaseUrlInput).trim();

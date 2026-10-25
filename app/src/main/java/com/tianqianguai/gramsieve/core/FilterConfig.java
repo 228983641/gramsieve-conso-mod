@@ -59,6 +59,21 @@ public final class FilterConfig {
     public long proxyLastRefreshMs = 0L;
     public boolean proxyConfigured = false;
     public List<ProxyEntry> proxyEntries = new ArrayList<>();
+    // Folder-archive sync (Build #22, user requested 2026-10-25:
+    // chats in a folder are auto-archived, chats removed from ALL folders
+    // are auto-unarchived). Default ON because the user asked for this
+    // behaviour; turn it off in the Chat List card to stop it.
+    // autoArchivedDialogIds records ONLY dialogs this module archived, so
+    // a chat the user archived manually is never unarchived by us, and a
+    // chat the user unarchived manually is not re-archived on restart
+    // (see FolderArchiveSync logic in TelegramHookInstaller).
+    public boolean autoArchiveFolderChats = true;
+    public List<Long> autoArchivedDialogIds = new ArrayList<>();
+    // Dialogs the user manually unarchived after we auto-archived them.
+    // They are never re-archived automatically (across restarts too);
+    // removing them from all folders clears the opt-out, so re-adding
+    // to a folder archives them again.
+    public List<Long> folderArchiveOptOutDialogIds = new ArrayList<>();
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -118,6 +133,24 @@ public final class FilterConfig {
         if (proxyExpiryHours > 168) proxyExpiryHours = 168;
         if (proxySourceUrl == null) proxySourceUrl = "";
         if (proxyPastedLinks == null) proxyPastedLinks = "";
+        if (autoArchivedDialogIds == null) {
+            autoArchivedDialogIds = new ArrayList<>();
+        } else {
+            List<Long> cleanedIds = new ArrayList<>();
+            for (Long id : autoArchivedDialogIds) {
+                if (id != null && !cleanedIds.contains(id)) cleanedIds.add(id);
+            }
+            autoArchivedDialogIds = cleanedIds;
+        }
+        if (folderArchiveOptOutDialogIds == null) {
+            folderArchiveOptOutDialogIds = new ArrayList<>();
+        } else {
+            List<Long> cleanedOptOut = new ArrayList<>();
+            for (Long id : folderArchiveOptOutDialogIds) {
+                if (id != null && !cleanedOptOut.contains(id)) cleanedOptOut.add(id);
+            }
+            folderArchiveOptOutDialogIds = cleanedOptOut;
+        }
         if (proxyEntries == null) {
             proxyEntries = new ArrayList<>();
         } else {
@@ -172,6 +205,19 @@ public final class FilterConfig {
         copy.proxyPastedLinks = proxyPastedLinks;
         copy.proxyLastRefreshMs = proxyLastRefreshMs;
         copy.proxyConfigured = proxyConfigured;
+        copy.autoArchiveFolderChats = autoArchiveFolderChats;
+        copy.autoArchivedDialogIds = new ArrayList<>();
+        if (autoArchivedDialogIds != null) {
+            for (Long id : autoArchivedDialogIds) {
+                if (id != null && !copy.autoArchivedDialogIds.contains(id)) copy.autoArchivedDialogIds.add(id);
+            }
+        }
+        copy.folderArchiveOptOutDialogIds = new ArrayList<>();
+        if (folderArchiveOptOutDialogIds != null) {
+            for (Long id : folderArchiveOptOutDialogIds) {
+                if (id != null && !copy.folderArchiveOptOutDialogIds.contains(id)) copy.folderArchiveOptOutDialogIds.add(id);
+            }
+        }
         copy.proxyEntries = new ArrayList<>();
         if (proxyEntries != null) {
             for (ProxyEntry entry : proxyEntries) {

@@ -7273,6 +7273,7 @@ final class TelegramHookInstaller {
         hookBoostDownloadSpeed(classLoader);
         hookLocalPremium(classLoader);
         hookAutoTranslate(classLoader);
+        hookFolderArchiveSync(classLoader);
         hookDialogListFeatures(classLoader);
     }
 
@@ -7419,6 +7420,13 @@ final class TelegramHookInstaller {
                                 maybeAutoRefreshProxies(chain.getThisObject());
                             } catch (Throwable ignored) {
                             }
+                            try {
+                                Object dialogsController = messagesControllerForChat(chain.getThisObject());
+                                if (dialogsController != null) {
+                                    syncFolderArchive(dialogsController);
+                                }
+                            } catch (Throwable ignored) {
+                            }
                         });
                     }
                 } catch (Throwable t) {
@@ -7428,6 +7436,275 @@ final class TelegramHookInstaller {
             });
         } catch (Throwable t) {
             error("Dialog list: DialogsActivity.createView hook failed", t);
+        }
+    }
+
+    private volatile Map<Long, Set<Integer>> lastFolderMembership = null;
+
+    private void hookFolderArchiveSync(ClassLoader classLoader) {
+        try {
+            Class<?> mcClass = classLoader.loadClass("org.telegram.messenger.MessagesController");
+            String[] methodNames = new String[]{"addDialogToFolder", "updateFilterDialogs", "onFilterUpdate", "addFilter", "removeFilter"};
+            for (Method candidate : mcClass.getDeclaredMethods()) {
+                boolean match = false;
+                for (String name : methodNames) {
+                    if (name.equals(candidate.getName())) {
+                        match = true;
+                        break;
+                    }
+                }
+                if (!match) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        syncFolderArchive(chain.getThisObject());
+                    } catch (Throwable ignored) {
+                    }
+                    return result;
+                });
+            }
+            info("Enhancement: hooked MessagesController folder methods for archive sync");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook folder archive sync", throwable);
+        }
+    }
+
+    private void syncFolderArchive(Object controller) {
+        if (controller == null || configProvider == null) {
+            return;
+        }
+        try {
+            FilterConfig config = currentEnhancementConfig();
+            if (!config.autoArchiveFolderChats) {
+                lastFolderMembership = null;
+                return;
+            }
+            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (!(filtersObj instanceof List)) {
+                return;
+            }
+            Map<Long, Set<Integer>> current = new HashMap<>();
+            for (Object filter : (List<?>) filtersObj) {
+                int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
+                Object dialogs = Reflect.field(filter, "dialogs");
+                if (!(dialogs instanceof List)) {
+                    continue;
+                }
+                for (Object dialogIdObj : (List<?>) dialogs) {
+                    long dialogId = Reflect.asLong(dialogIdObj, 0L);
+                    if (dialogId == 0L) {
+                        continue;
+                    }
+                    Set<Integer> set = current.get(dialogId);
+                    if (set == null) {
+                        set = new HashSet<>();
+                        current.put(dialogId, set);
+                    }
+                    set.add(filterId);
+                }
+            }
+            Set<Long> autoArchived = new HashSet<>();
+            if (config.autoArchivedDialogIds != null) {
+                autoArchived.addAll(config.autoArchivedDialogIds);
+            }
+            Set<Long> optOut = new HashSet<>();
+            if (config.folderArchiveOptOutDialogIds != null) {
+                optOut.addAll(config.folderArchiveOptOutDialogIds);
+            }
+            Map<Long, Boolean> changes = new HashMap<>();
+            Map<Long, Set<Integer>> previous = lastFolderMembership;
+            if (previous == null) {
+                for (Map.Entry<Long, Set<Integer>> entry : current.entrySet()) {
+                    long dialogId = entry.getKey();
+                    if (optOut.contains(dialogId)) {
+                        continue;
+                    }
+                    int folderId = currentFolderId(controller, dialogId);
+                    if (folderId == 1) {
+                        continue;
+                    }
+                    if (autoArchived.contains(dialogId)) {
+                        autoArchived.remove(dialogId);
+                        optOut.add(dialogId);
+                    } else {
+                        changes.put(dialogId, true);
+                    }
+                }
+                for (Long dialogId : new ArrayList<>(autoArchived)) {
+                    if (!current.containsKey(dialogId)) {
+                        changes.put(dialogId, false);
+                    }
+                }
+                for (Long dialogId : new ArrayList<>(optOut)) {
+                    if (!current.containsKey(dialogId)) {
+                        optOut.remove(dialogId);
+                    }
+                }
+            } else {
+                for (Map.Entry<Long, Set<Integer>> entry : current.entrySet()) {
+                    long dialogId = entry.getKey();
+                    if (previous.containsKey(dialogId)) {
+                        continue;
+                    }
+                    if (optOut.contains(dialogId)) {
+                        continue;
+                    }
+                    if (currentFolderId(controller, dialogId) != 1 && !autoArchived.contains(dialogId)) {
+                        changes.put(dialogId, true);
+                    }
+                }
+                for (Long dialogId : previous.keySet()) {
+                    if (current.containsKey(dialogId)) {
+                        continue;
+                    }
+                    if (autoArchived.contains(dialogId)) {
+                        changes.put(dialogId, false);
+                    }
+                    if (optOut.contains(dialogId)) {
+                        optOut.remove(dialogId);
+                    }
+                }
+            }
+            lastFolderMembership = current;
+            boolean changed = false;
+            if (!changes.isEmpty() && applyArchiveChanges(controller, changes)) {
+                for (Map.Entry<Long, Boolean> entry : changes.entrySet()) {
+                    if (entry.getValue()) {
+                        autoArchived.add(entry.getKey());
+                    } else {
+                        autoArchived.remove(entry.getKey());
+                    }
+                }
+                changed = true;
+            }
+            if (!optOut.equals(config.folderArchiveOptOutDialogIds == null
+                    ? new HashSet<Long>() : new HashSet<>(config.folderArchiveOptOutDialogIds))) {
+                changed = true;
+            }
+            if (!autoArchived.equals(config.autoArchivedDialogIds == null
+                    ? new HashSet<Long>() : new HashSet<>(config.autoArchivedDialogIds))) {
+                changed = true;
+            }
+            if (changed) {
+                try {
+                    Context appContext = resolveHostApplication();
+                    if (appContext != null) {
+                        FilterConfig updated = config.deepCopy().sanitize();
+                        updated.autoArchivedDialogIds = new ArrayList<>(autoArchived);
+                        updated.folderArchiveOptOutDialogIds = new ArrayList<>(optOut);
+                        updated.updatedAtEpochMs = System.currentTimeMillis();
+                        saveUpdatedConfig(appContext, updated);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable throwable) {
+            error("Folder-archive sync failed", throwable);
+        }
+    }
+
+    private int currentFolderId(Object controller, long dialogId) {
+        try {
+            Object dialog = Reflect.invokeIfExists(controller, "getDialog", new Class<?>[]{long.class}, dialogId);
+            if (dialog != null) {
+                Object folderId = Reflect.field(dialog, "folder_id");
+                if (folderId instanceof Number) {
+                    return ((Number) folderId).intValue();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    private boolean applyArchiveChanges(Object controller, Map<Long, Boolean> changes) {
+        try {
+            int account = savedClassLoader != null ? resolveSelectedTelegramAccount(savedClassLoader) : 0;
+            if (account < 0) {
+                account = 0;
+            }
+            ClassLoader cl = savedClassLoader != null ? savedClassLoader : controller.getClass().getClassLoader();
+            Class<?> folderPeerClass = cl.loadClass("org.telegram.tgnet.TLRPC$TL_folderPeer");
+            Class<?> editClass = cl.loadClass("org.telegram.tgnet.TLRPC$TL_folders_editPeerFolders");
+            Object request = editClass.getDeclaredConstructor().newInstance();
+            ArrayList<Object> peers = new ArrayList<>();
+            for (Map.Entry<Long, Boolean> entry : changes.entrySet()) {
+                Object peer = Reflect.invokeIfExists(controller, "getPeer", new Class<?>[]{long.class}, entry.getKey());
+                if (peer == null) {
+                    continue;
+                }
+                Object folderPeer = folderPeerClass.getDeclaredConstructor().newInstance();
+                Reflect.setField(folderPeer, "folder_id", entry.getValue() ? 1 : 0);
+                Reflect.setField(folderPeer, "peer", peer);
+                peers.add(folderPeer);
+            }
+            if (peers.isEmpty()) {
+                return false;
+            }
+            Reflect.setField(request, "folder_peers", peers);
+            Class<?> cmClass = cl.loadClass("org.telegram.tgnet.ConnectionsManager");
+            Object cm = Reflect.invokeStatic(cmClass, "getInstance", new Class<?>[]{int.class}, account);
+            if (cm == null) {
+                return false;
+            }
+            Class<?> delegateClass = cl.loadClass("org.telegram.tgnet.RequestDelegate");
+            final int finalAccount = account;
+            final Map<Long, Boolean> finalChanges = new HashMap<>(changes);
+            final Object finalController = controller;
+            final ClassLoader finalCl = cl;
+            Object delegate = java.lang.reflect.Proxy.newProxyInstance(cl, new Class<?>[]{delegateClass},
+                    (java.lang.reflect.InvocationHandler) (proxy, method, args) -> {
+                        if ("run".equals(method.getName())) {
+                            try {
+                                Object error = args != null && args.length > 1 ? args[1] : null;
+                                if (error == null) {
+                                    for (Map.Entry<Long, Boolean> entry : finalChanges.entrySet()) {
+                                        try {
+                                            Object dialog = Reflect.invokeIfExists(finalController, "getDialog",
+                                                    new Class<?>[]{long.class}, entry.getKey());
+                                            if (dialog != null) {
+                                                Reflect.setField(dialog, "folder_id", entry.getValue() ? 1 : 0);
+                                            }
+                                        } catch (Throwable ignored) {
+                                        }
+                                    }
+                                    try {
+                                        Class<?> ncClass = finalCl.loadClass("org.telegram.messenger.NotificationCenter");
+                                        Object nc = Reflect.invokeStatic(ncClass, "getInstance", new Class<?>[]{int.class}, finalAccount);
+                                        Object reloadId = Reflect.staticField(ncClass, "dialogsNeedReload");
+                                        if (nc != null && reloadId instanceof Number) {
+                                            Reflect.invokeIfExists(nc, "postNotificationName",
+                                                    new Class<?>[]{int.class, Object[].class},
+                                                    ((Number) reloadId).intValue(), new Object[0]);
+                                        }
+                                    } catch (Throwable ignored) {
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                            return null;
+                        }
+                        if ("toString".equals(method.getName())) {
+                            return "FolderArchiveDelegate";
+                        }
+                        if ("hashCode".equals(method.getName())) {
+                            return System.identityHashCode(proxy);
+                        }
+                        if ("equals".equals(method.getName())) {
+                            return proxy == (args != null && args.length > 0 ? args[0] : null);
+                        }
+                        return null;
+                    });
+            Object reqId = Reflect.invokeIfExists(cm, "sendRequest",
+                    new Class<?>[]{cl.loadClass("org.telegram.tgnet.TLObject"), delegateClass}, request, delegate);
+            return reqId != null;
+        } catch (Throwable throwable) {
+            error("Folder-archive apply failed", throwable);
+            return false;
         }
     }
 
