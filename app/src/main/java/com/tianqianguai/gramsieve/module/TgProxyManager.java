@@ -331,8 +331,34 @@ final class TgProxyManager {
             if (dialogIds == null || dialogIds.isEmpty()) {
                 return out;
             }
-            if (dialogIds.size() > 20) {
-                dialogIds = new ArrayList<>(dialogIds.subList(0, 20));
+            // Build #25: sort folder chats by last message date, newest
+            // first, so an active proxy channel is scanned even when the
+            // folder has more chats than the cap. Cap raised 20 -> 30.
+            try {
+                final Object sortController = controller;
+                dialogIds.sort((a, b) -> {
+                    long dateA = 0L;
+                    long dateB = 0L;
+                    try {
+                        Object dialogA = Reflect.invokeIfExists(sortController, "getDialog",
+                                new Class<?>[]{long.class}, a);
+                        Object dateObjA = dialogA == null ? null : Reflect.field(dialogA, "lastMessageDate");
+                        if (dateObjA instanceof Number) dateA = ((Number) dateObjA).longValue();
+                    } catch (Throwable ignored) {
+                    }
+                    try {
+                        Object dialogB = Reflect.invokeIfExists(sortController, "getDialog",
+                                new Class<?>[]{long.class}, b);
+                        Object dateObjB = dialogB == null ? null : Reflect.field(dialogB, "lastMessageDate");
+                        if (dateObjB instanceof Number) dateB = ((Number) dateObjB).longValue();
+                    } catch (Throwable ignored) {
+                    }
+                    return Long.compare(dateB, dateA);
+                });
+            } catch (Throwable ignored) {
+            }
+            if (dialogIds.size() > 30) {
+                dialogIds = new ArrayList<>(dialogIds.subList(0, 30));
             }
             Object connectionsManager = adapter.getConnectionsManager(controller);
             if (connectionsManager == null) {
@@ -370,6 +396,47 @@ final class TgProxyManager {
                                                     synchronized (allText) {
                                                         allText.append((String) text).append("\n");
                                                     }
+                                                }
+                                                // Build #25: proxy links are often NOT in
+                                                // the visible text - they hide in a text
+                                                // link entity ("点击获取") or an inline
+                                                // button URL. Extract both, otherwise a
+                                                // channel full of proxy buttons scans as 0.
+                                                try {
+                                                    Object entities = Reflect.field(msg, "entities");
+                                                    if (entities instanceof List) {
+                                                        for (Object entity : (List<?>) entities) {
+                                                            Object url = Reflect.field(entity, "url");
+                                                            if (url instanceof String && !((String) url).isBlank()) {
+                                                                synchronized (allText) {
+                                                                    allText.append((String) url).append("\n");
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } catch (Throwable ignored) {
+                                                }
+                                                try {
+                                                    Object markup = Reflect.field(msg, "reply_markup");
+                                                    if (markup != null) {
+                                                        Object rows = Reflect.field(markup, "rows");
+                                                        if (rows instanceof List) {
+                                                            for (Object row : (List<?>) rows) {
+                                                                Object buttons = Reflect.field(row, "buttons");
+                                                                if (buttons instanceof List) {
+                                                                    for (Object button : (List<?>) buttons) {
+                                                                        Object url = Reflect.field(button, "url");
+                                                                        if (url instanceof String && !((String) url).isBlank()) {
+                                                                            synchronized (allText) {
+                                                                                allText.append((String) url).append("\n");
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } catch (Throwable ignored) {
                                                 }
                                                 Object media = Reflect.field(msg, "media");
                                                 if (media != null) {
@@ -411,7 +478,7 @@ final class TgProxyManager {
                 }
             }
             try {
-                latch.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                latch.await(45, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Throwable ignored) {
             }
             if (allText.length() > 0) {
@@ -478,7 +545,9 @@ final class TgProxyManager {
         List<FilterConfig.ProxyEntry> fresh = new ArrayList<>();
         if (updated.proxyFolderScan && updated.proxyFolderName != null && !updated.proxyFolderName.isBlank()) {
             try {
-                fresh.addAll(scanFolderChats(context, updated.proxyFolderName.trim()));
+                List<FilterConfig.ProxyEntry> folderEntries = scanFolderChats(context, updated.proxyFolderName.trim());
+                result.folderFetched = folderEntries.size();
+                fresh.addAll(folderEntries);
             } catch (Throwable ignored) {
             }
         }

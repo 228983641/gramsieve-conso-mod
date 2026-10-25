@@ -107,6 +107,7 @@ final class TelegramHookInstaller {
     // only so the classify bar can trigger a list refresh on filter change.
     private java.lang.ref.WeakReference<Object> lastDialogsActivityRef;
     private volatile long lastClassifyBarSyncMs = 0L;
+    private volatile long lastClassifyBarInstallAttemptMs = 0L;
     private final FilterEngine filterEngine = new FilterEngine();
     private final DecisionCache decisionCache = new DecisionCache();
     private final AtomicInteger bindingProbeBudget = new AtomicInteger(12);
@@ -7469,6 +7470,29 @@ final class TelegramHookInstaller {
                         try {
                             FilterConfig cfg = currentEnhancementConfig();
                             Object cell = chain.getThisObject();
+                            // Build #25: if the bar is missing entirely
+                            // (tabs/list were not ready when createView ran,
+                            // so the first install silently returned), retry
+                            // installing it from the first bound cell, at
+                            // most once per 2s, as long as the switch is on.
+                            // This runs before the early return below, so it
+                            // also works when the current filter is All (0).
+                            try {
+                                if (cfg.showClassifyBar && cell instanceof View) {
+                                    long nowInstallMs = System.currentTimeMillis();
+                                    if (nowInstallMs - lastClassifyBarInstallAttemptMs > 2000L) {
+                                        View cellView = (View) cell;
+                                        View rootView = cellView.getRootView();
+                                        if (rootView instanceof ViewGroup
+                                                && findViewWithTag((ViewGroup) rootView, "gramsieve_classify_bar") == null) {
+                                            lastClassifyBarInstallAttemptMs = nowInstallMs;
+                                            Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
+                                            installClassifyBar(dialogsHost, rootView);
+                                        }
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            }
                             int categoryFilter = classifyFilterForCategory(currentClassifyCategory(), cfg);
                             if (!(cell instanceof View) || !cfg.showClassifyBar || categoryFilter == 0) {
                                 if (cell instanceof View) {
@@ -7623,6 +7647,14 @@ final class TelegramHookInstaller {
             }
             Map<Long, Set<Integer>> current = new HashMap<>();
             for (Object filter : (List<?>) filtersObj) {
+                // Build #25: ALL_CHATS is Telegram's built-in "All Chats"
+                // pseudo-filter, not a user folder. Treating it as a folder
+                // would archive every chat in the app, not just folder
+                // chats, and could create a second Archive entry.
+                String filterName = Reflect.asString(Reflect.field(filter, "name"));
+                if (filterName != null && "ALL_CHATS".equalsIgnoreCase(filterName.trim())) {
+                    continue;
+                }
                 int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
                 Object dialogs = Reflect.field(filter, "dialogs");
                 if (!(dialogs instanceof List)) {
