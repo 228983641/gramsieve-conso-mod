@@ -153,6 +153,10 @@ public final class DialogTheme {
                 || "gramsieve_section".equals(view.getTag());
     }
 
+    private static boolean isInfo(View view) {
+        return "gramsieve_info".equals(view.getTag());
+    }
+
     /**
      * Gives every visible row in a vertical group uniform padding and
      * inserts a 1px inset divider between consecutive rows. A divider
@@ -181,16 +185,24 @@ public final class DialogTheme {
             } catch (Throwable ignored) {
             }
             boolean label = isLabel(row);
+            boolean info = isInfo(row);
             try {
-                row.setPadding(dp(context, 16f), dp(context, label ? 10f : 12f),
-                        dp(context, 16f), dp(context, label ? 2f : 12f));
+                row.setPadding(dp(context, 16f),
+                        dp(context, label ? 10f : (info ? 6f : 12f)),
+                        dp(context, 16f),
+                        dp(context, label ? 2f : (info ? 6f : 12f)));
             } catch (Throwable ignored) {
             }
         }
         for (int i = rows.size() - 2; i >= 0; i--) {
             View current = rows.get(i);
             View next = rows.get(i + 1);
-            if (isLabel(current) || "gramsieve_section".equals(next.getTag())) {
+            // Build #33: info paragraphs are text blocks, not rows.
+            // Putting a divider on either side of one chops a paragraph
+            // into stripes, which is a large part of why #32 looked
+            // worse than the cards, not better.
+            if (isLabel(current) || isInfo(current) || isInfo(next)
+                    || "gramsieve_section".equals(next.getTag())) {
                 continue;
             }
             group.addView(divider(context, colors), group.indexOfChild(next));

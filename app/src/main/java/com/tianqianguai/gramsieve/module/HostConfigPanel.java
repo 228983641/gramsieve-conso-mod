@@ -1206,14 +1206,40 @@ final class HostConfigPanel {
     }
 
     private void exportLogToFile(String content, String fileName) {
-        // Build #30: log as a real file, not pasted text. MediaStore
-        // Downloads needs no storage permission on minSdk 33, and the
-        // file survives after Conso is closed, unlike a pasted chat
-        // message. The panel runs in the host process, so no module
-        // FileProvider is available; the MediaStore Uri is shared
-        // with FLAG_GRANT_READ_URI_PERMISSION instead.
+        // Build #33: the old version only tried MediaStore and
+        // swallowed every failure into one generic toast, so on a
+        // device where the MediaStore insert or the share chooser
+        // fails, the user got no file and no reason. Now the file
+        // is ALWAYS written first to the app's own GramSieve
+        // directory (the same place the log itself lives, so it is
+        // writable whenever logging works), and only then is a
+        // MediaStore copy + share attempted. If sharing fails, the
+        // toast names the local file so the user can still find it
+        // in a file manager and send it.
+        String name = (fileName == null || fileName.isEmpty()) ? "gramsieve-log.log" : fileName;
         try {
-            String name = (fileName == null || fileName.isEmpty()) ? "gramsieve-log.log" : fileName;
+            java.io.File externalDir = context.getExternalFilesDir(null);
+            java.io.File dir = externalDir != null
+                    ? new java.io.File(externalDir, "GramSieve")
+                    : new java.io.File(context.getFilesDir(), "GramSieve");
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            java.io.File localFile = new java.io.File(dir, name);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(localFile);
+            try {
+                out.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } finally {
+                out.close();
+            }
+        } catch (Throwable localError) {
+            Toast.makeText(context, t("导出文件失败（本地写入失败：" + localError.getClass().getSimpleName()
+                    + "），请用复制方式", "File export failed (local write failed: "
+                    + localError.getClass().getSimpleName() + "), use Copy instead"),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
             android.content.ContentValues values = new android.content.ContentValues();
             values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
             values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain");
@@ -1236,10 +1262,17 @@ final class HostConfigPanel {
             share.setType("text/plain");
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            context.startActivity(Intent.createChooser(share, t("分享日志文件", "Share log file")));
+            Intent chooser = Intent.createChooser(share, t("分享日志文件", "Share log file"));
+            if (!(context instanceof android.app.Activity)) {
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            }
+            context.startActivity(chooser);
             Toast.makeText(context, t("日志文件已保存到下载目录 GramSieve", "Log file saved to Download/GramSieve"), Toast.LENGTH_LONG).show();
-        } catch (Throwable throwable) {
-            Toast.makeText(context, t("导出文件失败，请用复制或分享文字方式", "File export failed, use Copy or Share text instead"), Toast.LENGTH_LONG).show();
+        } catch (Throwable shareError) {
+            Toast.makeText(context, t("分享打开失败，但文件已保存到 GramSieve 目录：" + name
+                    + "，可以在文件管理里找到它发给我", "Share failed, but the file is saved in the GramSieve folder: "
+                    + name + ", find it in a file manager and send it"),
+                    Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1834,10 +1867,14 @@ final class HostConfigPanel {
         LinearLayout group = new LinearLayout(context);
         group.setOrientation(LinearLayout.VERTICAL);
         group.setBackgroundColor(backgroundColor);
-        parent.addView(group, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams groupParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
+        );
+        // Build #33: a gap after each group, so groups read as
+        // separate blocks instead of one continuous sheet.
+        groupParams.bottomMargin = dp(12);
+        parent.addView(group, groupParams);
         return group;
     }
 
@@ -1900,6 +1937,7 @@ final class HostConfigPanel {
 
     private TextView addInfo(LinearLayout parent, String text) {
         TextView info = new TextView(context);
+        info.setTag("gramsieve_info");
         info.setText(text);
         info.setTextColor(secondaryTextColor);
         info.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
@@ -1910,6 +1948,7 @@ final class HostConfigPanel {
 
     private Switch addSwitch(LinearLayout parent, String text) {
         Switch toggle = new Switch(context);
+        toggle.setMinHeight(dp(48));
         toggle.setText(text);
         toggle.setTextColor(primaryTextColor);
         toggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);

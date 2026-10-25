@@ -4718,6 +4718,7 @@ final class TelegramHookInstaller {
             // padding of its own.
             dialogView.setPadding(0, pad, 0, 0);
             TextView summaryView = new TextView(activity);
+            summaryView.setTag("gramsieve_info");
             summaryView.setText(summary);
             summaryView.setTextColor(smartPrimaryColor);
             summaryView.setTextSize(14f);
@@ -4864,6 +4865,7 @@ final class TelegramHookInstaller {
             dialogView.addView(targetGroup, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView footer = new TextView(activity);
+            footer.setTag("gramsieve_info");
             footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入上面所选的规则范围。");
             footer.setTextColor(smartSecondaryColor);
             footer.setTextSize(13f);
