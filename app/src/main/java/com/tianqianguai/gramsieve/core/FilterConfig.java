@@ -27,6 +27,7 @@ public final class FilterConfig {
     public boolean preventMessageDelete = false;
     public boolean boostDownloadSpeed = false;
     public boolean localPremium = false;
+    public boolean autoTranslateToChinese = false;
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -100,6 +101,7 @@ public final class FilterConfig {
         copy.preventMessageDelete = preventMessageDelete;
         copy.boostDownloadSpeed = boostDownloadSpeed;
         copy.localPremium = localPremium;
+        copy.autoTranslateToChinese = autoTranslateToChinese;
         copy.updatedAtEpochMs = updatedAtEpochMs;
         for (RuleSpec rule : globalRules) {
             copy.globalRules.add(rule.deepCopy());

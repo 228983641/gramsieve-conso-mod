@@ -100,6 +100,7 @@ final class HostConfigPanel {
     private Switch preventDeleteSwitch;
     private Switch downloadSpeedSwitch;
     private Switch localPremiumSwitch;
+    private Switch autoTranslateSwitch;
     private RadioGroup languageGroup;
     private RadioGroup actionGroup;
 
@@ -135,7 +136,7 @@ final class HostConfigPanel {
         );
         int androidAccent = resolveThemeColor(android.R.attr.colorAccent, Color.rgb(42, 171, 238));
         this.backgroundColor = telegramThemeColor("key_windowBackgroundWhite", androidBackground);
-        this.cardColor = backgroundColor;
+        this.cardColor = telegramThemeColor("key_windowBackgroundGray", backgroundColor);
         this.primaryTextColor = telegramThemeColor("key_windowBackgroundWhiteBlackText", androidPrimaryText);
         this.secondaryTextColor = telegramThemeColor("key_windowBackgroundWhiteGrayText2", androidSecondaryText);
         this.strokeColor = telegramThemeColor("key_divider", adjustAlpha(primaryTextColor, 0.14f));
@@ -322,6 +323,7 @@ final class HostConfigPanel {
             buildChatAntiRecallCard(container);
         } else {
             buildEnhancementCard(container);
+            buildTranslateCard(container);
         }
         buildRulesCard(container);
 
@@ -440,6 +442,15 @@ final class HostConfigPanel {
         addInfo(card, t("仅本地生效：让客户端认为你是 Premium，可突破置顶聊天数等客户端检查（实测为准，服务端仍可能限制）。服务端 Premium 功能（大文件上传、语音转文字等）仍需官方订阅，且开启本地 Premium 有封号风险，请自行决定。", "Local only: makes the client treat you as Premium, unlocking client-side checks such as the pinned-chat limit (verify on device; the server may still limit). Server Premium features still need a real subscription, and local Premium carries a ban risk."));
     }
 
+    private void buildTranslateCard(LinearLayout container) {
+        LinearLayout card = addCard(container);
+        addTitle(card, t("翻译", "Translation"));
+        addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后，打开聊天时会自动把该聊天的翻译目标设为中文，并尝试开启整聊自动翻译；中文消息不受影响。", "Uses Conso's built-in translation service, no third-party translator. When on, opening a chat sets its translate target to Chinese and tries to enable whole-chat auto-translate; Chinese messages are unaffected."));
+        autoTranslateSwitch = addSwitch(card, t("自动翻译外文为中文", "Auto-translate foreign messages to Chinese"));
+        autoTranslateSwitch.setChecked(baseConfig.autoTranslateToChinese);
+        addInfo(card, t("整聊自动翻译在宿主里是 Premium 功能，若未自动翻译，请同时开启“增强功能”里的本地 Premium，或点聊天顶部的翻译按钮手动翻译整聊。", "Whole-chat auto-translate is a Premium-gated host feature. If a chat still does not auto-translate, also enable Local Premium in Enhancements, or use the chat's Translate button."));
+    }
+
     private void buildChatAntiRecallCard(LinearLayout container) {
         if (antiRecallConfigStore == null || dialogId == 0L) {
             return;
@@ -510,6 +521,7 @@ final class HostConfigPanel {
                 updated.preventMessageDelete = preventDeleteSwitch != null && preventDeleteSwitch.isChecked();
                 updated.boostDownloadSpeed = downloadSpeedSwitch != null && downloadSpeedSwitch.isChecked();
                 updated.localPremium = localPremiumSwitch != null && localPremiumSwitch.isChecked();
+                updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
             }
             saver.save(updated);
             if (afterSave != null) {
@@ -631,13 +643,14 @@ final class HostConfigPanel {
     private LinearLayout addCard(LinearLayout parent) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(rounded(cardColor, dp(8), strokeColor));
+        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        card.setBackground(rounded(cardColor, dp(16), strokeColor));
+        try { card.setElevation(dp(2)); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.bottomMargin = dp(12);
+        params.bottomMargin = dp(16);
         parent.addView(card, params);
         return card;
     }
@@ -646,8 +659,9 @@ final class HostConfigPanel {
         TextView title = new TextView(context);
         title.setText(text);
         title.setTextColor(primaryTextColor);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        try { title.setLetterSpacing(0.02f); } catch (Throwable ignored) {}
         addView(parent, title, 8);
         return title;
     }
@@ -655,14 +669,14 @@ final class HostConfigPanel {
     private TextView addSectionLabel(LinearLayout parent, String text) {
         TextView label = new TextView(context);
         label.setText(text);
-        label.setTextColor(primaryTextColor);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        label.setTextColor(accentColor);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.topMargin = dp(8);
+        params.topMargin = dp(12);
         params.bottomMargin = dp(4);
         parent.addView(label, params);
         return label;
@@ -672,7 +686,8 @@ final class HostConfigPanel {
         TextView info = new TextView(context);
         info.setText(text);
         info.setTextColor(secondaryTextColor);
-        info.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        info.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        try { info.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
         addView(parent, info, 6);
         return info;
     }
@@ -681,7 +696,14 @@ final class HostConfigPanel {
         Switch toggle = new Switch(context);
         toggle.setText(text);
         toggle.setTextColor(primaryTextColor);
-        toggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        toggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        try {
+            int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
+            int[] thumbColors = new int[]{accentColor, adjustAlpha(secondaryTextColor, 0.6f)};
+            int[] trackColors = new int[]{adjustAlpha(accentColor, 0.45f), adjustAlpha(secondaryTextColor, 0.35f)};
+            toggle.setThumbTintList(new ColorStateList(states, thumbColors));
+            toggle.setTrackTintList(new ColorStateList(states, trackColors));
+        } catch (Throwable ignored) {}
         addView(parent, toggle, 6);
         return toggle;
     }
@@ -698,6 +720,10 @@ final class HostConfigPanel {
         input.setTextColor(primaryTextColor);
         input.setHintTextColor(secondaryTextColor);
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try {
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        } catch (Throwable ignored) {}
         input.setMinLines(1);
         input.setMaxLines(4);
         input.setGravity(Gravity.TOP | Gravity.START);

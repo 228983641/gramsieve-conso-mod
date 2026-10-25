@@ -788,6 +788,11 @@ final class TelegramHookInstaller {
                 } catch (Throwable throwable) {
                     error("ChatActivity resume refresh failed", throwable);
                 }
+                try {
+                    enableAutoTranslateForChat(chain.getThisObject());
+                } catch (Throwable throwable) {
+                    error("Auto-translate on resume failed", throwable);
+                }
                 return result;
             });
             info("Hooked ChatActivity.onResume refresh");
@@ -6651,6 +6656,7 @@ final class TelegramHookInstaller {
         hookPreventMessageDelete(classLoader);
         hookBoostDownloadSpeed(classLoader);
         hookLocalPremium(classLoader);
+        hookAutoTranslate(classLoader);
     }
 
     private void hookBooleanMethod(ClassLoader classLoader, String className, String methodName, java.util.function.Supplier<Boolean> enabled, Object forcedResult) {
@@ -6901,6 +6907,112 @@ final class TelegramHookInstaller {
         // Client-side only, see the header comment above.
         hookBooleanMethod(classLoader, "org.telegram.messenger.UserConfig", "isPremium",
                 () -> currentEnhancementConfig().localPremium, true);
+    }
+
+
+    // ------------------------------------------------------------------
+    // Auto-translate to Chinese (Build #5, second push): uses Conso's own
+    // TranslateController (org.telegram.messenger.TranslateController,
+    // verified in Conso 2.0.0 dex: getTranslateController(),
+    // setDialogTranslateTo(long, String), toggleTranslatingDialog(long,
+    // boolean), isChatTranslateEnabled(), isFeatureAvailable(),
+    // isChatAutoTranslated(long), getLanguages() with Language.code).
+    // No third-party translation service is involved: the message goes
+    // through Telegram's own translation path, the same one the host's
+    // Translate button already uses. Whole-chat auto-translate is a
+    // Premium-gated feature in the host, which is why the local-premium
+    // switch (in the Enhancements card) helps here; without it, the
+    // per-chat Translate button should still work.
+    // ------------------------------------------------------------------
+    private volatile String cachedZhCode = null;
+
+    private String resolveZhCode(Object translateController) {
+        if (cachedZhCode != null) {
+            return cachedZhCode;
+        }
+        try {
+            Object langs = Reflect.invokeIfExists(translateController, "getLanguages", new Class<?>[0]);
+            if (langs instanceof List<?>) {
+                for (Object lang : (List<?>) langs) {
+                    String code = Reflect.asString(Reflect.field(lang, "code"));
+                    if (code != null && !code.isBlank() && code.toLowerCase(Locale.ROOT).startsWith("zh")) {
+                        cachedZhCode = code;
+                        return code;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        cachedZhCode = "zh-CN";
+        return cachedZhCode;
+    }
+
+    private void enableAutoTranslateForChat(Object chatActivity) {
+        try {
+            if (!currentEnhancementConfig().autoTranslateToChinese) {
+                return;
+            }
+            long dialogId = Reflect.asLong(Reflect.invokeIfExists(chatActivity, "getDialogId", new Class<?>[0]), 0L);
+            if (dialogId == 0L) {
+                return;
+            }
+            int account = Reflect.asInt(Reflect.field(chatActivity, "currentAccount"), -1);
+            if (account < 0 && savedClassLoader != null) {
+                account = resolveSelectedTelegramAccount(savedClassLoader);
+            }
+            if (account < 0) {
+                account = 0;
+            }
+            ClassLoader cl = savedClassLoader != null ? savedClassLoader : chatActivity.getClass().getClassLoader();
+            Class<?> mcClass = cl.loadClass("org.telegram.messenger.MessagesController");
+            Object controller = Reflect.invokeStatic(mcClass, "getInstance", new Class<?>[]{int.class}, account);
+            Object tc = Reflect.invokeIfExists(controller, "getTranslateController", new Class<?>[0]);
+            if (tc == null) {
+                return;
+            }
+            String zh = resolveZhCode(tc);
+            Reflect.invokeIfExists(tc, "setChatTranslateEnabled", new Class<?>[]{boolean.class}, true);
+            Reflect.invokeIfExists(tc, "setDialogTranslateTo", new Class<?>[]{long.class, String.class}, dialogId, zh);
+            Object toggled = Reflect.invokeIfExists(tc, "toggleTranslatingDialog", new Class<?>[]{long.class, boolean.class}, dialogId, true);
+            if (toggled == null) {
+                Reflect.invokeIfExists(tc, "toggleTranslatingDialog", new Class<?>[]{long.class}, dialogId);
+            }
+            info("Auto-translate: enabled for dialog " + dialogId + " to " + zh);
+        } catch (Throwable throwable) {
+            error("Auto-translate enable failed", throwable);
+        }
+    }
+
+    private void hookAutoTranslate(ClassLoader classLoader) {
+        hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isChatTranslateEnabled",
+                () -> currentEnhancementConfig().autoTranslateToChinese, true);
+        hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isFeatureAvailable",
+                () -> currentEnhancementConfig().autoTranslateToChinese, true);
+        hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isChatAutoTranslated",
+                () -> currentEnhancementConfig().autoTranslateToChinese, true);
+        try {
+            Class<?> clazz = classLoader.loadClass("org.telegram.messenger.TranslateController");
+            for (Method candidate : clazz.getDeclaredMethods()) {
+                if (!"getDialogTranslateTo".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    if (currentEnhancementConfig().autoTranslateToChinese) {
+                        try {
+                            return resolveZhCode(chain.getThisObject());
+                        } catch (Throwable ignored) {
+                            return "zh-CN";
+                        }
+                    }
+                    return chain.proceed();
+                });
+            }
+            info("Enhancement: hooked TranslateController for auto-translate to Chinese");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook TranslateController", throwable);
+        }
     }
 
     private void hook(Method method, XposedInterface.Hooker hooker) {

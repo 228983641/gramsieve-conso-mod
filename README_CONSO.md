@@ -54,3 +54,7 @@ Untested on a real device. Known risks:
 
 ## 签名连续性（Build #5 起）
 - 之前每次构建签名都不同，是因为 CI 每次都新生成临时调试密钥。本版起仓库里放了一个固定的调试密钥（debug.keystore.b64，标准 Android 调试密钥：alias androiddebugkey，密码 android，非正式发布密钥，仅供个人安装使用），工作流在构建前把它还原到 ~/.android/debug.keystore，之后构建签名一致，应可覆盖安装。本版与之前所有版本签名都不同，所以本版仍需最后卸载一次，之后不用。
+
+## 2026-10-25 自动翻译与界面美化（Build #5 第二推）
+- 自动翻译：查 Conso 2.0.0 dex 确认自带 TranslateController（MessagesController.getTranslateController()、setDialogTranslateTo、toggleTranslatingDialog、isChatAutoTranslated、getLanguages().code），本功能直接用宿主原生翻译，不经过第三方翻译网站。设置里新增“翻译”卡片，开关“自动翻译外文为中文”，默认关闭；开启后打开聊天时把该聊天翻译目标设为中文（从宿主语言列表里找 zh 开头的代码，找不到则用 zh-CN），并尝试开启整聊自动翻译，同时把 isChatTranslateEnabled / isFeatureAvailable / isChatAutoTranslated 视为开启。整聊自动翻译在宿主里是 Premium 功能，需配合本地 Premium 开关，实测为准；若仍未自动翻译，可用聊天顶部翻译按钮。
+- 界面美化：仅美化插件自己的设置面板，不动 Conso 界面。卡片圆角 16dp、卡片底色用主题灰色与屏幕背景分开、卡片间距和内边距加大、标题 17sp、分类标签用主题蓝 13sp、开关开启时拇指/轨道用主题蓝、说明文字 13sp 行距加大、输入框改成圆角浅底框。
