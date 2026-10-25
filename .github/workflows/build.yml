@@ -6,6 +6,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Restore fixed debug keystore
+        run: |
+          mkdir -p ~/.android
+          base64 -d debug.keystore.b64 > ~/.android/debug.keystore
+          chmod 600 ~/.android/debug.keystore
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
