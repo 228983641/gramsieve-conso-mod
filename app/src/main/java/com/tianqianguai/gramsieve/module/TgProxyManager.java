@@ -207,6 +207,221 @@ final class TgProxyManager {
         }
     }
 
+    private static Object proxyFieldValue(Object obj, String name) {
+        if (obj == null) {
+            return null;
+        }
+        try {
+            java.lang.reflect.Field field = obj.getClass().getField(name);
+            return field.get(obj);
+        } catch (Throwable ignored) {
+        }
+        try {
+            java.lang.reflect.Field field = obj.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(obj);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Read Conso's own proxy list (Build #23 fix for "already-added
+     * proxies not recognised"): the module list and the host list were
+     * separate, so proxies added in Conso settings or by tapping a
+     * t.me/proxy link in Telegram were invisible to the module. Host
+     * entries are returned with source "host" and the host's last ping /
+     * availability when available, so refresh can test them and will not
+     * duplicate them. Never throws. */
+    static List<FilterConfig.ProxyEntry> importHostProxies(Context context) {
+        List<FilterConfig.ProxyEntry> out = new ArrayList<>();
+        if (context == null) {
+            return out;
+        }
+        try {
+            ClassLoader cl = context.getClassLoader();
+            Class<?> sharedConfig = Class.forName("org.telegram.messenger.SharedConfig", false, cl);
+            java.lang.reflect.Method load = sharedConfig.getDeclaredMethod("loadProxyList");
+            load.setAccessible(true);
+            load.invoke(null);
+            java.lang.reflect.Field listField = sharedConfig.getDeclaredField("proxyList");
+            listField.setAccessible(true);
+            Object listObj = listField.get(null);
+            if (!(listObj instanceof List)) {
+                return out;
+            }
+            long now = System.currentTimeMillis();
+            for (Object info : (List<?>) listObj) {
+                try {
+                    Object addressObj = proxyFieldValue(info, "address");
+                    Object portObj = proxyFieldValue(info, "port");
+                    Object secretObj = proxyFieldValue(info, "secret");
+                    if (!(addressObj instanceof String) || ((String) addressObj).isBlank()
+                            || !(portObj instanceof Number) || !(secretObj instanceof String)
+                            || ((String) secretObj).isBlank()) {
+                        continue;
+                    }
+                    FilterConfig.ProxyEntry entry = new FilterConfig.ProxyEntry();
+                    entry.address = ((String) addressObj).trim();
+                    entry.port = ((Number) portObj).intValue();
+                    Object usernameObj = proxyFieldValue(info, "username");
+                    Object passwordObj = proxyFieldValue(info, "password");
+                    entry.username = usernameObj instanceof String ? (String) usernameObj : "";
+                    entry.password = passwordObj instanceof String ? (String) passwordObj : "";
+                    entry.secret = ((String) secretObj).trim();
+                    Object pingObj = proxyFieldValue(info, "ping");
+                    entry.pingMs = pingObj instanceof Number ? ((Number) pingObj).longValue() : -1L;
+                    Object availableObj = proxyFieldValue(info, "available");
+                    entry.available = availableObj instanceof Boolean ? (Boolean) availableObj : entry.pingMs >= 0;
+                    entry.lastTestedMs = entry.available ? now : 0L;
+                    entry.addedMs = now;
+                    entry.source = "host";
+                    out.add(entry);
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    /** Scan recent messages from chats in ONE folder (Build #23, user
+     * specified "节点" on 2026-10-25) and extract t.me/proxy links.
+     * Uses the same isolated getHistory adapter as BackgroundMessageLoader
+     * (never MessagesController.loadMessages, so Telegram pagination state
+     * is untouched). At most 20 chats, 50 messages each, 30s total wait;
+     * per-chat failures are isolated, partial results are still returned.
+     * Returns parsed entries with source "folder:<name>". Never throws. */
+    static List<FilterConfig.ProxyEntry> scanFolderChats(Context context, String folderName) {
+        List<FilterConfig.ProxyEntry> out = new ArrayList<>();
+        if (context == null || folderName == null || folderName.isBlank()) {
+            return out;
+        }
+        try {
+            TelegramHistoryApiAdapter.ProbeResult probe =
+                    TelegramHistoryApiAdapter.probe(context.getClassLoader());
+            if (probe == null || !probe.isSupported() || probe.adapter == null) {
+                return out;
+            }
+            TelegramHistoryApiAdapter adapter = probe.adapter;
+            Object controller = adapter.getController(0);
+            if (controller == null) {
+                return out;
+            }
+            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (!(filtersObj instanceof List)) {
+                return out;
+            }
+            List<Long> dialogIds = null;
+            for (Object filter : (List<?>) filtersObj) {
+                String name = Reflect.asString(Reflect.field(filter, "name"));
+                if (name != null && name.trim().equals(folderName.trim())) {
+                    Object dialogs = Reflect.field(filter, "dialogs");
+                    if (dialogs instanceof List) {
+                        dialogIds = new ArrayList<>();
+                        for (Object idObj : (List<?>) dialogs) {
+                            long id = Reflect.asLong(idObj, 0L);
+                            if (id != 0L) {
+                                dialogIds.add(id);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            if (dialogIds == null || dialogIds.isEmpty()) {
+                return out;
+            }
+            if (dialogIds.size() > 20) {
+                dialogIds = new ArrayList<>(dialogIds.subList(0, 20));
+            }
+            Object connectionsManager = adapter.getConnectionsManager(controller);
+            if (connectionsManager == null) {
+                return out;
+            }
+            StringBuilder allText = new StringBuilder();
+            java.util.concurrent.CountDownLatch latch =
+                    new java.util.concurrent.CountDownLatch(dialogIds.size());
+            for (long dialogId : dialogIds) {
+                try {
+                    Object peer = Reflect.invokeIfExists(controller, "getInputPeer",
+                            new Class<?>[]{long.class}, dialogId);
+                    if (peer == null) {
+                        peer = Reflect.invokeIfExists(controller, "getInputPeer",
+                                new Class<?>[]{Long.class}, Long.valueOf(dialogId));
+                    }
+                    if (peer == null) {
+                        latch.countDown();
+                        continue;
+                    }
+                    Object request = adapter.newHistoryRequest(peer, 50);
+                    Object delegate = adapter.newRequestDelegate((proxy, method, args) -> {
+                        try {
+                            if ("run".equals(method.getName())) {
+                                try {
+                                Object response = args != null && args.length > 0 ? args[0] : null;
+                                Object error = args != null && args.length > 1 ? args[1] : null;
+                                if (error == null && response != null) {
+                                    Object messages = Reflect.field(response, "messages");
+                                    if (messages instanceof List) {
+                                        for (Object msg : (List<?>) messages) {
+                                            try {
+                                                Object text = Reflect.field(msg, "message");
+                                                if (text instanceof String && !((String) text).isBlank()) {
+                                                    synchronized (allText) {
+                                                        allText.append((String) text).append("\n");
+                                                    }
+                                                }
+                                                Object media = Reflect.field(msg, "media");
+                                                if (media != null) {
+                                                    Object caption = Reflect.field(media, "caption");
+                                                    if (caption instanceof String && !((String) caption).isBlank()) {
+                                                        synchronized (allText) {
+                                                            allText.append((String) caption).append("\n");
+                                                        }
+                                                    }
+                                                }
+                                            } catch (Throwable ignored) {
+                                            }
+                                        }
+                                    }
+                                }
+                                } finally {
+                                    latch.countDown();
+                                }
+                            }
+                            if ("toString".equals(method.getName())) {
+                                return "FolderProxyScanDelegate";
+                            }
+                            if ("hashCode".equals(method.getName())) {
+                                return System.identityHashCode(proxy);
+                            }
+                            if ("equals".equals(method.getName())) {
+                                return proxy == (args != null && args.length > 0 ? args[0] : null);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                        return null;
+                    });
+                    int requestId = adapter.sendRequest(connectionsManager, request, delegate);
+                    if (requestId <= 0) {
+                        latch.countDown();
+                    }
+                } catch (Throwable ignored) {
+                    latch.countDown();
+                }
+            }
+            try {
+                latch.await(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Throwable ignored) {
+            }
+            if (allText.length() > 0) {
+                out.addAll(parseLinks(allText.toString(), "folder:" + folderName.trim()));
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
     /** Synchronous refresh. Caller must run this off the UI thread.
      * Fetches the configured source + pasted links, merges with existing
      * entries, tests (max 20, fastest first by previous ping), sorts by
@@ -224,7 +439,24 @@ final class TgProxyManager {
                 }
             }
         }
+        // Build #23: first merge Conso's own already-added proxies so
+        // they are recognised, tested and not duplicated, then add the
+        // folder scan (only the user-specified folder, default "节点").
+        for (FilterConfig.ProxyEntry hostEntry : importHostProxies(context)) {
+            FilterConfig.ProxyEntry existing = byKey.get(hostEntry.key());
+            if (existing == null) {
+                byKey.put(hostEntry.key(), hostEntry);
+            } else if (existing.source == null || existing.source.isEmpty()) {
+                existing.source = "host";
+            }
+        }
         List<FilterConfig.ProxyEntry> fresh = new ArrayList<>();
+        if (updated.proxyFolderScan && updated.proxyFolderName != null && !updated.proxyFolderName.isBlank()) {
+            try {
+                fresh.addAll(scanFolderChats(context, updated.proxyFolderName.trim()));
+            } catch (Throwable ignored) {
+            }
+        }
         if (updated.proxySourceUrl != null && !updated.proxySourceUrl.isBlank()) {
             try {
                 String text = fetchText(updated.proxySourceUrl.trim());

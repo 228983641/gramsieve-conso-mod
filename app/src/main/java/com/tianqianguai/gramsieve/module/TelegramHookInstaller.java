@@ -6366,6 +6366,12 @@ final class TelegramHookInstaller {
                 if (name == null || name.isBlank()) {
                     continue;
                 }
+                // Build #23: ALL_CHATS is Telegram's built-in "All Chats"
+                // pseudo-filter, not a real user folder; listing it let the
+                // user "add" a channel to All Chats, which is meaningless.
+                if ("ALL_CHATS".equalsIgnoreCase(name.trim())) {
+                    continue;
+                }
                 filters.add(filter);
                 names.add(name);
             }
@@ -6374,9 +6380,29 @@ final class TelegramHookInstaller {
                 return;
             }
             String[] items = names.toArray(new String[0]);
-            new AlertDialog.Builder(activity)
+            // Build #23 panel style (user screenshot 2026-10-25: the plain
+            // system dialog was white on a dark host). The adapter sets
+            // the item text colour on every getView, so recycled rows stay
+            // readable too, unlike a one-time post-show recolour. Window
+            // background, title and cancel button colours are set after
+            // show(), when those views exist.
+            int folderCardColor = panelThemeColor(activity, android.R.attr.colorBackground, 0xFF121212);
+            int folderPrimaryColor = panelThemeColor(activity, android.R.attr.textColorPrimary, 0xFFFFFFFF);
+            int folderAccentColor = panelThemeColor(activity, android.R.attr.colorAccent, 0xFF2AABEE);
+            android.widget.ArrayAdapter<String> folderAdapter =
+                    new android.widget.ArrayAdapter<String>(activity, android.R.layout.simple_list_item_1, items) {
+                        @Override
+                        public View getView(int position, View convertView, ViewGroup parent) {
+                            View view = super.getView(position, convertView, parent);
+                            if (view instanceof TextView) {
+                                ((TextView) view).setTextColor(folderPrimaryColor);
+                            }
+                            return view;
+                        }
+                    };
+            AlertDialog folderDialog = new AlertDialog.Builder(activity)
                     .setTitle(localizedAddToFolderLabel(context))
-                    .setItems(items, (dialog, which) -> {
+                    .setAdapter(folderAdapter, (dialog, which) -> {
                         try {
                             Object filter = filters.get(which);
                             int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
@@ -6422,7 +6448,24 @@ final class TelegramHookInstaller {
                         }
                     })
                     .setNegativeButton(localizedCancel(context), null)
-                    .show();
+                    .create();
+            folderDialog.show();
+            try {
+                if (folderDialog.getWindow() != null) {
+                    folderDialog.getWindow().setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(folderCardColor));
+                }
+                View titleView = folderDialog.findViewById(android.R.id.title);
+                if (titleView instanceof TextView) {
+                    ((TextView) titleView).setTextColor(folderPrimaryColor);
+                }
+                android.widget.Button cancelButton =
+                        folderDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+                if (cancelButton != null) {
+                    cancelButton.setTextColor(folderAccentColor);
+                }
+            } catch (Throwable ignored) {
+            }
         } catch (Throwable throwable) {
             error("Add-to-folder dialog failed", throwable);
             Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
@@ -7069,6 +7112,18 @@ final class TelegramHookInstaller {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    private int panelThemeColor(Context context, int attr, int fallback) {
+        try {
+            android.util.TypedValue typedValue = new android.util.TypedValue();
+            if (context != null && context.getTheme() != null
+                    && context.getTheme().resolveAttribute(attr, typedValue, true)) {
+                return typedValue.data;
+            }
+        } catch (Throwable ignored) {
+        }
+        return fallback;
+    }
+
     private String resolveChatTitle(Object chatActivity) {
         Object currentChat = Reflect.field(chatActivity, "currentChat");
         String chatTitle = Reflect.asString(Reflect.field(currentChat, "title")).trim();
@@ -7361,7 +7416,8 @@ final class TelegramHookInstaller {
                         try {
                             FilterConfig cfg = currentEnhancementConfig();
                             Object cell = chain.getThisObject();
-                            if (!(cell instanceof View) || !cfg.showClassifyBar || cfg.classifyFilter == 0) {
+                            int categoryFilter = classifyFilterForCategory(currentClassifyCategory(), cfg);
+                            if (!(cell instanceof View) || !cfg.showClassifyBar || categoryFilter == 0) {
                                 if (cell instanceof View) {
                                     ((View) cell).setVisibility(View.VISIBLE);
                                 }
@@ -7382,7 +7438,7 @@ final class TelegramHookInstaller {
                             }
                             int type = classifyDialogType(cell, dialogId);
                             // type: 0=unknown (never hide), 1=personal, 2=group, 3=channel
-                            if (type == 0 || type == cfg.classifyFilter) {
+                            if (type == 0 || type == categoryFilter) {
                                 ((View) cell).setVisibility(View.VISIBLE);
                             } else {
                                 ((View) cell).setVisibility(View.GONE);
@@ -7875,6 +7931,11 @@ final class TelegramHookInstaller {
                 button.setOnClickListener(v -> {
                     try {
                         FilterConfig updated = currentEnhancementConfig().deepCopy();
+                        String category = currentClassifyCategory();
+                        if (updated.classifyFiltersByCategory == null) {
+                            updated.classifyFiltersByCategory = new java.util.LinkedHashMap<>();
+                        }
+                        updated.classifyFiltersByCategory.put(category, filter);
                         updated.classifyFilter = filter;
                         updated.updatedAtEpochMs = System.currentTimeMillis();
                         saveUpdatedConfig(context, updated);
@@ -7907,9 +7968,117 @@ final class TelegramHookInstaller {
         }
     }
 
+    // Classify per category (Build #23): the bar must work under All,
+    // Archive and each user folder separately. Category is the folder
+    // name as the user sees it ("所有" for the main list, "归档" for
+    // Archive, or a folder name); the selected tab is detected from the
+    // FilterTabsView by its outlier text colour, falling back to the
+    // global filter when detection is impossible, so a detection miss
+    // never breaks filtering, it only falls back to the old behaviour.
+    private String currentClassifyCategory() {
+        try {
+            Object host = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
+            if (host != null) {
+                Object folderId = Reflect.field(host, "folderId");
+                if (folderId instanceof Number && ((Number) folderId).intValue() == 1) {
+                    return "归档";
+                }
+                View rootView = resolveHostFragmentView(host);
+                if (rootView instanceof ViewGroup) {
+                    View tabsView = findFilterTabsView((ViewGroup) rootView);
+                    if (tabsView instanceof ViewGroup) {
+                        String selected = selectedFilterTabText((ViewGroup) tabsView);
+                        if (selected != null && !selected.isBlank()) {
+                            return selected.trim();
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "所有";
+    }
+
+    private String selectedFilterTabText(ViewGroup tabsView) {
+        try {
+            java.util.List<String> texts = new java.util.ArrayList<>();
+            java.util.List<Integer> colors = new java.util.ArrayList<>();
+            for (int i = 0; i < tabsView.getChildCount(); i++) {
+                View child = tabsView.getChildAt(i);
+                TextView textView = null;
+                if (child instanceof TextView) {
+                    textView = (TextView) child;
+                } else if (child instanceof ViewGroup) {
+                    textView = findFirstTextView((ViewGroup) child);
+                }
+                if (textView != null && textView.getText() != null && !textView.getText().toString().isBlank()) {
+                    texts.add(textView.getText().toString());
+                    colors.add(textView.getCurrentTextColor());
+                }
+            }
+            if (texts.size() < 2 || colors.size() != texts.size()) {
+                return null;
+            }
+            java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
+            for (int color : colors) {
+                counts.put(color, counts.getOrDefault(color, 0) + 1);
+            }
+            int majorityColor = colors.get(0);
+            int majorityCount = 0;
+            for (java.util.Map.Entry<Integer, Integer> entry : counts.entrySet()) {
+                if (entry.getValue() > majorityCount) {
+                    majorityCount = entry.getValue();
+                    majorityColor = entry.getKey();
+                }
+            }
+            if (counts.size() <= 1) {
+                return null;
+            }
+            String outlier = null;
+            int outlierCount = 0;
+            for (int i = 0; i < texts.size(); i++) {
+                if (colors.get(i) != majorityColor) {
+                    outlier = texts.get(i);
+                    outlierCount++;
+                }
+            }
+            return outlierCount == 1 ? outlier : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private TextView findFirstTextView(ViewGroup group) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof TextView) {
+                return (TextView) child;
+            }
+            if (child instanceof ViewGroup) {
+                TextView found = findFirstTextView((ViewGroup) child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private int classifyFilterForCategory(String category, FilterConfig cfg) {
+        if (cfg != null && cfg.classifyFiltersByCategory != null && category != null) {
+            Integer value = cfg.classifyFiltersByCategory.get(category);
+            if (value != null) {
+                if (value < 0) return 0;
+                if (value > 3) return 3;
+                return value;
+            }
+        }
+        return cfg == null ? 0 : cfg.classifyFilter;
+    }
+
     private void updateClassifyBarButtons(ViewGroup bar) {
         try {
-            int selected = currentEnhancementConfig().classifyFilter;
+            int selected = classifyFilterForCategory(currentClassifyCategory(), currentEnhancementConfig());
             for (int i = 0; i < bar.getChildCount(); i++) {
                 View child = bar.getChildAt(i);
                 if (!(child instanceof TextView)) {

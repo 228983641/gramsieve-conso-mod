@@ -33,6 +33,14 @@ public final class FilterConfig {
     public boolean highlightPinnedDialogs = false;
     public boolean showClassifyBar = false;
     public int classifyFilter = 0;
+    // Classify per category (Build #23, user requested 2026-10-25:
+    // the All/Personal/Groups/Channels bar must work under All, Archive
+    // and each user folder separately). Key is the category name as the
+    // user sees it ("所有" for the main list, "归档" for Archive, or a
+    // folder name such as "节点"); value is 0=全部, 1=个人, 2=群聊, 3=频道.
+    // classifyFilter above remains as the fallback for categories with
+    // no entry yet, so old configs keep working.
+    public Map<String, Integer> classifyFiltersByCategory = new LinkedHashMap<>();
     // Pluggable AI analysis backend (Build #19). Default is local only.
     // aiAnalysisMode: 0=local rules only, 1=LLM (user key) with local fallback.
     // aiApiKey is stored ONLY on device in module private config, never in
@@ -56,6 +64,14 @@ public final class FilterConfig {
     public int proxyExpiryHours = 24;
     public String proxySourceUrl = "";
     public String proxyPastedLinks = "";
+    // Proxy folder scan (Build #23, user chose 2026-10-25: scan ONLY one
+    // specified folder, confirmed 2026-10-25 as "节点"). Refresh reads
+    // recent messages from chats in this folder and extracts t.me/proxy
+    // links, in addition to the web URL / pasted links above. Blank means
+    // do not scan any folder. Matched by folder NAME (not id) so it
+    // survives folder recreation.
+    public String proxyFolderName = "节点";
+    public boolean proxyFolderScan = true;
     public long proxyLastRefreshMs = 0L;
     public boolean proxyConfigured = false;
     public List<ProxyEntry> proxyEntries = new ArrayList<>();
@@ -133,6 +149,22 @@ public final class FilterConfig {
         if (proxyExpiryHours > 168) proxyExpiryHours = 168;
         if (proxySourceUrl == null) proxySourceUrl = "";
         if (proxyPastedLinks == null) proxyPastedLinks = "";
+        if (proxyFolderName == null) proxyFolderName = "节点";
+        if (classifyFiltersByCategory == null) {
+            classifyFiltersByCategory = new LinkedHashMap<>();
+        } else {
+            Map<String, Integer> cleanedClassify = new LinkedHashMap<>();
+            for (Map.Entry<String, Integer> entry : classifyFiltersByCategory.entrySet()) {
+                if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
+                    continue;
+                }
+                int v = entry.getValue();
+                if (v < 0) v = 0;
+                if (v > 3) v = 3;
+                cleanedClassify.put(entry.getKey(), v);
+            }
+            classifyFiltersByCategory = cleanedClassify;
+        }
         if (autoArchivedDialogIds == null) {
             autoArchivedDialogIds = new ArrayList<>();
         } else {
@@ -192,6 +224,14 @@ public final class FilterConfig {
         copy.highlightPinnedDialogs = highlightPinnedDialogs;
         copy.showClassifyBar = showClassifyBar;
         copy.classifyFilter = classifyFilter;
+        copy.classifyFiltersByCategory = new LinkedHashMap<>();
+        if (classifyFiltersByCategory != null) {
+            for (Map.Entry<String, Integer> entry : classifyFiltersByCategory.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    copy.classifyFiltersByCategory.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
         copy.aiAnalysisMode = aiAnalysisMode;
         copy.aiApiBaseUrl = aiApiBaseUrl;
         copy.aiApiModel = aiApiModel;
@@ -203,6 +243,8 @@ public final class FilterConfig {
         copy.proxyExpiryHours = proxyExpiryHours;
         copy.proxySourceUrl = proxySourceUrl;
         copy.proxyPastedLinks = proxyPastedLinks;
+        copy.proxyFolderName = proxyFolderName;
+        copy.proxyFolderScan = proxyFolderScan;
         copy.proxyLastRefreshMs = proxyLastRefreshMs;
         copy.proxyConfigured = proxyConfigured;
         copy.autoArchiveFolderChats = autoArchiveFolderChats;
@@ -398,7 +440,7 @@ public final class FilterConfig {
         }
 
         public String key() {
-            return (address == null ? "" : address.toLowerCase(java.util.Locale.ROOT)) + ":" + port + ":" + (secret == null ? "" : secret);
+            return (address == null ? "" : address.toLowerCase(java.util.Locale.ROOT)) + ":" + port + ":" + (secret == null ? "" : secret.trim().toLowerCase(java.util.Locale.ROOT));
         }
 
         public String display() {

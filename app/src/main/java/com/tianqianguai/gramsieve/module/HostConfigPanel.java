@@ -113,6 +113,7 @@ final class HostConfigPanel {
     private EditText proxyRefreshInput;
     private EditText proxyExpiryInput;
     private EditText proxyPastedInput;
+    private EditText proxyFolderInput;
     private TextView proxySummary;
     private java.util.List<FilterConfig.ProxyEntry> proxyWorkingEntries;
     private EditText aiBaseUrlInput;
@@ -515,6 +516,8 @@ final class HostConfigPanel {
         proxyRefreshInput = addInput(card, t("刷新间隔（小时，默认 6）", "Refresh interval (hours, default 6)"), Integer.toString(firstOpen ? 6 : baseConfig.proxyRefreshHours));
         proxyExpiryInput = addInput(card, t("失效时间（小时，默认 24：超过此时间未测通即为失效）", "Expiry time (hours, default 24: untested longer than this counts as expired)"), Integer.toString(firstOpen ? 24 : baseConfig.proxyExpiryHours));
         proxyPastedInput = addInput(card, t("直接粘贴代理链接（每行一个 t.me/proxy 或 tg://proxy 链接）", "Paste proxy links directly (one t.me/proxy or tg://proxy link per line)"), baseConfig.proxyPastedLinks == null ? "" : baseConfig.proxyPastedLinks);
+        proxyFolderInput = addInput(card, t("代理文件夹（只扫这个文件夹里的聊天，默认 节点）", "Proxy folder (only scan chats in this folder, default 节点)"), firstOpen ? "节点" : (baseConfig.proxyFolderName == null ? "节点" : baseConfig.proxyFolderName));
+        addInfo(card, t("文件夹来源：刷新时会读取上面这个文件夹里各聊天最近的消息，提取其中的 t.me/proxy 链接；只扫这一个文件夹，不扫其他文件夹。文件夹不存在时，只用网址和粘贴来源，不会报错。", "Folder source: refresh reads recent messages from chats in the folder above and extracts t.me/proxy links; only this folder is scanned, not others. If the folder does not exist, only the URL and pasted sources are used, without error."));
         proxyWorkingEntries = new java.util.ArrayList<>();
         if (baseConfig.proxyEntries != null) {
             for (FilterConfig.ProxyEntry entry : baseConfig.proxyEntries) {
@@ -576,6 +579,10 @@ final class HostConfigPanel {
         config.proxyExpiryHours = proxyInt(proxyExpiryInput, 24);
         if (proxySourceInput != null) config.proxySourceUrl = valueOf(proxySourceInput).trim();
         if (proxyPastedInput != null) config.proxyPastedLinks = valueOf(proxyPastedInput);
+        if (proxyFolderInput != null) {
+            config.proxyFolderName = valueOf(proxyFolderInput).trim();
+            config.proxyFolderScan = !config.proxyFolderName.isEmpty();
+        }
         config.proxyConfigured = true;
     }
 
@@ -868,6 +875,10 @@ final class HostConfigPanel {
                 updated.proxyExpiryHours = proxyInt(proxyExpiryInput, 24);
                 if (proxySourceInput != null) updated.proxySourceUrl = valueOf(proxySourceInput).trim();
                 if (proxyPastedInput != null) updated.proxyPastedLinks = valueOf(proxyPastedInput);
+                if (proxyFolderInput != null) {
+                    updated.proxyFolderName = valueOf(proxyFolderInput).trim();
+                    updated.proxyFolderScan = !updated.proxyFolderName.isEmpty();
+                }
                 updated.proxyConfigured = true;
                 if (proxyWorkingEntries != null) {
                     updated.proxyEntries = new java.util.ArrayList<>();
