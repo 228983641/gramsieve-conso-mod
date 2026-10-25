@@ -80,6 +80,7 @@ final class TelegramHookInstaller {
     private static final int MENU_ID_EDIT_HISTORY = 0x47530019;
     private static final int SETTINGS_ROW_GRAMSIEVE = 0x4753001A;
     private static final int MENU_ID_CLEANUP_MODE = 0x4753001B;
+    private static final int MENU_ID_ADD_TO_FOLDER = 0x4753001D;
     private static final int SETTINGS_ROW_COLOR_START = 0xFF2AABEE;
     private static final int SETTINGS_ROW_COLOR_END = 0xFF229ED9;
     private ViewGroup downloadPageFragmentView = null;
@@ -6047,6 +6048,7 @@ final class TelegramHookInstaller {
         injectJumpToMarkMenu(chatActivity, headerItem);
         injectAntiRecallMenu(chatActivity, headerItem);
         injectCleanupModeMenu(chatActivity, headerItem);
+        injectAddToFolderMenu(chatActivity, headerItem);
     }
 
     private void beginReadPositionTracking(Object chatActivity) {
@@ -6261,6 +6263,305 @@ final class TelegramHookInstaller {
             return enabled ? "主动加载已打开" : "主动加载未打开";
         }
         return enabled ? "Proactive Loading: ON" : "Proactive Loading: OFF";
+    }
+
+    private void injectAddToFolderMenu(Object chatActivity, Object headerItem) {
+        if (hasMenuItem(headerItem, MENU_ID_ADD_TO_FOLDER)) {
+            return;
+        }
+        long dialogId = Reflect.asLong(Reflect.invokeIfExists(chatActivity, "getDialogId", new Class<?>[0]), 0L);
+        if (dialogId == 0L) {
+            return;
+        }
+        if (!isBroadcastChannel(chatActivity, dialogId)) {
+            return;
+        }
+        Context context = contextFromMenuItem(headerItem);
+        int iconRes = resolveAddToFolderIcon(context);
+        Object subItem = addMenuSubItem(headerItem, MENU_ID_ADD_TO_FOLDER, iconRes, localizedAddToFolderLabel(context));
+        if (!(subItem instanceof View)) {
+            info("Add-to-folder addSubItem unavailable on " + headerItem.getClass().getName());
+            return;
+        }
+        View subItemView = (View) subItem;
+        subItemView.setTag(R.id.gramsieve_menu_item_id, MENU_ID_ADD_TO_FOLDER);
+        subItemView.setOnClickListener(v -> {
+            try {
+                Reflect.invokeIfExists(headerItem, "toggleSubMenu", new Class<?>[0]);
+                showAddToFolderDialog(chatActivity, v.getContext(), dialogId);
+            } catch (Throwable throwable) {
+                error("Add-to-folder menu click failed", throwable);
+            }
+        });
+    }
+
+    private boolean isBroadcastChannel(Object chatActivity, long dialogId) {
+        try {
+            Object currentChat = Reflect.field(chatActivity, "currentChat");
+            if (currentChat != null) {
+                Object broadcast = Reflect.field(currentChat, "broadcast");
+                if (broadcast instanceof Boolean) {
+                    return (Boolean) broadcast;
+                }
+            }
+            if (dialogId < 0) {
+                Object controller = messagesControllerForChat(chatActivity);
+                if (controller != null) {
+                    Object chat = Reflect.invokeIfExists(controller, "getChat", new Class<?>[]{Long.class}, Long.valueOf(-dialogId));
+                    if (chat == null) {
+                        chat = Reflect.invokeIfExists(controller, "getChat", new Class<?>[]{long.class}, -dialogId);
+                    }
+                    if (chat != null) {
+                        Object broadcast = Reflect.field(chat, "broadcast");
+                        if (broadcast instanceof Boolean) {
+                            return (Boolean) broadcast;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private Object messagesControllerForChat(Object chatActivity) {
+        try {
+            int account = Reflect.asInt(Reflect.field(chatActivity, "currentAccount"), -1);
+            if (account < 0 && savedClassLoader != null) {
+                account = resolveSelectedTelegramAccount(savedClassLoader);
+            }
+            if (account < 0) {
+                account = 0;
+            }
+            ClassLoader cl = savedClassLoader != null ? savedClassLoader : chatActivity.getClass().getClassLoader();
+            Class<?> mcClass = cl.loadClass("org.telegram.messenger.MessagesController");
+            return Reflect.invokeStatic(mcClass, "getInstance", new Class<?>[]{int.class}, account);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void showAddToFolderDialog(Object chatActivity, Context context, long dialogId) {
+        try {
+            Activity activity = findActivity(context);
+            if (activity == null || activity.isFinishing()) {
+                Toast.makeText(context, localizedAddToFolderLabel(context), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Object controller = messagesControllerForChat(chatActivity);
+            if (controller == null) {
+                Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (!(filtersObj instanceof List)) {
+                Toast.makeText(context, localizedNoFolder(context), Toast.LENGTH_LONG).show();
+                return;
+            }
+            List<Object> filters = new ArrayList<>();
+            List<String> names = new ArrayList<>();
+            for (Object filter : (List<?>) filtersObj) {
+                String name = Reflect.asString(Reflect.field(filter, "name"));
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                filters.add(filter);
+                names.add(name);
+            }
+            if (filters.isEmpty()) {
+                Toast.makeText(context, localizedNoFolder(context), Toast.LENGTH_LONG).show();
+                return;
+            }
+            String[] items = names.toArray(new String[0]);
+            new AlertDialog.Builder(activity)
+                    .setTitle(localizedAddToFolderLabel(context))
+                    .setItems(items, (dialog, which) -> {
+                        try {
+                            Object filter = filters.get(which);
+                            int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
+                            if (filterId < 0) {
+                                Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
+                                return;
+                            }
+                            Reflect.invokeIfExists(controller, "addDialogToFolder",
+                                    new Class<?>[]{long.class, int.class, int.class, long.class},
+                                    dialogId, filterId, 0, 0L);
+                            boolean verified = false;
+                            try {
+                                Object fresh = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+                                if (fresh instanceof List) {
+                                    for (Object next : (List<?>) fresh) {
+                                        if (Reflect.asInt(Reflect.field(next, "id"), -999) == filterId) {
+                                            Object dialogs = Reflect.field(next, "dialogs");
+                                            if (dialogs instanceof List && ((List<?>) dialogs).contains(dialogId)) {
+                                                verified = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                            if (!verified) {
+                                try {
+                                    Object dialogs = Reflect.field(filter, "dialogs");
+                                    if (dialogs instanceof List && !((List<?>) dialogs).contains(dialogId)) {
+                                        ((List) dialogs).add(dialogId);
+                                    }
+                                    Reflect.invokeIfExists(controller, "updateFilterDialogs",
+                                            new Class<?>[]{filter.getClass()}, filter);
+                                    Reflect.invokeIfExists(controller, "onFilterUpdate",
+                                            new Class<?>[]{filter.getClass()}, filter);
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                            Toast.makeText(context, localizedAddedToFolder(context, items[which]), Toast.LENGTH_SHORT).show();
+                        } catch (Throwable throwable) {
+                            error("Add-to-folder failed", throwable);
+                            Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
+                        }
+                    })
+                    .setNegativeButton(localizedCancel(context), null)
+                    .show();
+        } catch (Throwable throwable) {
+            error("Add-to-folder dialog failed", throwable);
+            Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private int resolveAddToFolderIcon(Context context) {
+        if (context == null) {
+            return android.R.drawable.ic_menu_add;
+        }
+        int telegramIcon = context.getResources().getIdentifier("msg_folder", "drawable", context.getPackageName());
+        return telegramIcon != 0 ? telegramIcon : android.R.drawable.ic_menu_add;
+    }
+
+    private CharSequence localizedAddToFolderLabel(Context context) {
+        return isChineseLocale(context) ? "将当前频道添加至文件夹" : "Add current channel to folder";
+    }
+
+    private CharSequence localizedNoFolder(Context context) {
+        return isChineseLocale(context) ? "还没有文件夹，请先在聊天列表里创建文件夹" : "No folders yet. Create a folder in the chat list first.";
+    }
+
+    private CharSequence localizedAddedToFolder(Context context, String folderName) {
+        return isChineseLocale(context) ? "已添加到文件夹：" + folderName : "Added to folder: " + folderName;
+    }
+
+    private CharSequence localizedAddToFolderFailed(Context context) {
+        return isChineseLocale(context) ? "添加到文件夹失败" : "Failed to add to folder";
+    }
+
+    private CharSequence localizedCancel(Context context) {
+        return isChineseLocale(context) ? "取消" : "Cancel";
+    }
+
+    private void hookTranslatedLinkRestore(ClassLoader classLoader) {
+        try {
+            Class<?> moClass = classLoader.loadClass("org.telegram.messenger.MessageObject");
+            for (Method candidate : moClass.getDeclaredMethods()) {
+                if (!"updateTranslation".equals(candidate.getName())) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                Method method = candidate;
+                hook(method, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        restoreLinksInTranslatedText(chain.getThisObject());
+                    } catch (Throwable ignored) {
+                    }
+                    return result;
+                });
+            }
+            info("Enhancement: hooked MessageObject.updateTranslation for translated-link restore");
+        } catch (Throwable throwable) {
+            error("Enhancement: failed to hook MessageObject.updateTranslation", throwable);
+        }
+    }
+
+    private void restoreLinksInTranslatedText(Object messageObject) {
+        if (messageObject == null) {
+            return;
+        }
+        restoreLinksInField(messageObject, "messageText");
+        restoreLinksInField(messageObject, "caption");
+    }
+
+    private void restoreLinksInField(Object messageObject, String fieldName) {
+        try {
+            Object textObj = Reflect.field(messageObject, fieldName);
+            if (!(textObj instanceof CharSequence)) {
+                return;
+            }
+            CharSequence text = (CharSequence) textObj;
+            String plain = text.toString();
+            if (plain == null || plain.isEmpty()) {
+                return;
+            }
+            java.util.regex.Pattern urlPattern = java.util.regex.Pattern.compile(
+                    "(https?://[^\\s\\u4e00-\\u9fff]+|t\\.me/[^\\s]+|www\\.[^\\s]+)");
+            java.util.regex.Matcher matcher = urlPattern.matcher(plain);
+            List<int[]> ranges = new ArrayList<>();
+            List<String> urls = new ArrayList<>();
+            while (matcher.find()) {
+                String raw = matcher.group(1);
+                while (!raw.isEmpty() && ".,;:!?)}]".indexOf(raw.charAt(raw.length() - 1)) >= 0) {
+                    raw = raw.substring(0, raw.length() - 1);
+                }
+                if (raw.isEmpty()) {
+                    continue;
+                }
+                int start = matcher.start(1);
+                int end = start + raw.length();
+                boolean covered = false;
+                if (text instanceof android.text.Spanned) {
+                    Object[] spans = ((android.text.Spanned) text).getSpans(
+                            start, end, android.text.style.ClickableSpan.class);
+                    if (spans != null && spans.length > 0) {
+                        covered = true;
+                    }
+                }
+                if (!covered) {
+                    ranges.add(new int[]{start, end});
+                    urls.add(raw);
+                }
+            }
+            if (ranges.isEmpty()) {
+                return;
+            }
+            android.text.SpannableStringBuilder builder;
+            if (text instanceof android.text.SpannableStringBuilder) {
+                builder = (android.text.SpannableStringBuilder) text;
+            } else {
+                builder = new android.text.SpannableStringBuilder(text);
+            }
+            ClassLoader cl = messageObject.getClass().getClassLoader();
+            Class<?> spanClass = null;
+            try {
+                spanClass = cl.loadClass("org.telegram.ui.Components.URLSpanNoUnderline");
+            } catch (Throwable ignored) {
+            }
+            for (int i = 0; i < ranges.size(); i++) {
+                String raw = urls.get(i);
+                String url = raw.startsWith("t.me/") || raw.startsWith("www.") ? "https://" + raw : raw;
+                Object span = null;
+                try {
+                    if (spanClass != null) {
+                        java.lang.reflect.Constructor<?> ctor = spanClass.getConstructor(String.class);
+                        span = ctor.newInstance(url);
+                    }
+                } catch (Throwable ignored) {
+                }
+                if (span == null) {
+                    span = new android.text.style.URLSpan(url);
+                }
+                builder.setSpan(span, ranges.get(i)[0], ranges.get(i)[1],
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            Reflect.setField(messageObject, fieldName, builder);
+        } catch (Throwable ignored) {
+        }
     }
 
     private void injectCleanupModeMenu(Object chatActivity, Object headerItem) {
@@ -7792,6 +8093,7 @@ final class TelegramHookInstaller {
     }
 
     private void hookAutoTranslate(ClassLoader classLoader) {
+        hookTranslatedLinkRestore(classLoader);
         hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isChatTranslateEnabled",
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
         hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isFeatureAvailable",
