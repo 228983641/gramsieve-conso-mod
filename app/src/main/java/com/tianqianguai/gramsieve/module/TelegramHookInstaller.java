@@ -7620,7 +7620,10 @@ final class TelegramHookInstaller {
         // toggled in Settings never took effect on the existing list.
         // Re-sync on resume, posted so tabs/list are ready.
         try {
-            java.lang.reflect.Method onResume = Reflect.method(dialogsClass, "onResume");
+            // Build #26 fix: dialogsClass from the createView block is
+            // try-block-local, so it is out of scope here. Reload it.
+            Class<?> dialogsClassResume = classLoader.loadClass("org.telegram.ui.DialogsActivity");
+            java.lang.reflect.Method onResume = Reflect.method(dialogsClassResume, "onResume");
             hook(onResume, chain -> {
                 Object result = chain.proceed();
                 try {
