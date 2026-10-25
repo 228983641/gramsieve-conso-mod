@@ -31,3 +31,6 @@ local.properties
 /local/cache4-*/
 /local/dbsnap-*/
 /local/gramsieve-current-screen.png
+*.keystore
+debug.keystore.b64
+release.keystore

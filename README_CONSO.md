@@ -74,3 +74,8 @@ Untested on a real device. Known risks:
 - 关键词分隔：规则解析改为关键词模式按符号分隔（、 ， , ; ；及换行都算分隔符），显示时统一用“、”连接；正则模式仍按行分隔，因为正则本身可能含逗号/分号。旧的一行一条规则仍能解析，新旧兼容。
 - 关键词编辑入口：规则卡片里关键词不再直接显示为大段输入框，外部只显示“已设置 N 个关键词，点击编辑修改”或“未设置，点击编辑添加”，不显示关键词内容；点整行或“编辑”按钮进入关键词编辑对话框（符号分隔输入框、提示示例、确定/取消/清空），确定后写回隐藏字段，保存逻辑不变。正则框仍直接显示在高级规则里。
 - 开源公开方案（第 1 条）未丢，仍在待办：之前卡在本地 JDK 解压不完整（keytool 缺 libjli.so），待本版构建后再继续（重新下载/解压 JDK、生成新密钥、放 Secrets、改工作流、删仓库密钥文件、公开、再构建一次验证新签名）。
+
+## 2026-10-25 开源公开方案第 1 条执行（Build #12 待构建）
+- 新发布密钥已生成（别名 gramsieve-conso，RSA 2048，证书 SHA256 指纹以 F1:45:22:73: 开头，完整指纹待构建后核对），只存放在 GitHub Actions Secrets 里（RELEASE_KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD），本地副本已删，Secrets 取不回，只能覆盖重设。
+- 工作流已改（提交 edf4bff）：删除“Restore fixed debug keystore”一步，改为“Restore release keystore from Secrets”（从 Secret 还原 release.keystore，只列文件名不打印内容），构建步骤加 release 签名 env（RELEASE_STORE_FILE=release.keystore 等），run 命令本身未改。
+- 待做：删仓库当前版本的 debug.keystore.b64（历史里仍有旧密钥，只能用于旧版）、把 README.md 换成开源版、.gitignore 加 *.keystore / debug.keystore.b64 / release.keystore、仓库设公开、再构建一次验证新签名；公开后的首版需卸载旧版再装，之后同一把 Secret 密钥可覆盖安装。

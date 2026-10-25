@@ -122,9 +122,10 @@ Filtering itself runs locally and does not upload your messages. Translation, pr
 
 ## 签名 / Signing
 
-- 私有开发阶段曾用一个固定的调试密钥（`debug.keystore.b64`，标准 Android 调试密钥，密码 `android`），以保证同一系列版本可覆盖安装
-- **开源前必须移除该文件**：一旦公开，任何人都能用同一把密钥签名并冒充升级包。公开版工作流应在 `debug.keystore.b64` 不存在时现场生成新密钥，或改用 GitHub Secrets 的正式签名；公开后的首个版本签名会变化，需要卸载旧版再装一次
-- 切勿把正式发布密钥、账号密码、Token 提交到仓库
+- 私有开发阶段曾用一个固定的调试密钥（`debug.keystore.b64`，标准 Android 调试密钥，密码 `android`），以保证同一系列版本可覆盖安装；公开前该文件已从当前版本删除，工作流不再使用它
+- 公开版签名：发布密钥只存放在 GitHub Actions Secrets 里（`RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`），工作流构建时临时还原为 `release.keystore`，用完即弃，仓库里只有 Secret 引用名，没有密钥内容；构建配置见 `app/build.gradle.kts` 的 release 签名段
+- 公开后的首个版本签名与私有阶段不同，需要卸载旧版再装一次；之后同一把 Secret 密钥的版本可直接覆盖安装
+- 注意：旧调试密钥仍留在公开前的 git 历史里，只能用于旧版，不能用于新版；切勿把正式发布密钥、账号密码、Token 提交到仓库
 
 ## 风险与免责 / Risks and disclaimer
 
