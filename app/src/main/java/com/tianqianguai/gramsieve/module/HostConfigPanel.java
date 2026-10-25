@@ -142,6 +142,13 @@ final class HostConfigPanel {
         this.cardColor = telegramThemeColor("key_windowBackgroundGray", backgroundColor);
         this.primaryTextColor = telegramThemeColor("key_windowBackgroundWhiteBlackText", androidPrimaryText);
         this.secondaryTextColor = telegramThemeColor("key_windowBackgroundWhiteGrayText2", androidSecondaryText);
+        // Contrast guard (Build #18, from user screenshots): Telegram's
+        // secondary gray can resolve too dark against a dark card, and the
+        // dialog dimming makes it worse, so info text looked unreadable.
+        // If secondary vs card contrast is below 4.5:1, blend secondary
+        // toward primary until it passes, so info text is always readable
+        // without changing the theme's hue.
+        this.secondaryTextColor = ensureContrast(secondaryTextColor, cardColor, primaryTextColor);
         this.strokeColor = telegramThemeColor("key_divider", adjustAlpha(primaryTextColor, 0.14f));
         this.toolbarColor = telegramThemeColor("key_actionBarDefault", backgroundColor);
         this.toolbarTextColor = telegramThemeColor("key_actionBarDefaultTitle", primaryTextColor);
@@ -947,6 +954,18 @@ final class HostConfigPanel {
         buttonRow.addView(okButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         dialog.show();
+        // Window background fix (Build #18, from user screenshots): the
+        // system AlertDialog window is light (white) while the panel is
+        // dark, so white panel text on the white window was invisible and
+        // the dialog looked empty despite 37 keywords being set. Force the
+        // window to the panel card colour so dialog text is always on the
+        // same dark background as the panel, with no white border.
+        try {
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(
+                        new android.graphics.drawable.ColorDrawable(cardColor));
+            }
+        } catch (Throwable ignored) {}
     }
 
     private static String canonicalKeywords(String raw) {
@@ -1157,6 +1176,46 @@ final class HostConfigPanel {
             return value.data;
         }
         return fallback;
+    }
+
+    private static int ensureContrast(int foreground, int background, int primary) {
+        if (contrastRatio(foreground, background) >= 4.5f) {
+            return foreground;
+        }
+        int result = foreground;
+        for (int i = 0; i < 10; i++) {
+            result = blend(result, primary, 0.3f);
+            if (contrastRatio(result, background) >= 4.5f) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    private static int blend(int from, int to, float factor) {
+        return Color.argb(
+                Math.round(Color.alpha(from) + (Color.alpha(to) - Color.alpha(from)) * factor),
+                Math.round(Color.red(from) + (Color.red(to) - Color.red(from)) * factor),
+                Math.round(Color.green(from) + (Color.green(to) - Color.green(from)) * factor),
+                Math.round(Color.blue(from) + (Color.blue(to) - Color.blue(from)) * factor));
+    }
+
+    private static float contrastRatio(int foreground, int background) {
+        float l1 = luminance(foreground);
+        float l2 = luminance(background);
+        float light = Math.max(l1, l2);
+        float dark = Math.min(l1, l2);
+        return (light + 0.05f) / (dark + 0.05f);
+    }
+
+    private static float luminance(int color) {
+        float r = Color.red(color) / 255f;
+        float g = Color.green(color) / 255f;
+        float b = Color.blue(color) / 255f;
+        r = r <= 0.03928f ? r / 12.92f : (float) Math.pow((r + 0.055f) / 1.055f, 2.4);
+        g = g <= 0.03928f ? g / 12.92f : (float) Math.pow((g + 0.055f) / 1.055f, 2.4);
+        b = b <= 0.03928f ? b / 12.92f : (float) Math.pow((b + 0.055f) / 1.055f, 2.4);
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
     }
 
     private int telegramThemeColor(String keyFieldName, int fallback) {
