@@ -18,7 +18,8 @@ public final class AppLocaleManager {
         if (localeManager == null) {
             return;
         }
-        String normalizedTag = FilterConfig.normalizeAppLanguageTag(appLanguageTag);
+        // Conso adaptation: force Simplified Chinese for the module's own UI.
+        String normalizedTag = FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE;
         LocaleList targetLocales = normalizedTag.isEmpty()
                 ? LocaleList.getEmptyLocaleList()
                 : LocaleList.forLanguageTags(normalizedTag);

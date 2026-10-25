@@ -15,7 +15,8 @@ public final class FilterConfig {
     public boolean enabled = true;
     public boolean debugLogging = false;
     public Action action = Action.HIDE;
-    public String appLanguageTag = APP_LANGUAGE_SYSTEM;
+    // Conso adaptation: force Simplified Chinese UI by default.
+    public String appLanguageTag = APP_LANGUAGE_SIMPLIFIED_CHINESE;
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();

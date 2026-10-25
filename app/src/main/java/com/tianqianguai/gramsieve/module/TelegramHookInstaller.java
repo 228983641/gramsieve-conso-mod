@@ -6225,12 +6225,9 @@ final class TelegramHookInstaller {
     }
 
     private boolean isChineseLocale(Context context) {
-        try {
-            Locale locale = context.getResources().getConfiguration().locale;
-            return locale != null && "zh".equalsIgnoreCase(locale.getLanguage());
-        } catch (Throwable ignored) {
-            return false;
-        }
+        // Conso adaptation: force Chinese UI for all menus, toasts and dialogs,
+        // regardless of the host app's locale.
+        return true;
     }
 
     private int dp(Context context, float value) {

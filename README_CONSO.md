@@ -27,3 +27,10 @@ Untested on a real device. Known risks:
 - Requires LSPosed supporting libxposed API 101 (module.prop) / 102 per README.
   Enable the module only for `global.xfinite.conso` in LSPosed, force-stop
   Conso, then open Conso Settings -> GramSieve to add filter rules.
+
+## Chinese UI forced (2026-10-25, after install-signature report)
+- FilterConfig default appLanguageTag changed from SYSTEM to zh-CN.
+- HostConfigPanel: chinese flag forced to true, so all host settings panels use Chinese text.
+- TelegramHookInstaller: isChineseLocale() forced to true, so all menus, toasts and dialogs use Chinese text.
+- AppLocaleManager: module's own app locale forced to zh-CN.
+- Language radio in settings remains visible but no longer changes the UI language in this adaptation; UI stays Chinese.

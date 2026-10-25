@@ -118,7 +118,8 @@ final class HostConfigPanel {
         this.backgroundMessageLoader = backgroundMessageLoader;
         this.saver = saver;
         this.afterSave = afterSave;
-        this.chinese = isChineseLocale(context);
+        // Conso adaptation: force Chinese UI for all host panels, regardless of host locale.
+        this.chinese = true;
         int androidBackground = resolveThemeColor(android.R.attr.colorBackground, Color.rgb(18, 18, 18));
         int androidPrimaryText = resolveThemeColor(android.R.attr.textColorPrimary, Color.WHITE);
         int androidSecondaryText = resolveThemeColor(
