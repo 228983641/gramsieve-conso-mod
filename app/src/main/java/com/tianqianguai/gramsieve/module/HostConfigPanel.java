@@ -86,6 +86,8 @@ final class HostConfigPanel {
     private final int secondaryTextColor;
     private final int strokeColor;
     private final int accentColor;
+    private final int switchOnColor;
+    private final float screenWidthDp;
     private final int toolbarColor;
     private final int toolbarTextColor;
     private final Map<FilterConfig.RuleTarget, RuleInputs> ruleInputs =
@@ -94,25 +96,25 @@ final class HostConfigPanel {
     private FrameLayout overlay;
     private OnBackInvokedDispatcher backDispatcher;
     private OnBackInvokedCallback backCallback;
-    private android.widget.CheckBox enabledSwitch;
-    private android.widget.CheckBox debugLoggingSwitch;
-    private android.widget.CheckBox excludeChatSwitch;
-    private android.widget.CheckBox chatAntiRecallSwitch;
-    private android.widget.CheckBox sponsoredSwitch;
-    private android.widget.CheckBox videoAdsSwitch;
-    private android.widget.CheckBox forwardSaveSwitch;
-    private android.widget.CheckBox saveStoriesSwitch;
-    private android.widget.CheckBox preventDeleteSwitch;
-    private android.widget.CheckBox downloadSpeedSwitch;
-    private android.widget.CheckBox localPremiumSwitch;
-    private android.widget.CheckBox autoTranslateSwitch;
-    private android.widget.CheckBox pinnedHighlightSwitch;
-    private android.widget.CheckBox classifyBarSwitch;
-    private android.widget.CheckBox autoArchiveFolderSwitch;
-    private android.widget.CheckBox aiLlmSwitch;
-    private android.widget.CheckBox aiFallbackSwitch;
-    private android.widget.CheckBox proxyAutoAddSwitch;
-    private android.widget.CheckBox proxyAutoSwitchSwitch;
+    private IosSwitchView enabledSwitch;
+    private IosSwitchView debugLoggingSwitch;
+    private IosSwitchView excludeChatSwitch;
+    private IosSwitchView chatAntiRecallSwitch;
+    private IosSwitchView sponsoredSwitch;
+    private IosSwitchView videoAdsSwitch;
+    private IosSwitchView forwardSaveSwitch;
+    private IosSwitchView saveStoriesSwitch;
+    private IosSwitchView preventDeleteSwitch;
+    private IosSwitchView downloadSpeedSwitch;
+    private IosSwitchView localPremiumSwitch;
+    private IosSwitchView autoTranslateSwitch;
+    private IosSwitchView pinnedHighlightSwitch;
+    private IosSwitchView classifyBarSwitch;
+    private IosSwitchView autoArchiveFolderSwitch;
+    private IosSwitchView aiLlmSwitch;
+    private IosSwitchView aiFallbackSwitch;
+    private IosSwitchView proxyAutoAddSwitch;
+    private IosSwitchView proxyAutoSwitchSwitch;
     private EditText proxySourceInput;
     private EditText proxyRefreshInput;
     private EditText proxyExpiryInput;
@@ -140,6 +142,8 @@ final class HostConfigPanel {
             Runnable afterSave
     ) {
         this.context = context;
+        android.util.DisplayMetrics dm = context.getResources().getDisplayMetrics();
+        screenWidthDp = dm.widthPixels / dm.density;
         this.root = root;
         this.baseConfig = baseConfig == null ? FilterConfig.createDefault() : baseConfig.deepCopy().sanitize();
         this.chatMode = chatMode;
@@ -174,7 +178,8 @@ final class HostConfigPanel {
         this.strokeColor = telegramThemeColor("key_divider", adjustAlpha(primaryTextColor, 0.14f));
         this.toolbarColor = telegramThemeColor("key_actionBarDefault", backgroundColor);
         this.toolbarTextColor = telegramThemeColor("key_actionBarDefaultTitle", primaryTextColor);
-        this.accentColor = android.graphics.Color.parseColor("#3B82F6"); // Build #45: HTML reference primary blue
+        this.accentColor = android.graphics.Color.parseColor("#007AFF"); // Build #46: HTML v2 iOS primary blue
+        switchOnColor = android.graphics.Color.parseColor("#34C759"); // Build #46: HTML v2 switch-on green
     }
 
     static boolean show(
@@ -329,7 +334,7 @@ final class HostConfigPanel {
 
         screen.addView(createToolbar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(56)
+                dp(48)
         ));
 
         ScrollView scrollView = new ScrollView(context);
@@ -341,7 +346,7 @@ final class HostConfigPanel {
         // background fills the screen, groups are full-width solid
         // blocks, so the container has no horizontal padding.
         container.setBackgroundColor(cardColor);
-        container.setPadding(0, dp(8), 0, dp(24));
+        container.setPadding(dp(16), dp(16), dp(16), dp(24));
         scrollView.addView(container, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -353,27 +358,36 @@ final class HostConfigPanel {
         ));
 
         buildGeneralCard(container);
-        styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+        // HTML v2: global panel is three cards (basic / language /
+        // action); chat mode is one card. Cards are [header, card]
+        // pairs, so the cards sit at -1, -3, -5.
+        if (chatMode) {
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
+        } else {
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 3), 1);
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 5), gridCols(2));
+        }
         if (chatMode) {
             buildChatAntiRecallCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
         } else {
             buildEnhancementCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(3));
             buildDialogListCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
             buildAiCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
             buildProxyCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
             buildTranslateCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
         }
         buildRulesCard(container);
-        styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+        styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
         if (!chatMode) {
             buildBackupCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
         } else {
             // Build #31: the backup card (and its log export) only
             // existed in the global panel, so a user opening settings
@@ -383,8 +397,17 @@ final class HostConfigPanel {
             // importing a full backup from a chat panel could replace
             // global settings from the wrong context.
             buildLogExportCard(container);
-            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
         }
+
+        TextView footerNote = new TextView(context);
+        footerNote.setText("GramSieve · 本地过滤与增强工具");
+        footerNote.setTextColor(secondaryTextColor);
+        footerNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        footerNote.setGravity(Gravity.CENTER);
+        footerNote.setPadding(0, dp(24), 0, 0);
+        container.addView(footerNote, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         root.addView(overlay, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -401,16 +424,19 @@ final class HostConfigPanel {
         LinearLayout toolbar = new LinearLayout(context);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(8), 0, dp(8), 0);
-        toolbar.setBackgroundColor(toolbarColor);
+        toolbar.setPadding(dp(16), 0, dp(16), 0);
+        toolbar.setBackgroundColor(cardColor);
 
         Button backButton = toolbarButton(t("返回", "Back"));
+        backButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         backButton.setOnClickListener(v -> close());
         toolbar.addView(backButton, new LinearLayout.LayoutParams(dp(80), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView title = new TextView(context);
         title.setText(chatMode ? t("GramSieve 聊天设置", "GramSieve Chat Settings") : t("GramSieve 设置", "GramSieve Settings"));
         title.setTextColor(toolbarTextColor);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setSingleLine(true);
@@ -419,22 +445,21 @@ final class HostConfigPanel {
         toolbar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
         Button saveButton = toolbarButton(t("保存", "Save"));
+        saveButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         saveButton.setOnClickListener(v -> save());
         toolbar.addView(saveButton, new LinearLayout.LayoutParams(dp(80), ViewGroup.LayoutParams.WRAP_CONTENT));
         return toolbar;
     }
 
     private void buildGeneralCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, chatMode ? t("当前聊天", "Current Chat") : t("全局配置", "Global Settings"), false, true);
-
         FilterConfig.ChatRuleSet chatRuleSet = chatMode
                 ? baseConfig.getOrCreateChatRuleSet(dialogId).deepCopy().sanitize()
                 : null;
 
-        enabledSwitch = addSwitch(card, t("启用过滤", "Enable filtering"));
-        enabledSwitch.setChecked(chatMode ? chatRuleSet.enabled : baseConfig.enabled);
-
         if (chatMode) {
+            LinearLayout card = addGroup(container, t("当前聊天", "Current Chat"));
+            enabledSwitch = addSwitch(card, t("启用过滤", "Enable filtering"));
+            enabledSwitch.setChecked(chatRuleSet.enabled);
             excludeChatSwitch = addSwitch(card, t("这个聊天不使用全局规则", "Do not apply global rules to this chat"));
             excludeChatSwitch.setChecked(chatRuleSet.excludeFromGlobal);
             String scope = chatTitle.isBlank()
@@ -444,34 +469,37 @@ final class HostConfigPanel {
             return;
         }
 
+        // Build #46: HTML v2 splits the old general card into
+        // three cards: basic switches, language radios, action radios.
+        LinearLayout card = addGroup(container, t("基础设置", "Basic Settings"));
+        enabledSwitch = addSwitch(card, t("启用过滤", "Enable filtering"));
+        enabledSwitch.setChecked(baseConfig.enabled);
         debugLoggingSwitch = addSwitch(card, t("详细调试日志", "Verbose debug logging"));
         debugLoggingSwitch.setChecked(baseConfig.debugLogging);
 
-        addSectionLabel(card, t("界面语言", "Interface language"));
+        LinearLayout langCard = addGroup(container, t("界面语言", "Interface language"));
         languageGroup = new LinearLayout(context);
         languageGroup.setOrientation(LinearLayout.VERTICAL);
         addRadioChoice(languageGroup, t("跟随系统", "Follow system"), FilterConfig.APP_LANGUAGE_SYSTEM);
         addRadioChoice(languageGroup, "English", FilterConfig.APP_LANGUAGE_ENGLISH);
         addRadioChoice(languageGroup, "简体中文", FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE);
         checkTaggedChoice(languageGroup, FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
-        addView(card, languageGroup, 8);
+        addView(langCard, languageGroup, 0);
+        pairBareChoices(languageGroup, gridCols(3));
 
-        addSectionLabel(card, t("匹配后的动作", "Match action"));
+        LinearLayout actionCard = addGroup(container, t("匹配后的动作", "Match action"));
         actionGroup = new LinearLayout(context);
         actionGroup.setOrientation(LinearLayout.VERTICAL);
         addRadioChoice(actionGroup, t("仅本地隐藏", "Hide locally"), FilterConfig.Action.HIDE);
         addRadioChoice(actionGroup, t("仅本地折叠", "Collapse locally"), FilterConfig.Action.COLLAPSE);
         addRadioChoice(actionGroup, t("调试标记", "Debug mark"), FilterConfig.Action.DEBUG_MARK);
         checkTaggedChoice(actionGroup, baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
-        addView(card, actionGroup, 0);
-        // Build #45: HTML reference lays single-choice groups out
-        // in a 2-column grid too.
-        pairBareChoices(languageGroup);
-        pairBareChoices(actionGroup);
+        addView(actionCard, actionGroup, 0);
+        pairBareChoices(actionGroup, gridCols(3));
     }
 
     private void buildEnhancementCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("增强功能", "Enhancements"), true, true);
+        LinearLayout card = addGroup(container, t("增强功能", "Enhancements"));
         addInfo(card, t("从 NoAdsTelegram / TeleVip 移植的功能，按分类开关，默认全部关闭，开启后保存即生效（部分需重新打开聊天列表）。", "Features ported from NoAdsTelegram / TeleVip, grouped by category. All off by default; saving applies them (some need the chat list reopened)."));
 
         sponsoredSwitch = addSwitch(card, t("去赞助消息", "Remove sponsored messages"));
@@ -483,6 +511,7 @@ final class HostConfigPanel {
         forwardSaveSwitch.setChecked(baseConfig.enableForwardSave);
         preventDeleteSwitch = addSwitch(card, t("防止消息删除", "Prevent message deletion"));
         preventDeleteSwitch.setChecked(baseConfig.preventMessageDelete);
+        setRowDesc(preventDeleteSwitch, t("删除后仍可查看", "Still viewable after deletion"));
         addInfo(card, t("防删除与主动加载防撤回是两套机制，可同时开；防删除会直接拦下服务端的删除更新。", "Delete prevention is a second mechanism alongside proactive-loading anti-recall; it blocks the server delete update itself."));
 
         saveStoriesSwitch = addSwitch(card, t("允许保存动态", "Allow saving stories"));
@@ -491,41 +520,59 @@ final class HostConfigPanel {
 
         downloadSpeedSwitch = addSwitch(card, t("提升下载速度", "Boost download speed"));
         downloadSpeedSwitch.setChecked(baseConfig.boostDownloadSpeed);
+        setRowDesc(downloadSpeedSwitch, t("多线程加速", "Multi-threaded speedup"));
         addInfo(card, t("只改客户端下载并行度（大文件分块 512 KiB、并行 8 路）；服务端限速仍在。", "Only changes client download parallelism (512 KiB chunks, 8 parallel requests); server limits still apply."));
 
         localPremiumSwitch = addSwitch(card, t("本地 Premium 解锁", "Enable local Premium"));
         localPremiumSwitch.setChecked(baseConfig.localPremium);
+        setRowDesc(localPremiumSwitch, t("解锁部分官方功能", "Unlocks some official features"));
         addInfo(card, t("仅本地生效：让客户端认为你是 Premium，可突破置顶聊天数等客户端检查（实测为准，服务端仍可能限制）。服务端 Premium 功能（大文件上传、语音转文字等）仍需官方订阅，且开启本地 Premium 有封号风险，请自行决定。", "Local only: makes the client treat you as Premium, unlocking client-side checks such as the pinned-chat limit (verify on device; the server may still limit). Server Premium features still need a real subscription, and local Premium carries a ban risk."));
     }
 
     private void buildDialogListCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("聊天列表", "Chat List"), true, false);
+        LinearLayout card = addGroup(container, t("聊天列表", "Chat List"));
         addInfo(card, t("只影响聊天列表的外观，不改动聊天内容与置顶本身。", "Only affects the chat list appearance, not chat content or pinning itself."));
         pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
+        setRowDesc(pinnedHighlightSwitch, t("色条 + 浅色背景", "Color bar + light background"));
         autoArchiveFolderSwitch = addSwitch(card, t("文件夹聊天自动归档", "Auto-archive chats in folders"));
         autoArchiveFolderSwitch.setChecked(baseConfig.autoArchiveFolderChats);
+        setRowDesc(autoArchiveFolderSwitch, t("仅影响列表外观", "Only affects the list appearance"));
         addInfo(card, t("进文件夹的聊天自动归档（主列表不再出现，只在文件夹和归档里看）；从所有文件夹移出后自动取消归档回到主列表。只动模块自己归档的聊天：你手动归档的聊天不会被自动取消归档，你手动取消归档的文件夹聊天也不会被重新归档（除非把它移出文件夹再加回来）。", "Chats in a folder are auto-archived (hidden from the main list, visible in the folder and in Archive); removed from all folders, they auto-unarchive back to the main list. Only chats this module archived are touched: a chat you archived manually is never auto-unarchived, and a folder chat you unarchived manually is not re-archived (unless you remove it from the folder and add it back)."));
     }
 
     private void buildAiCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("智能分析（AI）", "Smart Analysis (AI)"), true, false);
+        LinearLayout card = addGroup(container, t("智能分析（AI）", "Smart Analysis (AI)"));
         addInfo(card, t("默认是本地规则分析：离线、免费、私密、即时，关键词、域名、IP、@、混淆网址、QQ、USDT 地址都能识别。开启大模型后，智能分析会变成可插拔后端：本地先出候选，大模型再补充建议，两者去重后一起让你确认；大模型失败时按下面开关回退本地。", "Default is local rule analysis: offline, free, private, instant, covering keywords, domains, IPs, @handles, obfuscated URLs, QQ and USDT addresses. With the LLM on, smart analysis becomes a pluggable backend: local candidates first, LLM suggestions added and deduplicated, all confirmed by you; on LLM failure it falls back to local if the switch below is on."));
         aiLlmSwitch = addSwitch(card, t("启用大模型智能分析（需自备 API Key）", "Enable LLM smart analysis (bring your own API key)"));
         aiLlmSwitch.setChecked(baseConfig.aiAnalysisMode == 1);
+        setRowDesc(aiLlmSwitch, t("需自备 API Key", "Bring your own API key"));
         addInfo(card, t("只在你点“智能分析并屏蔽”时才调用大模型，不会对每条消息自动过滤。每次只发消息正文/说明/按钮文字（最多 2000 字），不发发送者名、聊天 id、用户 id。消息会发给上面地址的服务方，按该服务方计费，并受其隐私政策约束；Key 只存在本机模块配置里，不进代码仓库，不打进日志。", "Only called when you tap smart analysis, never for automatic per-message filtering. Each call sends only message text / caption / button text (max 2000 chars), no sender name, chat id or user id. Messages go to the service at the base URL above, billed by that provider under its privacy policy; the key lives only in this device's module config, never in the repo, never in logs."));
-        aiBaseUrlInput = addInput(card, t("API 地址（OpenAI 兼容，形如 https://api.openai.com/v1）", "API base URL (OpenAI-compatible, e.g. https://api.openai.com/v1)"), baseConfig.aiApiBaseUrl == null || baseConfig.aiApiBaseUrl.isBlank() ? "https://api.openai.com/v1" : baseConfig.aiApiBaseUrl);
-        aiModelInput = addInput(card, t("模型", "Model"), baseConfig.aiApiModel == null || baseConfig.aiApiModel.isBlank() ? "gpt-4o-mini" : baseConfig.aiApiModel);
-        aiKeyInput = addInput(card, t("API Key（输入时掩码显示，保存后不回显在日志中）", "API key (masked while typing, never echoed in logs)"), baseConfig.aiApiKey == null ? "" : baseConfig.aiApiKey);
-        try {
-            aiKeyInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        } catch (Throwable ignored) {}
         aiFallbackSwitch = addSwitch(card, t("大模型失败 / 超时时回退本地规则", "Fall back to local rules when the LLM fails or times out"));
         aiFallbackSwitch.setChecked(baseConfig.aiFallbackToLocal);
+        // Build #46: HTML v2 shows the AI settings only while the
+        // AI toggle is on (the reference hides #aiSettings).
+        LinearLayout aiSettings = new LinearLayout(context);
+        aiSettings.setOrientation(LinearLayout.VERTICAL);
+        addView(card, aiSettings, 0);
+        aiBaseUrlInput = addInput(aiSettings, t("API 地址（OpenAI 兼容）", "API base URL (OpenAI-compatible)"), baseConfig.aiApiBaseUrl == null || baseConfig.aiApiBaseUrl.isBlank() ? "https://api.openai.com/v1" : baseConfig.aiApiBaseUrl);
+        EditText[] aiModelKeyInputs = addInputPair(aiSettings,
+                t("模型", "Model"), baseConfig.aiApiModel == null || baseConfig.aiApiModel.isBlank() ? "gpt-4o-mini" : baseConfig.aiApiModel,
+                t("API Key", "API key"), baseConfig.aiApiKey == null ? "" : baseConfig.aiApiKey);
+        aiModelInput = aiModelKeyInputs[0];
+        aiKeyInput = aiModelKeyInputs[1];
+        try {
+            aiModelInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            aiKeyInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        } catch (Throwable ignored) {}
+        aiSettings.setVisibility(aiLlmSwitch.isChecked() ? View.VISIBLE : View.GONE);
+        aiLlmSwitch.setOnCheckedChangeListener((button, isChecked) ->
+                aiSettings.setVisibility(isChecked ? View.VISIBLE : View.GONE));
+        styleBodyDividers(aiSettings);
     }
 
     private void buildProxyCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("代理（TG 直链）", "Proxy (TG Links)"), true, false);
+        LinearLayout card = addGroup(container, t("代理（TG 直链）", "Proxy (TG Links)"));
         addInfo(card, t("自动抓取、测速、自动添加并切换到最快代理。来源不会硬编码某个第三方：填一个你信任的代理列表页地址（页面里含 t.me/proxy 链接即可），或在下面直接粘贴链接；模块按刷新间隔自动抓取，测速后把最快的设为当前代理。公开代理的运营者能看到你的 IP 和 Telegram 连接时间信息，但 MTProto 内容本身是加密的。", "Auto-fetch, test, auto-add and switch to the fastest proxy. No third-party source is hardcoded: fill a trusted proxy list page URL (containing t.me/proxy links) or paste links below; the module fetches on the refresh interval, tests, and sets the fastest as current. A proxy operator can see your IP and Telegram connection timing, but MTProto content stays encrypted."));
         boolean firstOpen = !baseConfig.proxyConfigured;
         proxyAutoAddSwitch = addSwitch(card, t("自动添加新代理", "Auto-add new proxies"));
@@ -539,7 +586,33 @@ final class HostConfigPanel {
         proxyRefreshInput = proxyIntervalInputs[0];
         proxyExpiryInput = proxyIntervalInputs[1];
         proxyPastedInput = addInput(card, t("直接粘贴代理链接（每行一个 t.me/proxy 或 tg://proxy 链接）", "Paste proxy links directly (one t.me/proxy or tg://proxy link per line)"), baseConfig.proxyPastedLinks == null ? "" : baseConfig.proxyPastedLinks);
-        proxyFolderInput = addInput(card, t("代理文件夹（只扫这个文件夹里的聊天，默认 节点）", "Proxy folder (only scan chats in this folder, default 节点)"), firstOpen ? "节点" : (baseConfig.proxyFolderName == null ? "节点" : baseConfig.proxyFolderName));
+        // Build #46: HTML v2 folder row: label + [field + link].
+        TextView proxyFolderLabel = new TextView(context);
+        proxyFolderLabel.setTag("gramsieve_row_label");
+        proxyFolderLabel.setText(t("代理文件夹（只扫这个文件夹里的聊天，默认 节点）", "Proxy folder (only scan chats in this folder, default 节点)"));
+        proxyFolderLabel.setTextColor(secondaryTextColor);
+        proxyFolderLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        addView(card, proxyFolderLabel, 6);
+        LinearLayout proxyFolderRow = new LinearLayout(context);
+        proxyFolderRow.setOrientation(LinearLayout.HORIZONTAL);
+        proxyFolderRow.setGravity(Gravity.CENTER_VERTICAL);
+        proxyFolderInput = new EditText(context);
+        proxyFolderInput.setText(firstOpen ? "节点" : (baseConfig.proxyFolderName == null ? "节点" : baseConfig.proxyFolderName));
+        proxyFolderInput.setTextColor(primaryTextColor);
+        proxyFolderInput.setHintTextColor(secondaryTextColor);
+        proxyFolderInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try {
+            proxyFolderInput.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
+            proxyFolderInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        } catch (Throwable ignored) {}
+        proxyFolderInput.setMinLines(1);
+        proxyFolderInput.setMaxLines(1);
+        proxyFolderRow.addView(proxyFolderInput, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button proxyFolderPickButton = toolbarButton(t("选择文件夹", "Pick folder"));
+        proxyFolderPickButton.setOnClickListener(v -> showProxyFolderPicker());
+        proxyFolderRow.addView(proxyFolderPickButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(card, proxyFolderRow, 0);
         addInfo(card, t("自动维护：只要 Conso 在运行，“自动添加”开着时，每到刷新间隔就会自动跑一轮：扫描上面这些来源、测速、切到最快、把测通的同步进 Conso 代理列表，并把本轮测死的（且是模块同步进去的）从客户端列表里剔除；Conso 被彻底关掉后，下次打开聊天列表时会补跑一次。", "Auto-maintenance: while Conso is running and auto-add is on, every refresh interval runs a full round: scan these sources, test, switch to fastest, sync tested-good entries into Conso's proxy list, and prune entries this round tested dead (and synced by the module) from the client list. If Conso was fully closed, the next chat-list open catches up once."));
         // Build #28: folder picker instead of typing. Tapping the
         // field (or the button below) lists existing user folders and
@@ -550,9 +623,6 @@ final class HostConfigPanel {
             proxyFolderInput.setFocusableInTouchMode(false);
             proxyFolderInput.setOnClickListener(v -> showProxyFolderPicker());
         } catch (Throwable ignored) {}
-        Button proxyFolderPickButton = toolbarButton(t("选择文件夹", "Pick folder"));
-        proxyFolderPickButton.setOnClickListener(v -> showProxyFolderPicker());
-        addView(card, proxyFolderPickButton, 4);
         addInfo(card, t("文件夹来源：刷新时会读取上面这个文件夹里各聊天最近的消息，提取其中的 t.me/proxy 链接；只扫这一个文件夹，不扫其他文件夹。文件夹不存在时，只用网址和粘贴来源，不会报错。", "Folder source: refresh reads recent messages from chats in the folder above and extracts t.me/proxy links; only this folder is scanned, not others. If the folder does not exist, only the URL and pasted sources are used, without error."));
         proxyWorkingEntries = new java.util.ArrayList<>();
         if (baseConfig.proxyEntries != null) {
@@ -563,11 +633,14 @@ final class HostConfigPanel {
         proxySummary = new TextView(context);
         proxySummary.setTextColor(secondaryTextColor);
         proxySummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        addView(card, proxySummary, 8);
+        proxySummary.setBackgroundColor(cardColor);
+        proxySummary.setPadding(dp(16), dp(10), dp(16), dp(10));
+        addView(card, proxySummary, 0);
         updateProxySummary();
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button refreshButton = borderedButton(t("立即刷新", "Refresh now"));
+        buttonRow.setPadding(dp(16), dp(16), dp(16), dp(16));
+        Button refreshButton = secondaryButton(t("立即刷新", "Refresh now"));
         refreshButton.setOnClickListener(v -> {
             refreshButton.setEnabled(false);
             refreshButton.setText(t("刷新中…", "Refreshing…"));
@@ -599,17 +672,21 @@ final class HostConfigPanel {
                 });
             }).start();
         });
-        buttonRow.addView(refreshButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Button manageButton = borderedButton(t("管理代理", "Manage proxies"));
+        LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        refreshParams.rightMargin = dp(5);
+        buttonRow.addView(refreshButton, refreshParams);
+        Button manageButton = primaryButton(t("管理代理", "Manage proxies"));
         manageButton.setOnClickListener(v -> showProxyManageDialog());
-        buttonRow.addView(manageButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        addView(card, buttonRow, 4);
+        LinearLayout.LayoutParams manageParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        manageParams.leftMargin = dp(5);
+        buttonRow.addView(manageButton, manageParams);
+        addView(card, buttonRow, 0);
     }
 
     private void buildLogExportCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("日志导出", "Export log"), true, true);
+        LinearLayout card = addGroup(container, t("日志导出", "Export log"));
         addInfo(card, t("导出最近的日志（最多约 2000 行），点“导出日志”后选“导出为文件”，会保存到下载目录，成功后弹框里会写明文件名和位置；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key，发给排查时用。", "Export the recent log (up to about 2000 lines). Tap Export log, then Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."));
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -621,38 +698,57 @@ final class HostConfigPanel {
     }
 
     private void buildBackupCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("数据备份", "Data backup"), true, true);
+        LinearLayout card = addGroup(container, t("数据备份", "Data backup"));
         addInfo(card, t("“导出规则 / 导入规则”只管规则，导入时合并，不会改动其他设置，已有的相同规则不会重复。“导出完整备份 / 导入完整备份”管全部设置：开关、规则、分类、翻译、代理列表、大模型地址 / 模型 / Key、文件夹设置，一起备份和恢复；导入完整备份会替换当前全部设置，不是合并。完整备份里有你的大模型 Key 和代理信息，不要发给别人，只存到你自己的地方。", "Export / Import rules only handles rules, merged on import without changing other settings, and identical rules are not duplicated. Export / Import full backup covers ALL settings: switches, rules, classify, translate, proxy list, LLM base URL / model / key, folder settings, backed up and restored together; importing a full backup REPLACES all current settings, it does not merge. A full backup contains your LLM key and proxy info, do not send it to anyone, keep it in your own place."));
-        // Build #45: HTML reference 3-column button grid (3 + 2,
-        // the last row's empty third cell is a spacer).
-        LinearLayout buttonRow = new LinearLayout(context);
-        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button exportButton = borderedButton(t("导出规则", "Export rules"));
+        // Build #46: HTML v2 btn-group-3: gray buttons in a grid,
+        // 2 columns on narrow screens, 3 on wide ones.
+        java.util.ArrayList<Button> backupButtons = new java.util.ArrayList<>();
+        Button exportButton = secondaryButton(t("导出规则", "Export rules"));
         exportButton.setOnClickListener(v -> showExportRulesDialog());
-        buttonRow.addView(exportButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Button importButton = borderedButton(t("导入规则", "Import rules"));
+        backupButtons.add(exportButton);
+        Button importButton = secondaryButton(t("导入规则", "Import rules"));
         importButton.setOnClickListener(v -> showImportRulesDialog());
-        buttonRow.addView(importButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Button exportFullButton = borderedButton(t("导出完整备份", "Export full backup"));
+        backupButtons.add(importButton);
+        Button exportFullButton = secondaryButton(t("导出完整备份", "Export full backup"));
         exportFullButton.setOnClickListener(v -> showExportFullDialog());
-        buttonRow.addView(exportFullButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        addView(card, buttonRow, 4);
-        LinearLayout buttonRow2 = new LinearLayout(context);
-        buttonRow2.setOrientation(LinearLayout.HORIZONTAL);
-        Button importFullButton = borderedButton(t("导入完整备份", "Import full backup"));
+        backupButtons.add(exportFullButton);
+        Button importFullButton = secondaryButton(t("导入完整备份", "Import full backup"));
         importFullButton.setOnClickListener(v -> showImportFullDialog());
-        buttonRow2.addView(importFullButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Button exportLogButton = borderedButton(t("导出日志", "Export log"));
+        backupButtons.add(importFullButton);
+        Button exportLogButton = secondaryButton(t("导出日志", "Export log"));
         exportLogButton.setOnClickListener(v -> showExportLogDialog());
-        buttonRow2.addView(exportLogButton, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        buttonRow2.addView(new View(context), new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        addView(card, buttonRow2, 4);
+        backupButtons.add(exportLogButton);
+        int btnCols = Math.max(2, gridCols(3));
+        LinearLayout btnContainer = new LinearLayout(context);
+        btnContainer.setOrientation(LinearLayout.VERTICAL);
+        btnContainer.setPadding(dp(16), dp(16), dp(16), dp(16));
+        for (int start = 0; start < backupButtons.size(); start += btnCols) {
+            LinearLayout btnRow = new LinearLayout(context);
+            btnRow.setOrientation(LinearLayout.HORIZONTAL);
+            for (int c = 0; c < btnCols; c++) {
+                int idx = start + c;
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                if (c > 0) {
+                    p.leftMargin = dp(5);
+                }
+                if (c < btnCols - 1) {
+                    p.rightMargin = dp(5);
+                }
+                if (idx < backupButtons.size()) {
+                    btnRow.addView(backupButtons.get(idx), p);
+                } else {
+                    btnRow.addView(new View(context), p);
+                }
+            }
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            if (start + btnCols < backupButtons.size()) {
+                rowParams.bottomMargin = dp(10);
+            }
+            btnContainer.addView(btnRow, rowParams);
+        }
+        addView(card, btnContainer, 0);
         addInfo(card, t("导出日志会取最近的日志（最多约 2000 行），里面有代理文件夹扫描的诊断（例如文件夹里几个聊天、历史成功几个、消息几条），发给排查时用；日志里不含大模型 Key。", "Export log takes the recent log (up to about 2000 lines), including the proxy folder scan diagnosis (for example how many chats in the folder, how many histories succeeded, how many messages); it does not contain the LLM key."));
     }
 
@@ -1570,7 +1666,7 @@ final class HostConfigPanel {
             android.widget.ScrollView proxyScroll = new android.widget.ScrollView(context);
             proxyScroll.addView(proxyListContainer, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            java.util.List<android.widget.CheckBox> boxes = new java.util.ArrayList<>();
+            java.util.List<IosSwitchView> boxes = new java.util.ArrayList<>();
             java.util.List<FilterConfig.ProxyEntry> entries = proxyWorkingEntries == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(proxyWorkingEntries);
             if (entries.isEmpty()) {
                 TextView empty = new TextView(context);
@@ -1582,7 +1678,7 @@ final class HostConfigPanel {
             FilterConfig refConfig = baseConfig.deepCopy().sanitize();
             applyProxyUiToConfig(refConfig);
             for (FilterConfig.ProxyEntry entry : entries) {
-                android.widget.CheckBox box = new android.widget.CheckBox(context);
+                IosSwitchView box = new IosSwitchView(context);
                 // Build #40: stop labelling every non-good entry "失效".
                 // Untested entries are not dead, they just never got a
                 // test slot (max 20 per refresh), and must read as 未测.
@@ -1626,7 +1722,7 @@ final class HostConfigPanel {
             LinearLayout buttonRow = new LinearLayout(context);
             buttonRow.setOrientation(LinearLayout.HORIZONTAL);
             Button selectAll = toolbarButton(t("全选", "Select all"));
-            selectAll.setOnClickListener(v -> { for (android.widget.CheckBox b : boxes) b.setChecked(true); });
+            selectAll.setOnClickListener(v -> { for (IosSwitchView b : boxes) b.setChecked(true); });
             buttonRow.addView(selectAll);
             Button deleteSelected = toolbarButton(t("删除所选", "Delete selected"));
             deleteSelected.setOnClickListener(v -> {
@@ -1690,10 +1786,11 @@ final class HostConfigPanel {
     }
 
     private void buildTranslateCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("翻译", "Translation"), true, false);
+        LinearLayout card = addGroup(container, t("翻译", "Translation"));
         addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后，打开聊天时会自动把该聊天的翻译目标设为中文，并尝试开启整聊自动翻译；中文消息不受影响。", "Uses Conso's built-in translation service, no third-party translator. When on, opening a chat sets its translate target to Chinese and tries to enable whole-chat auto-translate; Chinese messages are unaffected."));
         autoTranslateSwitch = addSwitch(card, t("自动翻译外文为中文", "Auto-translate foreign messages to Chinese"));
         autoTranslateSwitch.setChecked(baseConfig.autoTranslateToChinese);
+        setRowDesc(autoTranslateSwitch, t("使用 Conso 自带服务，开启后自动设置目标语言并开启整聊翻译", "Uses Conso built-in service; turns on whole-chat translation"));
         addInfo(card, t("目标语言固定为简体中文。翻译由 Telegram 服务端完成，首次打开聊天、消息多时需要几秒到十几秒，属正常；若长时间不翻，退出重进该聊天再试一次。整聊自动翻译在宿主里是 Premium 功能，若未自动翻译，请同时开启“增强功能”里的本地 Premium，或点聊天顶部的翻译按钮手动翻译整聊。", "Target language is Simplified Chinese. Translation runs on Telegram's servers, so the first open of a chat with many messages can take seconds to tens of seconds; if it still does not translate, leave and reopen the chat. Whole-chat auto-translate is a Premium-gated host feature; also enable Local Premium in Enhancements, or use the chat's Translate button."));
     }
 
@@ -1701,7 +1798,7 @@ final class HostConfigPanel {
         if (antiRecallConfigStore == null || dialogId == 0L) {
             return;
         }
-        LinearLayout card = addGroup(container, t("当前聊天主动加载", "Current Chat Proactive Loading"), true, true);
+        LinearLayout card = addGroup(container, t("当前聊天主动加载", "Current Chat Proactive Loading"));
         chatAntiRecallSwitch = addSwitch(card, t("为这个聊天启用主动加载/防撤回", "Enable proactive loading for this chat"));
         chatAntiRecallSwitch.setChecked(isChatAntiRecallEnabled());
         addInfo(card, t("保存后会立即同步到宿主里的后台加载器。", "Saving updates the host background loader immediately."));
@@ -1716,7 +1813,7 @@ final class HostConfigPanel {
         // Everything else (regex, and all other targets) lives in one
         // collapsible "高级规则" section, still created and still saved
         // when hidden, so existing rules are never lost by collapsing.
-        LinearLayout card = addGroup(container, t("规则内容", "Rules"), true, true);
+        LinearLayout card = addGroup(container, t("规则内容", "Rules"));
         addInfo(card, chatMode
                 ? t("这里只影响当前聊天。关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
                 : t("关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
@@ -1756,7 +1853,7 @@ final class HostConfigPanel {
         }
 
         addDivider(card);
-        android.widget.CheckBox advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
+        IosSwitchView advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
         // UI sync (Build #15): advanced rules must not look lost on reopen.
         // If any advanced rule exists (any non-TEXT target, or TEXT regex),
         // open the panel with Advanced already expanded.
@@ -1781,6 +1878,10 @@ final class HostConfigPanel {
         advancedContainer.setVisibility(hasAdvanced ? View.VISIBLE : View.GONE);
         advancedSwitch.setOnCheckedChangeListener((button, isChecked) ->
                 advancedContainer.setVisibility(isChecked ? View.VISIBLE : View.GONE));
+        // Build #46: the listener above only fires on later taps,
+        // so sync the initial state here (previously a reopen with
+        // advanced rules still showed the section collapsed).
+        advancedContainer.setVisibility(advancedSwitch.isChecked() ? View.VISIBLE : View.GONE);
         addInfo(card, t("高级规则包括：消息文字的正则，以及媒体说明、按钮、发送者、聊天、全字段的关键词与正则。", "Advanced rules include: message-text regex, plus keywords and regex for caption, buttons, sender, chat, and any field."));
         card.addView(advancedContainer, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1970,14 +2071,26 @@ final class HostConfigPanel {
     // helper; panel builders now use addGroup.
     private final java.util.Map<LinearLayout, TextView> groupHeaderHelp = new java.util.HashMap<>();
 
-    private LinearLayout addGroup(LinearLayout parent, String title, boolean collapsible, boolean expanded) {
-        // Build #45: HTML reference layout (user 2026-10-26):
-        // white rounded card (12dp corners, soft shadow) on the
-        // gray page, header row inside the card (title + "?" +
-        // chevron, bottom border), body with 16dp padding. Groups
-        // after the first are collapsible; the first group has no
-        // header and is always open. Returns the BODY, so builders
-        // keep adding to it unchanged.
+    private LinearLayout addGroup(LinearLayout parent, String title) {
+        // Build #46: HTML v2: section header OUTSIDE the card
+        // (13sp gray title + gray "?" circle, like the reference),
+        // white 12dp card below, no collapsing, body padding 0
+        // (cells carry their own padding, hairlines separate them).
+        // Returns the BODY, so builders keep adding to it.
+        LinearLayout headerRow = new LinearLayout(context);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setPadding(dp(4), dp(20), dp(4), dp(8));
+        TextView titleView = new TextView(context);
+        titleView.setText(title);
+        titleView.setTextColor(secondaryTextColor);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        headerRow.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView sectionHelp = createSectionHelpButton();
+        headerRow.addView(sectionHelp, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        parent.addView(headerRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setTag("gramsieve_card");
@@ -1986,60 +2099,36 @@ final class HostConfigPanel {
         cardBg.setCornerRadius(dp(12));
         cardBg.setColor(backgroundColor);
         card.setBackground(cardBg);
-        try { card.setElevation(dp(2)); } catch (Throwable ignored) {}
+        try { card.setElevation(dp(1)); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.leftMargin = dp(12);
-        cardParams.rightMargin = dp(12);
-        cardParams.bottomMargin = dp(16);
+        cardParams.bottomMargin = dp(12);
         parent.addView(card, cardParams);
         LinearLayout body = new LinearLayout(context);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setTag("gramsieve_body");
-        if (!collapsible) {
-            card.setTag("gramsieve_body");
-            return card;
-        }
-        LinearLayout headerRow = new LinearLayout(context);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(dp(16), dp(12), dp(16), dp(12));
-        TextView titleView = new TextView(context);
-        titleView.setText(title);
-        titleView.setTextColor(primaryTextColor);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        headerRow.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView headerHelp = createHelpButton();
-        headerRow.addView(headerHelp, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView chevron = new TextView(context);
-        chevron.setText(">");
-        chevron.setTextColor(secondaryTextColor);
-        chevron.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        chevron.setGravity(Gravity.CENTER);
-        chevron.setMinWidth(dp(32));
-        chevron.setRotation(expanded ? 90f : 0f);
-        headerRow.addView(chevron, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        card.addView(headerRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        View border = new View(context);
-        border.setBackgroundColor(strokeColor);
-        card.addView(border, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
-        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
         card.addView(body, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        groupHeaderHelp.put(body, headerHelp);
-        final LinearLayout toggleBody = body;
-        final TextView toggleChevron = chevron;
-        headerRow.setOnClickListener(v -> {
-            boolean open = toggleBody.getVisibility() != View.VISIBLE;
-            toggleBody.setVisibility(open ? View.VISIBLE : View.GONE);
-            toggleChevron.setRotation(open ? 90f : 0f);
-        });
+        groupHeaderHelp.put(body, sectionHelp);
         return body;
+    }
+
+    private TextView createSectionHelpButton() {
+        // HTML v2 section "?": 18dp gray circle, white 12sp "?".
+        // Hidden until addInfo assigns the section introduction.
+        TextView help = new TextView(context);
+        help.setText("?");
+        help.setTextColor(android.graphics.Color.WHITE);
+        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        help.setGravity(Gravity.CENTER);
+        help.setVisibility(View.GONE);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        bg.setColor(0xFFC7C7CC);
+        help.setBackground(bg);
+        help.setMinWidth(dp(18));
+        help.setMinHeight(dp(18));
+        return help;
     }
 
     // Build #32: called by attach() right after each panel builder
@@ -2209,29 +2298,157 @@ final class HostConfigPanel {
         return null;
     }
 
-    private android.widget.CheckBox addSwitch(LinearLayout parent, String text) {
-        // Build #43: every panel choice is a checkbox now (user
-        // 2026-10-26: checked = on/running). The row is a horizontal
-        // container so addInfo can attach a "?" button beside the
-        // item instead of a permanent paragraph below it.
+    // Build #46: iOS-style toggle from the HTML v2 reference:
+    // 46x28dp track, white 24dp knob, green #34c759 when on,
+    // gray #e9e9eb when off. A plain View, so no theme tint
+    // surprises. Same method names as CheckBox (setChecked,
+    // isChecked, setOnCheckedChangeListener) so all existing
+    // switch fields and save logic keep working.
+    static class IosSwitchView extends View {
+        interface OnCheckedChangeListener {
+            void onCheckedChanged(IosSwitchView view, boolean isChecked);
+        }
+        private boolean checked;
+        private OnCheckedChangeListener listener;
+        private final android.graphics.Paint trackPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Paint knobPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final float density;
+        IosSwitchView(android.content.Context context) {
+            super(context);
+            density = context.getResources().getDisplayMetrics().density;
+            knobPaint.setColor(android.graphics.Color.WHITE);
+            knobPaint.setShadowLayer(3f * density, 0f, 1f * density, 0x33000000);
+            setLayerType(LAYER_TYPE_SOFTWARE, null);
+            setClickable(true);
+            setFocusable(true);
+        }
+        void setOnCheckedChangeListener(OnCheckedChangeListener l) {
+            listener = l;
+        }
+        void setChecked(boolean value) {
+            if (checked == value) {
+                return;
+            }
+            checked = value;
+            invalidate();
+            if (listener != null) {
+                listener.onCheckedChanged(this, value);
+            }
+        }
+        boolean isChecked() {
+            return checked;
+        }
+        @Override
+        protected void onMeasure(int widthSpec, int heightSpec) {
+            setMeasuredDimension(Math.round(46 * density), Math.round(28 * density));
+        }
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            trackPaint.setColor(checked ? 0xFF34C759 : 0xFFE9E9EB);
+            android.graphics.RectF track = new android.graphics.RectF(0, 0, w, h);
+            canvas.drawRoundRect(track, h / 2, h / 2, trackPaint);
+            float knobD = 24 * density;
+            float knobY = (h - knobD) / 2;
+            float knobX = checked ? w - knobD - 2 * density : 2 * density;
+            canvas.drawCircle(knobX + knobD / 2, knobY + knobD / 2, knobD / 2, knobPaint);
+        }
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                setChecked(!checked);
+                return true;
+            }
+            return super.onTouchEvent(event);
+        }
+    }
+
+    private IosSwitchView addSwitch(LinearLayout parent, String text) {
+        // Build #46: HTML v2 switch-item: label left (14sp, flex 1,
+        // with an optional 11sp gray desc line), iOS toggle right,
+        // "?" between label and toggle when an explanation is
+        // attached. Row padding 13/14, min 54dp, no bottom margin:
+        // hairlines from the card styling separate rows.
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         row.setTag("gramsieve_row");
-        android.widget.CheckBox box = new android.widget.CheckBox(context);
-        box.setMinHeight(dp(48));
-        box.setText(text);
-        box.setTextColor(primaryTextColor);
-        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        try {
-            int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
-            int[] boxColors = new int[]{accentColor, adjustAlpha(secondaryTextColor, 0.6f)};
-            box.setButtonTintList(new ColorStateList(states, boxColors));
-        } catch (Throwable ignored) {}
-        row.addView(box, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.setPadding(dp(14), dp(13), dp(14), dp(13));
+        row.setMinimumHeight(dp(54));
+        LinearLayout labelBox = new LinearLayout(context);
+        labelBox.setOrientation(LinearLayout.VERTICAL);
+        labelBox.setTag("gramsieve_row_labelbox");
+        TextView label = new TextView(context);
+        label.setText(text);
+        label.setTextColor(primaryTextColor);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        labelBox.addView(label, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        row.addView(labelBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         row.addView(createHelpButton(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        addView(parent, row, 6);
-        return box;
+        IosSwitchView toggle = new IosSwitchView(context);
+        row.addView(toggle, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(parent, row, 0);
+        return toggle;
+    }
+
+    private void setRowDesc(IosSwitchView toggle, String desc) {
+        // HTML v2 item-desc: 11sp gray second line under the label.
+        try {
+            android.view.ViewParent p = toggle.getParent();
+            if (!(p instanceof LinearLayout)) {
+                return;
+            }
+            LinearLayout row = (LinearLayout) p;
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View child = row.getChildAt(i);
+                if (child instanceof LinearLayout && "gramsieve_row_labelbox".equals(child.getTag())) {
+                    TextView d = new TextView(context);
+                    d.setText(desc);
+                    d.setTextColor(secondaryTextColor);
+                    d.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+                    ((LinearLayout) child).addView(d, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private Button secondaryButton(String text) {
+        // HTML v2 btn-secondary: gray fill, dark text, 10dp corners.
+        Button button = new Button(context);
+        button.setAllCaps(false);
+        button.setText(text);
+        button.setTextColor(primaryTextColor);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        button.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        try {
+            button.setBackground(rounded(0xFFE5E5EA, dp(10), 0xFFE5E5EA));
+        } catch (Throwable ignored) {}
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setMinHeight(dp(40));
+        return button;
+    }
+
+    private Button primaryButton(String text) {
+        // HTML v2 btn-primary: iOS blue fill, white text.
+        Button button = new Button(context);
+        button.setAllCaps(false);
+        button.setText(text);
+        button.setTextColor(android.graphics.Color.WHITE);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        button.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        try {
+            button.setBackground(rounded(0xFF007AFF, dp(10), 0xFF007AFF));
+        } catch (Throwable ignored) {}
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setMinHeight(dp(40));
+        return button;
     }
 
     // Keyword editor row (2026-10-25 UI change): keywords are NOT shown
@@ -2240,31 +2457,35 @@ final class HostConfigPanel {
     // symbol-separated EditText. The actual value lives in a hidden
     // EditText, so save()/collectMatrix() work unchanged.
     private EditText addKeywordEditorRow(LinearLayout parent, String label, String initialValue) {
+        // Build #46: HTML v2 rule-item cell: [label + count desc]
+        // on the left, Edit link on the right. Tapping anywhere on
+        // the cell opens the editor. The value still lives in a
+        // hidden EditText, so save()/collectMatrix() work unchanged.
+        LinearLayout cell = new LinearLayout(context);
+        cell.setOrientation(LinearLayout.HORIZONTAL);
+        cell.setGravity(Gravity.CENTER_VERTICAL);
+        cell.setTag("gramsieve_rule_item");
+        cell.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout textBox = new LinearLayout(context);
+        textBox.setOrientation(LinearLayout.VERTICAL);
         TextView title = new TextView(context);
-        title.setTag("gramsieve_row_label");
         title.setText(label);
-        title.setTextColor(secondaryTextColor);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        addView(parent, title, 2);
-
+        title.setTextColor(primaryTextColor);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        textBox.addView(title, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         EditText hidden = new EditText(context);
         hidden.setText(initialValue == null ? "" : initialValue);
         hidden.setVisibility(View.GONE);
-        addView(parent, hidden, 0);
-
-        LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        try {
-            row.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
-            row.setPadding(dp(12), dp(10), dp(12), dp(10));
-        } catch (Throwable ignored) {}
         TextView summary = new TextView(context);
-        summary.setTextColor(primaryTextColor);
-        summary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        summary.setTextColor(secondaryTextColor);
+        summary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
         updateKeywordSummary(summary, valueOf(hidden));
-        row.addView(summary, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
+        textBox.addView(summary, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        cell.addView(textBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        cell.addView(hidden, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         Button editButton = new Button(context);
         editButton.setAllCaps(false);
         editButton.setText(t("编辑", "Edit"));
@@ -2275,11 +2496,10 @@ final class HostConfigPanel {
         editButton.setPadding(dp(8), dp(4), dp(8), dp(4));
         editButton.setBackgroundColor(Color.TRANSPARENT);
         editButton.setOnClickListener(v -> showKeywordEditorDialog(hidden, summary));
-        row.addView(editButton, new LinearLayout.LayoutParams(
+        cell.addView(editButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        // Tapping anywhere on the row opens the editor, not just the button.
-        row.setOnClickListener(v -> showKeywordEditorDialog(hidden, summary));
-        addView(parent, row, 8);
+        cell.setOnClickListener(v -> showKeywordEditorDialog(hidden, summary));
+        addView(parent, cell, 0);
         return hidden;
     }
 
@@ -2334,8 +2554,8 @@ final class HostConfigPanel {
         input.setHintTextColor(secondaryTextColor);
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
-            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
-            input.setPadding(dp(16), dp(12), dp(16), dp(12)); // Build #41: roomier input fields
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
+            input.setPadding(dp(12), dp(10), dp(12), dp(10));
         } catch (Throwable ignored) {}
         input.setMinLines(3);
         input.setMaxLines(6);
@@ -2475,7 +2695,7 @@ final class HostConfigPanel {
             TextView title = new TextView(context);
             title.setText(labels[i]);
             title.setTextColor(secondaryTextColor);
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             col.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             EditText input = new EditText(context);
@@ -2484,8 +2704,8 @@ final class HostConfigPanel {
             input.setHintTextColor(secondaryTextColor);
             input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
             try {
-                input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
-                input.setPadding(dp(16), dp(12), dp(16), dp(12));
+                input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
+                input.setPadding(dp(12), dp(10), dp(12), dp(10));
             } catch (Throwable ignored) {}
             input.setMinLines(1);
             input.setMaxLines(1);
@@ -2504,7 +2724,7 @@ final class HostConfigPanel {
             }
             row.addView(col, colParams);
         }
-        addView(parent, row, 8);
+        addView(parent, row, 0);
         return result;
     }
 
@@ -2520,11 +2740,11 @@ final class HostConfigPanel {
         TextView title = new TextView(context);
         title.setText(label);
         title.setTextColor(secondaryTextColor);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         labelRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         labelRow.addView(createHelpButton(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        addView(parent, labelRow, 2);
+        addView(parent, labelRow, 6);
 
         EditText input = new EditText(context);
         input.setText(initialValue == null ? "" : initialValue);
@@ -2532,8 +2752,8 @@ final class HostConfigPanel {
         input.setHintTextColor(secondaryTextColor);
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
-            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
-            input.setPadding(dp(16), dp(12), dp(16), dp(12)); // Build #41: roomier input fields
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
+            input.setPadding(dp(12), dp(10), dp(12), dp(10));
         } catch (Throwable ignored) {}
         input.setMinLines(1);
         input.setMaxLines(4);
@@ -2542,7 +2762,7 @@ final class HostConfigPanel {
         input.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        addView(parent, input, 8);
+        addView(parent, input, 0);
         return input;
     }
 
@@ -2571,8 +2791,8 @@ final class HostConfigPanel {
             for (int i = 0; i + 1 < children.size(); i++) {
                 View first = children.get(i);
                 View second = children.get(i + 1);
-                android.widget.CheckBox firstBox = checkboxRowBox(first);
-                android.widget.CheckBox secondBox = checkboxRowBox(second);
+                IosSwitchView firstBox = checkboxRowBox(first);
+                IosSwitchView secondBox = checkboxRowBox(second);
                 if (firstBox == null || secondBox == null) {
                     continue;
                 }
@@ -2632,18 +2852,18 @@ final class HostConfigPanel {
         return null;
     }
 
-    private android.widget.CheckBox checkboxRowBox(View row) {
+    private IosSwitchView checkboxRowBox(View row) {
         try {
-            if (row instanceof android.widget.CheckBox) {
-                return (android.widget.CheckBox) row;
+            if (row instanceof IosSwitchView) {
+                return (IosSwitchView) row;
             }
             if (!(row instanceof LinearLayout) || !"gramsieve_row".equals(row.getTag())) {
                 return null;
             }
             LinearLayout container = (LinearLayout) row;
             for (int i = 0; i < container.getChildCount(); i++) {
-                if (container.getChildAt(i) instanceof android.widget.CheckBox) {
-                    return (android.widget.CheckBox) container.getChildAt(i);
+                if (container.getChildAt(i) instanceof IosSwitchView) {
+                    return (IosSwitchView) container.getChildAt(i);
                 }
             }
         } catch (Throwable ignored) {
@@ -2651,33 +2871,42 @@ final class HostConfigPanel {
         return null;
     }
 
-    // Build #45: HTML card body styling. Pairs the body's small
-    // checkboxes into two columns first, then gives the body
-    // 16dp padding and HTML-like spacing: 16dp between rows,
-    // 4dp after a label row (label hugs its input), nothing after
-    // the last visible row. No dividers inside bodies anymore.
-    private void styleHtmlCard(LinearLayout card) {
+    private LinearLayout findCardBody(LinearLayout card) {
+        if (card == null) {
+            return null;
+        }
+        if ("gramsieve_body".equals(card.getTag())) {
+            return card;
+        }
+        for (int i = 0; i < card.getChildCount(); i++) {
+            View child = card.getChildAt(i);
+            if ("gramsieve_body".equals(child.getTag())) {
+                return (LinearLayout) child;
+            }
+        }
+        return null;
+    }
+
+    // Build #46: HTML v2 card styling. Body padding 0 (cells pad
+    // themselves); switch rows and rule cells are gridded, then
+    // hairline dividers separate visible rows (never after the
+    // last row, never after a label row hugging its input).
+    private void styleIosCard(LinearLayout card, int switchCols) {
         try {
-            if (card == null) {
-                return;
-            }
-            LinearLayout body = null;
-            if ("gramsieve_body".equals(card.getTag())) {
-                body = card;
-            } else {
-                for (int i = 0; i < card.getChildCount(); i++) {
-                    View child = card.getChildAt(i);
-                    if ("gramsieve_body".equals(child.getTag())) {
-                        body = (LinearLayout) child;
-                        break;
-                    }
-                }
-            }
+            LinearLayout body = findCardBody(card);
             if (body == null) {
                 return;
             }
-            pairCheckboxRows(body);
-            body.setPadding(dp(16), dp(16), dp(16), dp(16));
+            body.setPadding(0, 0, 0, 0);
+            pairSwitchRows(body, switchCols);
+            pairRuleItems(body, gridCols(2));
+            styleBodyDividers(body);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void styleBodyDividers(LinearLayout body) {
+        try {
             java.util.ArrayList<View> visible = new java.util.ArrayList<>();
             for (int i = 0; i < body.getChildCount(); i++) {
                 View child = body.getChildAt(i);
@@ -2697,7 +2926,121 @@ final class HostConfigPanel {
                     child.setLayoutParams(params);
                 }
                 boolean isLabel = "gramsieve_row_label".equals(child.getTag());
-                params.bottomMargin = (i == visible.size() - 1) ? 0 : (isLabel ? dp(4) : dp(16));
+                params.bottomMargin = isLabel ? dp(6) : 0;
+                params.topMargin = 0;
+                if (i < visible.size() - 1 && !isLabel) {
+                    View divider = new View(context);
+                    divider.setBackgroundColor(strokeColor);
+                    body.addView(divider, body.indexOfChild(child) + 1, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private boolean isSwitchRow(View view) {
+        if (!(view instanceof LinearLayout) || !"gramsieve_row".equals(view.getTag())) {
+            return false;
+        }
+        LinearLayout row = (LinearLayout) view;
+        for (int i = 0; i < row.getChildCount(); i++) {
+            if (row.getChildAt(i) instanceof IosSwitchView) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void gridRow(LinearLayout body, java.util.List<View> cells, int cols, int insertIndex) {
+        // One grid row: cells at weight 1, hairline vertical
+        // dividers between them (HTML cell border-right, kept for
+        // every column except the last, including a lone cell in
+        // a short last row). Short rows are padded with spacers
+        // so cells keep column width.
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setTag("gramsieve_grid_row");
+        for (int c = 0; c < cols; c++) {
+            if (c < cells.size()) {
+                row.addView(cells.get(c), new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                if (c < cols - 1) {
+                    View divider = new View(context);
+                    divider.setBackgroundColor(strokeColor);
+                    row.addView(divider, new LinearLayout.LayoutParams(
+                            Math.max(1, dp(1)), ViewGroup.LayoutParams.MATCH_PARENT));
+                }
+            } else {
+                row.addView(new View(context), new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            }
+        }
+        body.addView(row, insertIndex, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void pairSwitchRows(LinearLayout body, int cols) {
+        try {
+            if (body == null || cols <= 1) {
+                return;
+            }
+            java.util.ArrayList<View> visible = new java.util.ArrayList<>();
+            for (int i = 0; i < body.getChildCount(); i++) {
+                View child = body.getChildAt(i);
+                if (child.getVisibility() != View.GONE) {
+                    visible.add(child);
+                }
+            }
+            java.util.ArrayList<View> run = new java.util.ArrayList<>();
+            for (int i = 0; i <= visible.size(); i++) {
+                View child = i < visible.size() ? visible.get(i) : null;
+                if (child != null && isSwitchRow(child)) {
+                    run.add(child);
+                    continue;
+                }
+                // Only runs of 2+ are gridded; a lone switch
+                // (e.g. the rules card's "show advanced rules")
+                // stays full-width, like the reference.
+                if (run.size() > 1) {
+                    for (int s = 0; s < run.size(); s += cols) {
+                        java.util.List<View> chunk = run.subList(s, Math.min(s + cols, run.size()));
+                        int index = body.indexOfChild(chunk.get(0));
+                        for (View cell : chunk) {
+                            body.removeView(cell);
+                        }
+                        gridRow(body, new java.util.ArrayList<>(chunk), cols, index < 0 ? body.getChildCount() : index);
+                    }
+                }
+                run.clear();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void pairRuleItems(LinearLayout body, int cols) {
+        try {
+            if (body == null || cols <= 1) {
+                return;
+            }
+            java.util.ArrayList<View> items = new java.util.ArrayList<>();
+            for (int i = 0; i < body.getChildCount(); i++) {
+                View child = body.getChildAt(i);
+                if (child instanceof LinearLayout && "gramsieve_rule_item".equals(child.getTag())
+                        && child.getVisibility() != View.GONE) {
+                    items.add(child);
+                }
+            }
+            for (int s = 0; s + 1 < items.size(); s += cols) {
+                java.util.List<View> chunk = items.subList(s, Math.min(s + cols, items.size()));
+                if (chunk.size() < 2) {
+                    break;
+                }
+                int index = body.indexOfChild(chunk.get(0));
+                for (View cell : chunk) {
+                    body.removeView(cell);
+                }
+                gridRow(body, new java.util.ArrayList<>(chunk), cols, index < 0 ? body.getChildCount() : index);
             }
         } catch (Throwable ignored) {
         }
@@ -2814,12 +3157,12 @@ final class HostConfigPanel {
         }
     }
 
-    private void pairBareChoices(LinearLayout group) {
-        // Pairs consecutive RadioButtons into 2-column rows; a
-        // leftover gets an empty spacer so it sits in the left
-        // column, exactly like the HTML reference grid.
+    private void pairBareChoices(LinearLayout group, int cols) {
+        // HTML v2 radio grids: rows of `cols` cells with hairline
+        // vertical dividers; a short last row is padded with
+        // spacers so cells keep column width.
         try {
-            if (group == null) {
+            if (group == null || cols <= 1) {
                 return;
             }
             java.util.ArrayList<View> items = new java.util.ArrayList<>();
@@ -2829,34 +3172,16 @@ final class HostConfigPanel {
                     items.add(child);
                 }
             }
-            for (int i = 0; i + 1 < items.size(); i += 2) {
-                View first = items.get(i);
-                View second = items.get(i + 1);
-                int index = group.indexOfChild(first);
+            for (int s = 0; s < items.size(); s += cols) {
+                java.util.List<View> chunk = items.subList(s, Math.min(s + cols, items.size()));
+                int index = group.indexOfChild(chunk.get(0));
                 if (index < 0) {
                     continue;
                 }
-                group.removeView(first);
-                group.removeView(second);
-                LinearLayout pair = new LinearLayout(context);
-                pair.setOrientation(LinearLayout.HORIZONTAL);
-                pair.addView(first, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                pair.addView(second, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                group.addView(pair, index, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            }
-            if (items.size() % 2 == 1) {
-                View last = items.get(items.size() - 1);
-                int index = group.indexOfChild(last);
-                if (index >= 0) {
-                    group.removeView(last);
-                    LinearLayout pair = new LinearLayout(context);
-                    pair.setOrientation(LinearLayout.HORIZONTAL);
-                    pair.addView(last, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                    pair.addView(new View(context), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                    group.addView(pair, index, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                for (View cell : chunk) {
+                    group.removeView(cell);
                 }
+                gridRow(group, new java.util.ArrayList<>(chunk), cols, index);
             }
         } catch (Throwable ignored) {
         }
@@ -2924,6 +3249,20 @@ final class HostConfigPanel {
 
     private String t(String zh, String en) {
         return chinese ? zh : en;
+    }
+
+    // Build #46: HTML v2 responsive breakpoints. Column counts
+    // adapt to the panel width: under 420dp everything stacks
+    // (except backup buttons, clamped to 2 by their caller),
+    // 420-640dp three/four-column grids drop to two columns.
+    private int gridCols(int requested) {
+        if (screenWidthDp < 420) {
+            return 1;
+        }
+        if (screenWidthDp < 640) {
+            return Math.min(requested, 2);
+        }
+        return requested;
     }
 
     private int dp(int value) {
