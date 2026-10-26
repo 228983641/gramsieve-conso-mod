@@ -589,7 +589,7 @@ final class HostConfigPanel {
                         updateProxySummary();
                         String msg = result.error != null && !result.error.isEmpty() && result.fetched == 0
                                 ? t("刷新失败（来源不可用），已保留旧列表", "Refresh failed (source unavailable), old list kept")
-                                : t("刷新完成：抓到 " + result.fetched + " 个（文件夹 " + result.folderFetched + " 个），测通 " + result.availableCount + " 个" + (result.switched && result.fastest != null ? "，已切到最快 " + result.fastest.display() + "（" + result.fastest.pingMs + " ms）" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "；" + result.folderDiag : ""), "Refresh done: fetched " + result.fetched + " (folder " + result.folderFetched + "), available " + result.availableCount + (result.switched && result.fastest != null ? ", switched to fastest " + result.fastest.display() + " (" + result.fastest.pingMs + " ms)" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "; " + result.folderDiag : ""));
+                                : t("刷新完成：抓到 " + result.fetched + " 个（文件夹 " + result.folderFetched + " 个），测通 " + result.availableCount + " 个，新进 " + result.imported + " 个" + (result.switched && result.fastest != null ? "，已切到最快 " + result.fastest.display() + "（" + result.fastest.pingMs + " ms）" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "；" + result.folderDiag : ""), "Refresh done: fetched " + result.fetched + " (folder " + result.folderFetched + "), available " + result.availableCount + ", newly imported " + result.imported + (result.switched && result.fastest != null ? ", switched to fastest " + result.fastest.display() + " (" + result.fastest.pingMs + " ms)" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "; " + result.folderDiag : ""));
                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show();
                     } catch (Throwable ignored) {
                     } finally {
@@ -1526,6 +1526,15 @@ final class HostConfigPanel {
                     }
                 }
             } catch (Throwable ignored) {}
+            // Build #39: the checkbox list used to be added straight
+            // to the dialog, so with 300+ proxies it grew past the
+            // screen and could not be scrolled at all. Same fix as
+            // #38: list scrolls inside a weighted area, buttons stay.
+            LinearLayout proxyListContainer = new LinearLayout(context);
+            proxyListContainer.setOrientation(LinearLayout.VERTICAL);
+            android.widget.ScrollView proxyScroll = new android.widget.ScrollView(context);
+            proxyScroll.addView(proxyListContainer, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             java.util.List<android.widget.CheckBox> boxes = new java.util.ArrayList<>();
             java.util.List<FilterConfig.ProxyEntry> entries = proxyWorkingEntries == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(proxyWorkingEntries);
             if (entries.isEmpty()) {
@@ -1533,7 +1542,7 @@ final class HostConfigPanel {
                 empty.setText(t("暂无代理", "No proxies"));
                 empty.setTextColor(primaryTextColor);
                 empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-                dialogView.addView(empty);
+                proxyListContainer.addView(empty);
             }
             FilterConfig refConfig = baseConfig.deepCopy().sanitize();
             applyProxyUiToConfig(refConfig);
@@ -1545,9 +1554,11 @@ final class HostConfigPanel {
                 box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
                 box.setTag(entry);
                 boxes.add(box);
-                dialogView.addView(box, new LinearLayout.LayoutParams(
+                proxyListContainer.addView(box, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
+            dialogView.addView(proxyScroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
             android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
                     .setView(dialogView)
                     .create();

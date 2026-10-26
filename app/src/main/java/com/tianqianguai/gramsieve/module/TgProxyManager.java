@@ -68,6 +68,7 @@ final class TgProxyManager {
         String folderDiag = "";
         int tested = 0;
         int availableCount = 0;
+        int imported = 0;
         FilterConfig.ProxyEntry fastest;
         boolean switched = false;
         String error = "";
@@ -683,6 +684,19 @@ final class TgProxyManager {
             fresh.addAll(parseLinks(updated.proxyPastedLinks, "pasted"));
         }
         result.fetched = fresh.size();
+        // Build #39: keys scanned this round that were not already in
+        // the list (and not already in Conso itself) are new imports.
+        // They are only kept if this refresh actually tests them good;
+        // untested or failed new entries stay out and will be
+        // re-scanned on a later refresh, instead of filling the list
+        // as "expired". Host entries and previously imported entries
+        // are exempt: they stay, marked by their test result.
+        java.util.Set<String> newFreshKeys = new java.util.HashSet<>();
+        for (FilterConfig.ProxyEntry entry : fresh) {
+            if (entry != null && !byKey.containsKey(entry.key())) {
+                newFreshKeys.add(entry.key());
+            }
+        }
         for (FilterConfig.ProxyEntry entry : fresh) {
             FilterConfig.ProxyEntry existing = byKey.get(entry.key());
             if (existing != null) {
@@ -694,9 +708,15 @@ final class TgProxyManager {
             byKey.put(entry.key(), entry);
         }
         merged.addAll(byKey.values());
-        // Test at most 20: previously fastest first, then untested, so a
-        // refresh does not spend minutes on a huge stale list.
+        // Test at most 20: fresh imports first (their import is being
+        // decided now), then previously fastest, then untested old
+        // ones, so a refresh does not spend minutes on a huge list.
         merged.sort((a, b) -> {
+            boolean aNew = newFreshKeys.contains(a.key());
+            boolean bNew = newFreshKeys.contains(b.key());
+            if (aNew != bNew) {
+                return aNew ? -1 : 1;
+            }
             long pa = a.pingMs < 0 ? Long.MAX_VALUE : a.pingMs;
             long pb = b.pingMs < 0 ? Long.MAX_VALUE : b.pingMs;
             return Long.compare(pa, pb);
@@ -714,6 +734,18 @@ final class TgProxyManager {
                 entry.pingMs = -1L;
             }
             result.tested++;
+        }
+        // Build #39: drop new imports that did not test good.
+        java.util.Iterator<FilterConfig.ProxyEntry> dropIt = merged.iterator();
+        while (dropIt.hasNext()) {
+            FilterConfig.ProxyEntry entry = dropIt.next();
+            if (newFreshKeys.contains(entry.key())) {
+                if (entry.available && entry.pingMs >= 0) {
+                    result.imported++;
+                } else {
+                    dropIt.remove();
+                }
+            }
         }
         List<FilterConfig.ProxyEntry> available = new ArrayList<>();
         for (FilterConfig.ProxyEntry entry : merged) {
