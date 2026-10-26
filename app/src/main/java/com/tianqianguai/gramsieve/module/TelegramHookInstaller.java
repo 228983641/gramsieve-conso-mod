@@ -167,6 +167,7 @@ final class TelegramHookInstaller {
         hookSettingsActivityMenu(classLoader);
         hookProfileSettingsMenu(classLoader);
         hookDownloadActivityMenu(classLoader);
+        hookActivityResult(classLoader);
         hookDialogDeletionDiagnostics(classLoader);
         hookOnItemClickDiagnostic(classLoader);
         installed = true;
@@ -4848,25 +4849,39 @@ final class TelegramHookInstaller {
             targetLabelParams.topMargin = dp(context, 12f);
             targetLabelParams.bottomMargin = dp(context, 4f);
             dialogView.addView(targetLabel, targetLabelParams);
-            android.widget.RadioGroup targetGroup = new android.widget.RadioGroup(activity);
-            targetGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
-            android.widget.RadioButton globalRadio = new android.widget.RadioButton(activity);
+            // Build #43: all choices are checkboxes now (user
+            // 2026-10-26). These two stay mutually exclusive and at
+            // least one stays checked, so the confirm handler's
+            // chatRadio.isChecked() read works unchanged.
+            android.widget.CheckBox globalRadio = new android.widget.CheckBox(activity);
             globalRadio.setText("全局规则（所有聊天）");
             globalRadio.setTextColor(smartPrimaryColor);
             globalRadio.setTextSize(15f);
             globalRadio.setChecked(true);
-            targetGroup.addView(globalRadio, new LinearLayout.LayoutParams(
+            dialogView.addView(globalRadio, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            android.widget.RadioButton chatRadio = new android.widget.RadioButton(activity);
+            android.widget.CheckBox chatRadio = new android.widget.CheckBox(activity);
             chatRadio.setText(smartDialogId == 0L ? "当前聊天规则（仅本聊天，无法识别当前聊天）" : "当前聊天规则（仅本聊天）");
             chatRadio.setTextColor(smartPrimaryColor);
             chatRadio.setTextSize(15f);
             chatRadio.setChecked(false);
             chatRadio.setEnabled(smartDialogId != 0L);
-            targetGroup.addView(chatRadio, new LinearLayout.LayoutParams(
+            dialogView.addView(chatRadio, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            dialogView.addView(targetGroup, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            globalRadio.setOnCheckedChangeListener((button, checked) -> {
+                if (checked) {
+                    chatRadio.setChecked(false);
+                } else if (!chatRadio.isChecked()) {
+                    globalRadio.setChecked(true);
+                }
+            });
+            chatRadio.setOnCheckedChangeListener((button, checked) -> {
+                if (checked) {
+                    globalRadio.setChecked(false);
+                } else if (!globalRadio.isChecked()) {
+                    chatRadio.setChecked(true);
+                }
+            });
             TextView footer = new TextView(activity);
             footer.setTag("gramsieve_info");
             footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入上面所选的规则范围。");
@@ -6476,6 +6491,14 @@ final class TelegramHookInstaller {
                             // Trust the host call first; verify after a
                             // delay, and only then fall back, at most
                             // once, on a freshly re-read filter object.
+                            // Build #43 diagnostic: the 12:03 host-path
+                            // add still produced an Archive row with
+                            // auto-archive off, so record the dialog's
+                            // folder_id (0 = home/All, 1 = archived)
+                            // before the call and at verify time. The
+                            // values alone (no dialog ids) settle
+                            // whether the host call archives it.
+                            final Integer folderIdBefore = dialogFolderId(controller, dialogId);
                             Reflect.invokeIfExists(controller, "addDialogToFolder",
                                     new Class<?>[]{long.class, int.class, int.class, long.class},
                                     dialogId, filterId, 0, 0L);
@@ -6520,6 +6543,8 @@ final class TelegramHookInstaller {
                                     } else {
                                         info("AddToFolder: host applied, verified=true folderId=" + verifyFilterId);
                                     }
+                                    info("AddToFolder: folder_id before=" + folderIdBefore
+                                            + " after=" + dialogFolderId(verifyController, verifyDialogId));
                                     if (verifyActivity != null && !verifyActivity.isFinishing()) {
                                         if (verified) {
                                             Toast.makeText(verifyContext, localizedAddedToFolder(verifyContext, verifyFolderName), Toast.LENGTH_SHORT).show();
@@ -6545,6 +6570,39 @@ final class TelegramHookInstaller {
             error("Add-to-folder dialog failed", throwable);
             Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private Integer dialogFolderId(Object controller, long dialogId) {
+        try {
+            if (controller == null) {
+                return null;
+            }
+            Object dict = Reflect.field(controller, "dialogs_dict");
+            Object dialog = null;
+            if (dict instanceof java.util.Map) {
+                dialog = ((java.util.Map<?, ?>) dict).get(dialogId);
+            } else if (dict != null) {
+                try {
+                    java.lang.reflect.Method get = dict.getClass().getMethod("get", long.class);
+                    dialog = get.invoke(dict, dialogId);
+                } catch (Throwable ignored) {
+                    try {
+                        java.lang.reflect.Method get = dict.getClass().getMethod("get", Long.class);
+                        dialog = get.invoke(dict, Long.valueOf(dialogId));
+                    } catch (Throwable ignoredAgain) {
+                    }
+                }
+            }
+            if (dialog == null) {
+                return null;
+            }
+            Object folderId = Reflect.field(dialog, "folder_id");
+            if (folderId instanceof Number) {
+                return ((Number) folderId).intValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     private boolean folderHasDialog(Object controller, int filterId, long dialogId) {
@@ -9234,6 +9292,35 @@ final class TelegramHookInstaller {
             info("Enhancement: hooked TranslateController for auto-translate to Chinese");
         } catch (Throwable throwable) {
             error("Enhancement: failed to hook TranslateController", throwable);
+        }
+    }
+
+    // Build #43: file import uses the system file picker, which
+    // returns its result to the host activity's onActivityResult.
+    // The module cannot receive that callback directly, so this
+    // after-hook forwards only our own request code to the pending
+    // file-import callback and otherwise leaves the host untouched
+    // (the original result handling always runs first).
+    private void hookActivityResult(ClassLoader classLoader) {
+        try {
+            Class<?> activityClass = Class.forName("android.app.Activity", false, classLoader);
+            java.lang.reflect.Method onResult = activityClass.getDeclaredMethod("onActivityResult",
+                    int.class, int.class, android.content.Intent.class);
+            hook(onResult, chain -> {
+                Object result = chain.proceed();
+                try {
+                    java.util.List<Object> args = chain.getArgs();
+                    if (args != null && args.size() >= 3) {
+                        ImportFilePicker.handleResult(
+                                (Integer) args.get(0), (Integer) args.get(1),
+                                (android.content.Intent) args.get(2),
+                                (Context) chain.getThisObject());
+                    }
+                } catch (Throwable ignored) {
+                }
+                return result;
+            });
+        } catch (Throwable ignored) {
         }
     }
 

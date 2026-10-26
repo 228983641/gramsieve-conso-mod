@@ -94,25 +94,25 @@ final class HostConfigPanel {
     private FrameLayout overlay;
     private OnBackInvokedDispatcher backDispatcher;
     private OnBackInvokedCallback backCallback;
-    private Switch enabledSwitch;
-    private Switch debugLoggingSwitch;
-    private Switch excludeChatSwitch;
-    private Switch chatAntiRecallSwitch;
-    private Switch sponsoredSwitch;
-    private Switch videoAdsSwitch;
-    private Switch forwardSaveSwitch;
-    private Switch saveStoriesSwitch;
-    private Switch preventDeleteSwitch;
-    private Switch downloadSpeedSwitch;
-    private Switch localPremiumSwitch;
-    private Switch autoTranslateSwitch;
-    private Switch pinnedHighlightSwitch;
-    private Switch classifyBarSwitch;
-    private Switch autoArchiveFolderSwitch;
-    private Switch aiLlmSwitch;
-    private Switch aiFallbackSwitch;
-    private Switch proxyAutoAddSwitch;
-    private Switch proxyAutoSwitchSwitch;
+    private android.widget.CheckBox enabledSwitch;
+    private android.widget.CheckBox debugLoggingSwitch;
+    private android.widget.CheckBox excludeChatSwitch;
+    private android.widget.CheckBox chatAntiRecallSwitch;
+    private android.widget.CheckBox sponsoredSwitch;
+    private android.widget.CheckBox videoAdsSwitch;
+    private android.widget.CheckBox forwardSaveSwitch;
+    private android.widget.CheckBox saveStoriesSwitch;
+    private android.widget.CheckBox preventDeleteSwitch;
+    private android.widget.CheckBox downloadSpeedSwitch;
+    private android.widget.CheckBox localPremiumSwitch;
+    private android.widget.CheckBox autoTranslateSwitch;
+    private android.widget.CheckBox pinnedHighlightSwitch;
+    private android.widget.CheckBox classifyBarSwitch;
+    private android.widget.CheckBox autoArchiveFolderSwitch;
+    private android.widget.CheckBox aiLlmSwitch;
+    private android.widget.CheckBox aiFallbackSwitch;
+    private android.widget.CheckBox proxyAutoAddSwitch;
+    private android.widget.CheckBox proxyAutoSwitchSwitch;
     private EditText proxySourceInput;
     private EditText proxyRefreshInput;
     private EditText proxyExpiryInput;
@@ -353,27 +353,27 @@ final class HostConfigPanel {
         ));
 
         buildGeneralCard(container);
-        styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+        pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         if (chatMode) {
             buildChatAntiRecallCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         } else {
             buildEnhancementCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildDialogListCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildAiCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildProxyCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildTranslateCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         }
         buildRulesCard(container);
-        styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+        pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         if (!chatMode) {
             buildBackupCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         } else {
             // Build #31: the backup card (and its log export) only
             // existed in the global panel, so a user opening settings
@@ -383,7 +383,7 @@ final class HostConfigPanel {
             // importing a full backup from a chat panel could replace
             // global settings from the wrong context.
             buildLogExportCard(container);
-            styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         }
 
         root.addView(overlay, new ViewGroup.LayoutParams(
@@ -707,7 +707,7 @@ final class HostConfigPanel {
             dialogView.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView hint = new TextView(context);
-            hint.setText(t("下面就是全部规则的备份文本，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“分享”发给自己。", "Below is the full rules backup text. Tap Copy, then paste it into your own notes or a file to keep it; or tap Share to send it to yourself."));
+            hint.setText(t("下面就是全部规则的备份文本，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“导出为文件”存到下载目录，或点“分享”发给自己。", "Below is the full rules backup text. Tap Copy, then paste it into your own notes or a file to keep it; or tap Export as file to save it to Download, or Share to send it to yourself."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             dialogView.addView(hint, new LinearLayout.LayoutParams(
@@ -749,6 +749,9 @@ final class HostConfigPanel {
                 } catch (Throwable ignored) {}
             });
             buttonRow.addView(shareButton);
+            Button fileButton = toolbarButton(t("导出为文件", "Export as file"));
+            fileButton.setOnClickListener(v -> exportLogToFile(json, timestampedFileName("gramsieve-rules-", ".json"), "rules"));
+            buttonRow.addView(fileButton);
             Button closeButton = toolbarButton(t("关闭", "Close"));
             closeButton.setOnClickListener(v -> dialog.dismiss());
             buttonRow.addView(closeButton);
@@ -756,12 +759,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            try {
-                if (dialog.getWindow() != null) {
-                    dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(backgroundColor));
-                }
-            } catch (Throwable ignored) {}
+            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
         }
@@ -794,7 +792,7 @@ final class HostConfigPanel {
             dialogView.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView hint = new TextView(context);
-            hint.setText(t("粘贴之前导出的规则备份文本，点导入后会合并到现有规则里，相同的规则不会重复；导入后面板会关闭，如需继续编辑请重新打开设置。", "Paste a previously exported rules backup, then tap Import to merge it into the existing rules; identical rules are not duplicated. The panel closes after import; reopen Settings to edit further."));
+            hint.setText(t("粘贴之前导出的规则备份文本，点导入后会合并到现有规则里，相同的规则不会重复；也可以点“从文件导入”选一个备份文件，内容会读进上面的框，再点导入。导入后面板会关闭，如需继续编辑请重新打开设置。", "Paste a previously exported rules backup, then tap Import to merge it into the existing rules; identical rules are not duplicated. Or tap Import from file to pick a backup file: its content is read into the box above, then tap Import. The panel closes after import; reopen Settings to edit further."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             dialogView.addView(hint, new LinearLayout.LayoutParams(
@@ -915,6 +913,21 @@ final class HostConfigPanel {
                 }
             });
             buttonRow.addView(importButton);
+            Button fileButton = toolbarButton(t("从文件导入", "Import from file"));
+            fileButton.setOnClickListener(v -> {
+                try {
+                    if (!ImportFilePicker.launch(activity, text -> {
+                        if (text != null && !text.isEmpty()) {
+                            input.setText(text);
+                        }
+                    })) {
+                        Toast.makeText(context, t("无法打开文件选择器，请用粘贴方式", "Cannot open the file picker, paste instead"), Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Throwable ignored) {
+                    Toast.makeText(context, t("无法打开文件选择器，请用粘贴方式", "Cannot open the file picker, paste instead"), Toast.LENGTH_SHORT).show();
+                }
+            });
+            buttonRow.addView(fileButton);
             Button cancelButton = toolbarButton(t("取消", "Cancel"));
             cancelButton.setOnClickListener(v -> dialog.dismiss());
             buttonRow.addView(cancelButton);
@@ -922,12 +935,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            try {
-                if (dialog.getWindow() != null) {
-                    dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(backgroundColor));
-                }
-            } catch (Throwable ignored) {}
+            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导入失败", "Import failed"), Toast.LENGTH_SHORT).show();
         }
@@ -935,11 +943,11 @@ final class HostConfigPanel {
 
     private void showCopyShareDialog(String titleText, String hintText, String content,
             String clipLabel, String shareTitle) {
-        showCopyShareDialogInternal(titleText, hintText, content, clipLabel, shareTitle, null, null);
+        showCopyShareDialogInternal(titleText, hintText, content, clipLabel, shareTitle, null, null, null);
     }
 
     private void showCopyShareDialogInternal(String titleText, String hintText, String content,
-            String clipLabel, String shareTitle, String fileName, String fileContent) {
+            String clipLabel, String shareTitle, String fileName, String fileContent, String fileKind) {
         try {
             android.app.Activity activity = activityFromContext(context);
             if (activity == null || activity.isFinishing()) {
@@ -1008,7 +1016,7 @@ final class HostConfigPanel {
             buttonRow.addView(shareButton);
             if (fileContent != null && !fileContent.isEmpty()) {
                 Button fileButton = toolbarButton(t("导出为文件", "Export as file"));
-                fileButton.setOnClickListener(v -> exportLogToFile(fileContent, fileName));
+                fileButton.setOnClickListener(v -> exportLogToFile(fileContent, fileName, fileKind));
                 buttonRow.addView(fileButton);
             }
             Button closeButton = toolbarButton(t("关闭", "Close"));
@@ -1018,12 +1026,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            try {
-                if (dialog.getWindow() != null) {
-                    dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(backgroundColor));
-                }
-            } catch (Throwable ignored) {}
+            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
         }
@@ -1044,10 +1047,11 @@ final class HostConfigPanel {
             Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
             return;
         }
-        showCopyShareDialog(
+        showCopyShareDialogInternal(
                 t("导出完整备份", "Export full backup"),
-                t("下面是全部设置的完整备份，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“分享”发给自己。注意：里面有你的大模型 Key 和代理信息，不要发给别人。", "Below is the full backup of all settings. Tap Copy, then paste it into your own notes or a file to keep it; or tap Share to send it to yourself. Note: it contains your LLM key and proxy info, do not send it to anyone."),
-                json, "GramSieve full backup", t("分享完整备份", "Share full backup"));
+                t("下面是全部设置的完整备份，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“导出为文件”存到下载目录，或点“分享”发给自己。注意：里面有你的大模型 Key 和代理信息，不要发给别人，导出为文件也一样。", "Below is the full backup of all settings. Tap Copy, then paste it into your own notes or a file to keep it; or tap Export as file to save it to Download, or Share to send it to yourself. Note: it contains your LLM key and proxy info, do not send it to anyone, including as a file."),
+                json, "GramSieve full backup", t("分享完整备份", "Share full backup"),
+                timestampedFileName("gramsieve-backup-", ".json"), json, "backup");
     }
 
     private static String extractFullConfigJson(String pasted) {
@@ -1113,7 +1117,7 @@ final class HostConfigPanel {
             dialogView.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView hint = new TextView(context);
-            hint.setText(t("粘贴之前导出的完整备份文本，点导入后会替换当前全部设置（开关、规则、分类、翻译、代理、大模型 Key），不是合并；导入后面板会关闭，如需继续编辑请重新打开设置。只认完整备份，规则备份请走“导入规则”。", "Paste a previously exported full backup, then tap Import to REPLACE all current settings (switches, rules, classify, translate, proxies, LLM key), not merge; the panel closes after import, reopen Settings to edit further. Only full backups are accepted here, use Import rules for a rules backup."));
+            hint.setText(t("粘贴之前导出的完整备份文本，也可以点“从文件导入”选文件读进上面的框，再点导入；点导入后会替换当前全部设置（开关、规则、分类、翻译、代理、大模型 Key），不是合并；导入后面板会关闭，如需继续编辑请重新打开设置。只认完整备份，规则备份请走“导入规则”。", "Paste a previously exported full backup, then tap Import to REPLACE all current settings (switches, rules, classify, translate, proxies, LLM key), not merge; the panel closes after import, reopen Settings to edit further. Only full backups are accepted here, use Import rules for a rules backup."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             dialogView.addView(hint, new LinearLayout.LayoutParams(
@@ -1158,6 +1162,21 @@ final class HostConfigPanel {
                 }
             });
             buttonRow.addView(importButton);
+            Button fileButton = toolbarButton(t("从文件导入", "Import from file"));
+            fileButton.setOnClickListener(v -> {
+                try {
+                    if (!ImportFilePicker.launch(activity, text -> {
+                        if (text != null && !text.isEmpty()) {
+                            input.setText(text);
+                        }
+                    })) {
+                        Toast.makeText(context, t("无法打开文件选择器，请用粘贴方式", "Cannot open the file picker, paste instead"), Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Throwable ignored) {
+                    Toast.makeText(context, t("无法打开文件选择器，请用粘贴方式", "Cannot open the file picker, paste instead"), Toast.LENGTH_SHORT).show();
+                }
+            });
+            buttonRow.addView(fileButton);
             Button cancelButton = toolbarButton(t("取消", "Cancel"));
             cancelButton.setOnClickListener(v -> dialog.dismiss());
             buttonRow.addView(cancelButton);
@@ -1165,12 +1184,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            try {
-                if (dialog.getWindow() != null) {
-                    dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(backgroundColor));
-                }
-            } catch (Throwable ignored) {}
+            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导入失败", "Import failed"), Toast.LENGTH_SHORT).show();
         }
@@ -1218,7 +1232,16 @@ final class HostConfigPanel {
         return "";
     }
 
-    private void exportLogToFile(String content, String fileName) {
+    private static String timestampedFileName(String prefix, String suffix) {
+        return prefix + new java.text.SimpleDateFormat(
+                "yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + suffix;
+    }
+
+    // Build #43: fileKind is "log", "rules" or "backup". The writer
+    // itself is generic (app GramSieve dir first, then Downloads);
+    // only the user-facing words change, so a rules/backup file is
+    // never described as a log and never suggested to be sent on.
+    private void exportLogToFile(String content, String fileName, String fileKind) {
         // Build #33: the old version only tried MediaStore and
         // swallowed every failure into one generic toast, so on a
         // device where the MediaStore insert or the share chooser
@@ -1255,7 +1278,8 @@ final class HostConfigPanel {
         try {
             android.content.ContentValues values = new android.content.ContentValues();
             values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
-            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE,
+                    name.endsWith(".json") ? "application/json" : "text/plain");
             // Build #35: Downloads root, not a GramSieve subfolder,
             // so the file is visible the moment Downloads is opened.
             values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/");
@@ -1277,7 +1301,10 @@ final class HostConfigPanel {
             share.setType("text/plain");
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            Intent chooser = Intent.createChooser(share, t("分享日志文件", "Share log file"));
+            String shareTitle = "log".equals(fileKind) ? t("分享日志文件", "Share log file")
+                    : "rules".equals(fileKind) ? t("分享规则文件", "Share rules file")
+                    : t("分享完整备份文件", "Share full backup file");
+            Intent chooser = Intent.createChooser(share, shareTitle);
             if (!(context instanceof android.app.Activity)) {
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
@@ -1290,8 +1317,11 @@ final class HostConfigPanel {
             if (context instanceof android.app.Activity) {
                 android.app.AlertDialog savedDialog = new android.app.AlertDialog.Builder(context)
                         .setTitle(t("已保存到下载目录", "Saved to Download"))
-                        .setMessage(t("文件名：" + name + "\n位置：手机下载目录\n应用 GramSieve 目录里也有一份同名副本，可在文件管理里找到它发给我。",
-                                "File: " + name + "\nLocation: phone Download folder\nA copy with the same name is also in the app GramSieve folder; find it in a file manager and send it."))
+                        .setMessage("log".equals(fileKind)
+                                ? t("文件名：" + name + "\n位置：手机下载目录\n应用 GramSieve 目录里也有一份同名副本，可在文件管理里找到它发给我。",
+                                        "File: " + name + "\nLocation: phone Download folder\nA copy with the same name is also in the app GramSieve folder; find it in a file manager and send it.")
+                                : t("文件名：" + name + "\n位置：手机下载目录\n应用 GramSieve 目录里也有一份同名副本，可在文件管理里找到它。",
+                                        "File: " + name + "\nLocation: phone Download folder\nA copy with the same name is also in the app GramSieve folder; find it in a file manager."))
                         .setPositiveButton(t("分享", "Share"), (d, w) -> {
                             try {
                                 context.startActivity(chooser);
@@ -1304,12 +1334,18 @@ final class HostConfigPanel {
                 DialogTheme.styleAlertDialog(savedDialog, context);
             } else {
                 context.startActivity(chooser);
-                Toast.makeText(context, t("日志文件已保存到下载目录", "Log file saved to Download"), Toast.LENGTH_LONG).show();
+                Toast.makeText(context, "log".equals(fileKind)
+                        ? t("日志文件已保存到下载目录", "Log file saved to Download")
+                        : t("文件已保存到下载目录", "File saved to Download"), Toast.LENGTH_LONG).show();
             }
         } catch (Throwable shareError) {
-            Toast.makeText(context, t("分享打开失败，但文件已保存到 GramSieve 目录：" + name
-                    + "，可以在文件管理里找到它发给我", "Share failed, but the file is saved in the GramSieve folder: "
-                    + name + ", find it in a file manager and send it"),
+            Toast.makeText(context, "log".equals(fileKind)
+                    ? t("分享打开失败，但文件已保存到 GramSieve 目录：" + name
+                            + "，可以在文件管理里找到它发给我", "Share failed, but the file is saved in the GramSieve folder: "
+                            + name + ", find it in a file manager and send it")
+                    : t("分享打开失败，但文件已保存到 GramSieve 目录：" + name
+                            + "，可以在文件管理里找到它", "Share failed, but the file is saved in the GramSieve folder: "
+                            + name + ", find it in a file manager"),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -1320,12 +1356,11 @@ final class HostConfigPanel {
             Toast.makeText(context, t("没有找到日志文件：请先打开“详细调试日志”，复现一次问题后再导出", "No log file found: turn on Verbose debug logging, reproduce the problem, then export again"), Toast.LENGTH_LONG).show();
             return;
         }
-        String fileName = "gramsieve-log-" + new java.text.SimpleDateFormat(
-                "yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".log";
+        String fileName = timestampedFileName("gramsieve-log-", ".log");
         showCopyShareDialogInternal(
                 t("导出日志", "Export log"),
                 t("下面是最近的日志，点“导出为文件”会保存到下载目录，成功后弹框里会写明文件名和位置；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file in Download; a dialog will then confirm the file name and location. Or tap Copy or Share for the text version. The log does not contain the LLM key."),
-                log, "GramSieve log", t("分享日志", "Share log"), fileName, log);
+                log, "GramSieve log", t("分享日志", "Share log"), fileName, log, "log");
     }
 
     private void applyProxyUiToConfig(FilterConfig config) {
@@ -1457,12 +1492,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            try {
-                if (dialog.getWindow() != null) {
-                    dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(backgroundColor));
-                }
-            } catch (Throwable ignored) {}
+            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("打开文件夹选择失败", "Failed to open folder picker"), Toast.LENGTH_SHORT).show();
         }
@@ -1493,6 +1523,7 @@ final class HostConfigPanel {
             hint.setText(t("勾选后点“删除所选”；每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。“删除失效”只删测不通和已过期的，不删未测的。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick and tap Delete selected; Delete expired removes all expired or unreachable proxies (expired per the custom expiry time above). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            try { hint.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
             dialogView.addView(hint, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             // Build #24: import Conso's own proxies when the dialog
@@ -1564,6 +1595,16 @@ final class HostConfigPanel {
                 box.setTextColor(primaryTextColor);
                 box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
                 box.setTag(entry);
+                if (!boxes.isEmpty()) {
+                    // Build #43: a 1px inset divider between proxy
+                    // rows, so 300+ rows read as a list, not a wall.
+                    View divider = new View(context);
+                    divider.setBackgroundColor(strokeColor);
+                    LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+                    dividerParams.leftMargin = dp(16);
+                    proxyListContainer.addView(divider, dividerParams);
+                }
                 boxes.add(box);
                 LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1619,12 +1660,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            try {
-                if (dialog.getWindow() != null) {
-                    dialog.getWindow().setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(backgroundColor));
-                }
-            } catch (Throwable ignored) {}
+            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("管理界面打开失败", "Failed to open management dialog"), Toast.LENGTH_SHORT).show();
         }
@@ -2021,31 +2057,119 @@ final class HostConfigPanel {
     }
 
     private TextView addInfo(LinearLayout parent, String text) {
+        // Build #43: explanations are hidden by default (user
+        // 2026-10-26). The text is created GONE with its own
+        // padding (styleGroupRows skips GONE views, so it keeps
+        // this padding when expanded), and a "?" button beside the
+        // item it explains toggles it. If no row in this group has
+        // a free "?" slot (card-top introductions, button rows), a
+        // standalone "?" row is added right here instead.
         TextView info = new TextView(context);
         info.setTag("gramsieve_info");
         info.setText(text);
         info.setTextColor(secondaryTextColor);
         info.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         try { info.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
-        addView(parent, info, 6);
+        info.setPadding(dp(16), dp(6), dp(16), dp(6));
+        info.setVisibility(View.GONE);
+        TextView helpButton = findFreeHelpButton(parent);
+        if (helpButton != null) {
+            helpButton.setVisibility(View.VISIBLE);
+            helpButton.setOnClickListener(v -> {
+                info.setVisibility(info.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            });
+            ViewGroup row = (ViewGroup) helpButton.getParent();
+            int index = parent.indexOfChild(row);
+            parent.addView(info, index >= 0 ? index + 1 : parent.getChildCount(),
+                    new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        } else {
+            LinearLayout helpRow = new LinearLayout(context);
+            helpRow.setOrientation(LinearLayout.HORIZONTAL);
+            TextView standalone = createHelpButton();
+            standalone.setVisibility(View.VISIBLE);
+            standalone.setOnClickListener(v -> {
+                info.setVisibility(info.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            });
+            helpRow.addView(standalone, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            TextView more = new TextView(context);
+            more.setText(t("说明", "About"));
+            more.setTextColor(secondaryTextColor);
+            more.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            helpRow.addView(more, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            addView(parent, helpRow, 2);
+            addView(parent, info, 6);
+        }
         return info;
     }
 
-    private Switch addSwitch(LinearLayout parent, String text) {
-        Switch toggle = new Switch(context);
-        toggle.setMinHeight(dp(48));
-        toggle.setText(text);
-        toggle.setTextColor(primaryTextColor);
-        toggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+    private TextView createHelpButton() {
+        // Build #43: the "?" button beside a settings item. Hidden
+        // until addInfo assigns an explanation to its row.
+        TextView help = new TextView(context);
+        help.setText("?");
+        help.setTextColor(accentColor);
+        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        help.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        help.setGravity(Gravity.CENTER);
+        help.setMinWidth(dp(32));
+        help.setPadding(dp(8), dp(4), dp(8), dp(4));
+        help.setVisibility(View.GONE);
+        return help;
+    }
+
+    private TextView findFreeHelpButton(LinearLayout parent) {
+        // The most recent row (switch row or input label row) in
+        // this group whose "?" button is still hidden and unused.
+        try {
+            for (int i = parent.getChildCount() - 1; i >= 0; i--) {
+                View child = parent.getChildAt(i);
+                if (!(child instanceof LinearLayout)) {
+                    continue;
+                }
+                Object tag = child.getTag();
+                if (!"gramsieve_row".equals(tag) && !"gramsieve_row_label".equals(tag)) {
+                    continue;
+                }
+                LinearLayout row = (LinearLayout) child;
+                for (int j = 0; j < row.getChildCount(); j++) {
+                    View inner = row.getChildAt(j);
+                    if (inner instanceof TextView && "?".equals(((TextView) inner).getText().toString())
+                            && inner.getVisibility() == View.GONE) {
+                        return (TextView) inner;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private android.widget.CheckBox addSwitch(LinearLayout parent, String text) {
+        // Build #43: every panel choice is a checkbox now (user
+        // 2026-10-26: checked = on/running). The row is a horizontal
+        // container so addInfo can attach a "?" button beside the
+        // item instead of a permanent paragraph below it.
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setTag("gramsieve_row");
+        android.widget.CheckBox box = new android.widget.CheckBox(context);
+        box.setMinHeight(dp(48));
+        box.setText(text);
+        box.setTextColor(primaryTextColor);
+        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
         try {
             int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
-            int[] thumbColors = new int[]{accentColor, adjustAlpha(secondaryTextColor, 0.6f)};
-            int[] trackColors = new int[]{adjustAlpha(accentColor, 0.45f), adjustAlpha(secondaryTextColor, 0.35f)};
-            toggle.setThumbTintList(new ColorStateList(states, thumbColors));
-            toggle.setTrackTintList(new ColorStateList(states, trackColors));
+            int[] boxColors = new int[]{accentColor, adjustAlpha(secondaryTextColor, 0.6f)};
+            box.setButtonTintList(new ColorStateList(states, boxColors));
         } catch (Throwable ignored) {}
-        addView(parent, toggle, 6);
-        return toggle;
+        row.addView(box, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(createHelpButton(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(parent, row, 6);
+        return box;
     }
 
     // Keyword editor row (2026-10-25 UI change): keywords are NOT shown
@@ -2222,18 +2346,11 @@ final class HostConfigPanel {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         dialog.show();
         DialogTheme.styleAlertDialog(dialog, context);
-        // Window background fix (Build #18, from user screenshots): the
-        // system AlertDialog window is light (white) while the panel is
-        // dark, so white panel text on the white window was invisible and
-        // the dialog looked empty despite 37 keywords being set. Force the
-        // window to the panel card colour so dialog text is always on the
-        // same dark background as the panel, with no white border.
-        try {
-            if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(
-                        new android.graphics.drawable.ColorDrawable(backgroundColor));
-            }
-        } catch (Throwable ignored) {}
+        // Build #43: no flat square override here anymore (it killed
+        // the glass window's rounded corners and rim). The glass
+        // background from styleAlertDialog stays, with a rounded
+        // fallback if it ever failed to apply.
+        DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
     }
 
     private static String canonicalKeywords(String raw) {
@@ -2266,12 +2383,22 @@ final class HostConfigPanel {
     }
 
     private EditText addInput(LinearLayout parent, String label, String initialValue) {
+        // Build #43: the label sits in a horizontal row with a
+        // "?" slot, so an explanation added after this input lands
+        // beside the field name. The row keeps the label tag, so
+        // styleGroupRows still treats it as a label (no divider
+        // between the label and its input, label padding kept).
+        LinearLayout labelRow = new LinearLayout(context);
+        labelRow.setOrientation(LinearLayout.HORIZONTAL);
+        labelRow.setTag("gramsieve_row_label");
         TextView title = new TextView(context);
-        title.setTag("gramsieve_row_label");
         title.setText(label);
         title.setTextColor(secondaryTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        addView(parent, title, 2);
+        labelRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        labelRow.addView(createHelpButton(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(parent, labelRow, 2);
 
         EditText input = new EditText(context);
         input.setText(initialValue == null ? "" : initialValue);
@@ -2291,6 +2418,72 @@ final class HostConfigPanel {
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         addView(parent, input, 8);
         return input;
+    }
+
+    // Build #43: small on/off items in the same category share a
+    // row, two per row, instead of one long single column (user
+    // 2026-10-26). Only adjacent checkbox rows with short labels
+    // (at most 10 characters) are paired, so long labels never get
+    // squeezed, sections and inputs break a run, and full-width
+    // rows stay full-width. Widths are weights, never fixed dp, so
+    // nothing can overflow a narrow screen; longer labels wrap.
+    private void pairCheckboxRows(LinearLayout group) {
+        try {
+            if (group == null) {
+                return;
+            }
+            java.util.ArrayList<View> children = new java.util.ArrayList<>();
+            for (int i = 0; i < group.getChildCount(); i++) {
+                children.add(group.getChildAt(i));
+            }
+            for (int i = 0; i + 1 < children.size(); i++) {
+                View first = children.get(i);
+                View second = children.get(i + 1);
+                android.widget.CheckBox firstBox = checkboxRowBox(first);
+                android.widget.CheckBox secondBox = checkboxRowBox(second);
+                if (firstBox == null || secondBox == null) {
+                    continue;
+                }
+                CharSequence firstText = firstBox.getText();
+                CharSequence secondText = secondBox.getText();
+                if (firstText == null || secondText == null
+                        || firstText.length() > 10 || secondText.length() > 10) {
+                    continue;
+                }
+                int index = group.indexOfChild(first);
+                if (index < 0) {
+                    continue;
+                }
+                group.removeView(first);
+                group.removeView(second);
+                LinearLayout pair = new LinearLayout(context);
+                pair.setOrientation(LinearLayout.HORIZONTAL);
+                pair.addView(first, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                pair.addView(second, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                group.addView(pair, index, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                children.set(i, pair);
+                children.set(i + 1, pair);
+                i++;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private android.widget.CheckBox checkboxRowBox(View row) {
+        try {
+            if (!(row instanceof LinearLayout) || !"gramsieve_row".equals(row.getTag())) {
+                return null;
+            }
+            LinearLayout container = (LinearLayout) row;
+            for (int i = 0; i < container.getChildCount(); i++) {
+                if (container.getChildAt(i) instanceof android.widget.CheckBox) {
+                    return (android.widget.CheckBox) container.getChildAt(i);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     private void addDivider(LinearLayout parent) {

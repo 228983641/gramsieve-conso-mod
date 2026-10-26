@@ -269,4 +269,29 @@ public final class DialogTheme {
         } catch (Throwable ignored) {
         }
     }
+    // Build #43: safety net for the glass window. styleAlertDialog
+    // sets the rounded glass background, but it swallows failures,
+    // and the panel used to overwrite it afterwards with a flat
+    // square colour (Build #18 fix), which is why screenshots showed
+    // square white dialogs next to rounded glass groups. Call this
+    // after styleAlertDialog: if the window already has the glass,
+    // it does nothing; otherwise it applies the same 16dp rounded
+    // shape in the theme background colour, never a square slab.
+    public static void ensureGlassWindow(AlertDialog dialog, Colors colors) {
+        try {
+            if (dialog == null || dialog.getWindow() == null || colors == null) {
+                return;
+            }
+            if (dialog.getWindow().getBackground() instanceof android.graphics.drawable.GradientDrawable) {
+                return;
+            }
+            android.graphics.drawable.GradientDrawable drawable =
+                    new android.graphics.drawable.GradientDrawable();
+            drawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+            drawable.setCornerRadius(dp(dialog.getContext(), 16f));
+            drawable.setColor(colors.background);
+            dialog.getWindow().setBackgroundDrawable(drawable);
+        } catch (Throwable ignored) {
+        }
+    }
 }
