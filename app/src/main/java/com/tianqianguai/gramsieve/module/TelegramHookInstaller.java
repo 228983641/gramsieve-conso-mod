@@ -810,11 +810,6 @@ final class TelegramHookInstaller {
                     injectChatMenu(chain.getThisObject());
                 } catch (Throwable ignored) {
                 }
-                try {
-                    enableAutoTranslateForChat(chain.getThisObject());
-                } catch (Throwable throwable) {
-                    error("Auto-translate on resume failed", throwable);
-                }
                 return result;
             });
             info("Hooked ChatActivity.onResume refresh");
@@ -886,6 +881,16 @@ final class TelegramHookInstaller {
         info("SaveBeforeJump: saved position " + currentPos + " for dialog " + dialogId);
     }
 
+    private boolean isTelegramMessageObject(Object value) {
+        if (value == null) {
+            return false;
+        }
+        String name = value.getClass().getName();
+        return "org.telegram.messenger.MessageObject".equals(name)
+                || name.endsWith("$MessageObject")
+                || name.contains("MessageObject");
+    }
+
     private void hookMessageContextMenu(ClassLoader classLoader) {
         // Conso fix: ChatActivity defines FOUR createMenu overloads in Conso
         // 2.0.0 (6 / 7 / 8 / 10 params, verified from Conso's own dex):
@@ -910,7 +915,7 @@ final class TelegramHookInstaller {
                 Class<?>[] params = candidate.getParameterTypes();
                 if (candidate.getReturnType() != boolean.class
                         || params.length == 0
-                        || params[0] != View.class) {
+                        || !View.class.isAssignableFrom(params[0])) {
                     continue;
                 }
                 candidate.setAccessible(true);
@@ -923,9 +928,8 @@ final class TelegramHookInstaller {
                             // For the 10-param overload, args 8/9 are MessageObjects;
                             // prefer them over the selectedObject field when present.
                             Object preferred = null;
-                            for (int i = 8; i < chain.getArgs().size(); i++) {
-                                Object arg = chain.getArg(i);
-                                if (arg != null && arg.getClass().getName().equals("org.telegram.messenger.MessageObject")) {
+                            for (Object arg : chain.getArgs()) {
+                                if (arg != null && isTelegramMessageObject(arg)) {
                                     preferred = arg;
                                     break;
                                 }
@@ -1211,39 +1215,138 @@ final class TelegramHookInstaller {
             return;
         }
         try {
-            Object viewPages = Reflect.field(host, "viewPages");
-            if (!(viewPages instanceof Object[])) {
-                return;
+            // DialogsActivity has used several different page containers
+            // across Telegram builds: Object[], List, and a directly exposed
+            // fragment/list view. Walk the actual view tree first so a
+            // category tap always reaches the currently attached RecyclerView
+            // instead of depending on one private field shape.
+            java.util.Set<View> refreshed = java.util.Collections.newSetFromMap(
+                    new java.util.IdentityHashMap<>());
+            View root = resolveHostFragmentView(host);
+            if (root != null) {
+                refreshDialogListTree(root, refreshed);
             }
-            for (Object page : (Object[]) viewPages) {
-                Object listView = Reflect.field(page, "listView");
-                Object adapter = listView instanceof View
-                        ? Reflect.invokeIfExists(listView, "getAdapter", new Class<?>[0])
-                        : null;
-                if (listView instanceof ViewGroup) {
-                    hideVisibleDialogRows((ViewGroup) listView, adapter);
+            if (refreshed.isEmpty() && root != null) {
+                // The host may expose a generic RecyclerView whose adapter
+                // does not carry DialogsAdapter in its class name. A second
+                // pass still refreshes every RecyclerListView so a category
+                // tap cannot be a no-op merely because the adapter is wrapped.
+                refreshAllRecyclerLists(root, refreshed);
+            }
+
+            Object viewPages = Reflect.field(host, "viewPages");
+            if (viewPages instanceof Iterable<?>) {
+                for (Object page : (Iterable<?>) viewPages) {
+                    refreshDialogPage(page, refreshed);
                 }
-                if (listView instanceof View) {
-                    Reflect.invokeIfExists(adapter, "notifyDataSetChanged", new Class<?>[0]);
-                    ((View) listView).requestLayout();
-                    ((View) listView).invalidate();
-                    ((View) listView).post(() -> {
-                        try {
-                            Object delayedAdapter = Reflect.invokeIfExists(listView, "getAdapter", new Class<?>[0]);
-                            if (listView instanceof ViewGroup) {
-                                hideVisibleDialogRows((ViewGroup) listView, delayedAdapter);
-                            }
-                            Reflect.invokeIfExists(delayedAdapter, "notifyDataSetChanged", new Class<?>[0]);
-                            ((View) listView).requestLayout();
-                            ((View) listView).invalidate();
-                        } catch (Throwable throwable) {
-                            error("DialogDeleteTrace: delayed refresh dialogs UI failed", throwable);
-                        }
-                    });
+            } else if (viewPages != null && viewPages.getClass().isArray()) {
+                int length = java.lang.reflect.Array.getLength(viewPages);
+                for (int i = 0; i < length; i++) {
+                    refreshDialogPage(java.lang.reflect.Array.get(viewPages, i), refreshed);
                 }
+            }
+
+            Object directList = Reflect.field(host, "listView");
+            if (directList instanceof View) {
+                refreshDialogListView((View) directList, refreshed);
             }
         } catch (Throwable throwable) {
             error("DialogDeleteTrace: refresh dialogs UI failed", throwable);
+        }
+    }
+
+    private void refreshDialogPage(Object page, java.util.Set<View> refreshed) {
+        if (page == null) {
+            return;
+        }
+        Object listView = Reflect.field(page, "listView");
+        if (listView instanceof View) {
+            refreshDialogListView((View) listView, refreshed);
+        }
+    }
+
+    private void refreshDialogListTree(View view, java.util.Set<View> refreshed) {
+        if (view == null) {
+            return;
+        }
+        Object adapter = Reflect.invokeIfExists(view, "getAdapter", new Class<?>[0]);
+        if (isNamedView(view, "RecyclerListView")
+                || (adapter != null && isDialogsAdapter(adapter))) {
+            refreshDialogListView(view, refreshed);
+            return;
+        }
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            refreshDialogListTree(group.getChildAt(i), refreshed);
+        }
+    }
+
+    private void refreshAllRecyclerLists(View view, java.util.Set<View> refreshed) {
+        if (view == null) {
+            return;
+        }
+        if (isNamedView(view, "RecyclerListView")) {
+            refreshDialogListView(view, refreshed);
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                refreshAllRecyclerLists(group.getChildAt(i), refreshed);
+            }
+        }
+    }
+
+    private void refreshDialogListView(View listView, java.util.Set<View> refreshed) {
+        if (listView == null || refreshed == null || !refreshed.add(listView)) {
+            return;
+        }
+        Object adapter = Reflect.invokeIfExists(listView, "getAdapter", new Class<?>[0]);
+        try {
+            applyClassifyListInset(listView);
+            if (listView instanceof ViewGroup) {
+                clearDialogClassifyStates((ViewGroup) listView);
+                hideVisibleDialogRows((ViewGroup) listView, adapter);
+            }
+            Reflect.invokeIfExists(adapter, "notifyDataSetChanged", new Class<?>[0]);
+            listView.requestLayout();
+            listView.invalidate();
+            listView.post(() -> {
+                try {
+                    Object delayedAdapter = Reflect.invokeIfExists(listView, "getAdapter", new Class<?>[0]);
+                    applyClassifyListInset(listView);
+                    if (listView instanceof ViewGroup) {
+                        clearDialogClassifyStates((ViewGroup) listView);
+                        hideVisibleDialogRows((ViewGroup) listView, delayedAdapter);
+                    }
+                    Reflect.invokeIfExists(delayedAdapter, "notifyDataSetChanged", new Class<?>[0]);
+                    listView.requestLayout();
+                    listView.invalidate();
+                } catch (Throwable throwable) {
+                    error("DialogDeleteTrace: delayed refresh dialogs UI failed", throwable);
+                }
+            });
+        } catch (Throwable throwable) {
+            error("DialogDeleteTrace: refresh dialog list failed", throwable);
+        }
+    }
+
+    private void clearDialogClassifyStates(ViewGroup group) {
+        if (group == null) {
+            return;
+        }
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child == null) {
+                continue;
+            }
+            clearDialogClassifyState(child);
+            if (child instanceof ViewGroup) {
+                clearDialogClassifyStates((ViewGroup) child);
+            }
         }
     }
 
@@ -3494,7 +3597,8 @@ final class TelegramHookInstaller {
             return;
         }
         if (cachedMessage.isRecalled) {
-            showRecalledMark(cell, cachedMessage);
+            cell.setTag(R.id.gramsieve_menu_item_id, "recalled_" + cachedMessage.messageId);
+            applyRecalledCellVisualState(cell);
             replaceCachedMediaInCell(cell, cachedMessage);
         } else if (cachedMessage.isEdited) {
             showEditedMark(cell, cachedMessage);
@@ -3530,35 +3634,122 @@ final class TelegramHookInstaller {
         }
     }
 
+    private static final class AntiRecallVisualState {
+        final android.graphics.drawable.Drawable overlay;
+
+        AntiRecallVisualState(android.graphics.drawable.Drawable overlay) {
+            this.overlay = overlay;
+        }
+    }
+
+    private static final class RecalledMessageOverlay extends android.graphics.drawable.Drawable {
+        private final android.graphics.Paint fill = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Paint stripe = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final float stripeWidth;
+
+        RecalledMessageOverlay(float stripeWidth) {
+            this.stripeWidth = stripeWidth;
+            fill.setColor(0x24FF6B6B);
+            stripe.setColor(0xFFFF6B6B);
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Rect bounds = getBounds();
+            if (bounds.isEmpty()) {
+                return;
+            }
+            canvas.drawRect(bounds, fill);
+            canvas.drawRect(bounds.left, bounds.top,
+                    Math.min(bounds.right, bounds.left + stripeWidth), bounds.bottom, stripe);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            fill.setAlpha(Math.round(0x24 * (alpha / 255f)));
+            stripe.setAlpha(alpha);
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter colorFilter) {
+            fill.setColorFilter(colorFilter);
+            stripe.setColorFilter(colorFilter);
+            invalidateSelf();
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
+    }
+
     private void clearAntiRecallCellVisualState(View cell) {
+        if (cell == null) {
+            return;
+        }
+        Object visual = cell.getTag(R.id.gramsieve_anti_recall_visual_state);
+        if (visual instanceof AntiRecallVisualState) {
+            AntiRecallVisualState state = (AntiRecallVisualState) visual;
+            try {
+                cell.getOverlay().remove(state.overlay);
+            } catch (Throwable ignored) {
+            }
+            // The marker is drawn in ViewOverlay and never changes the
+            // cell background. Do not restore a stale background from the
+            // previous recycled message over Telegram's newly bound state.
+            cell.setTag(R.id.gramsieve_anti_recall_visual_state, null);
+            cell.invalidate();
+        }
         Object mark = cell.getTag(R.id.gramsieve_menu_item_id);
-        if (!(mark instanceof String)) {
+        if (mark instanceof String) {
+            String value = (String) mark;
+            if (value.startsWith("recalled_") || value.startsWith("edited_")) {
+                cell.setTag(R.id.gramsieve_menu_item_id, null);
+            }
+        }
+    }
+
+    private void applyRecalledCellVisualState(View cell) {
+        if (cell == null) {
             return;
         }
-        String value = (String) mark;
-        if (!value.startsWith("recalled_") && !value.startsWith("edited_")) {
+        Object existing = cell.getTag(R.id.gramsieve_anti_recall_visual_state);
+        if (existing instanceof AntiRecallVisualState) {
+            android.graphics.drawable.Drawable overlay = ((AntiRecallVisualState) existing).overlay;
+            overlay.setBounds(0, 0, cell.getWidth(), cell.getHeight());
+            cell.invalidate();
             return;
         }
-        cell.setTag(R.id.gramsieve_menu_item_id, null);
-        if (value.startsWith("recalled_")) {
-            cell.setBackground(null);
-        }
+        android.graphics.drawable.Drawable overlay = new RecalledMessageOverlay(dp(cell.getContext(), 4f));
+        overlay.setBounds(0, 0, cell.getWidth(), cell.getHeight());
+        cell.getOverlay().add(overlay);
+        cell.setTag(R.id.gramsieve_anti_recall_visual_state,
+                new AntiRecallVisualState(overlay));
+        cell.post(() -> {
+            try {
+                overlay.setBounds(0, 0, cell.getWidth(), cell.getHeight());
+                cell.invalidate();
+            } catch (Throwable ignored) {
+            }
+        });
     }
 
     private void showRecalledMark(View cell, MessageCache.CachedMessage cachedMessage) {
         Context context = cell.getContext();
-        String originalContent = cachedMessage.text != null && !cachedMessage.text.isEmpty() 
-            ? cachedMessage.text 
+        String originalContent = cachedMessage.text != null && !cachedMessage.text.isEmpty()
+            ? cachedMessage.text
             : (cachedMessage.caption != null && !cachedMessage.caption.isEmpty() ? cachedMessage.caption : "");
-        
+
         final String markText;
         if (isChineseLocale(context)) {
             markText = "[此消息已被撤回]" + (originalContent.isEmpty() ? "" : "\n原内容: " + originalContent);
         } else {
             markText = "[This message was recalled]" + (originalContent.isEmpty() ? "" : "\nOriginal: " + originalContent);
         }
-        
+
         cell.setTag(R.id.gramsieve_menu_item_id, "recalled_" + cachedMessage.messageId);
+        applyRecalledCellVisualState(cell);
         cell.post(() -> Toast.makeText(context, markText, Toast.LENGTH_LONG).show());
     }
 
@@ -3574,9 +3765,15 @@ final class TelegramHookInstaller {
             if (cell instanceof View) {
                 View cellView = (View) cell;
                 trackTopmostMessage(cellView);
+                // ChatMessageCell instances are recycled. Clear the
+                // previous recalled-message marker before applying the
+                // state for the newly bound object, including hosts that
+                // only trigger the lifecycle hook during a rebind.
+                clearAntiRecallCellVisualState(cellView);
                 Object messageObject = resolveMessageObject(cell);
                 if (messageObject != null) {
                     applyDecision(cellView, cellView, messageObject);
+                    applyAntiRecallMark(cellView, messageObject);
                 } else {
                     applyDecisionToBoundViews(cell);
                 }
@@ -3622,10 +3819,22 @@ final class TelegramHookInstaller {
             Object adapter = chain.getThisObject();
             Object holder = chain.getArg(0);
             Object itemView = Reflect.field(holder, "itemView");
+            boolean dialogRow = itemView instanceof View && isDialogListRow(adapter, (View) itemView);
+            // Classification is a second visual layer on top of Telegram's
+            // row binding. Clear the previous recycled-row state before the
+            // local hide/message filter captures its own baseline; otherwise
+            // a row first bound while a category is selected could remain
+            // hidden after switching back to All.
+            if (dialogRow) {
+                clearDialogClassifyState((View) itemView);
+            }
             if (applyLocalDialogHide(adapter, itemView)) {
                 return result;
             }
             applyDecisionToBoundViews(itemView);
+            if (dialogRow) {
+                applyDialogClassification((View) itemView);
+            }
         } catch (Throwable throwable) {
             error("RecyclerView binding filter failed", throwable);
         }
@@ -3639,10 +3848,17 @@ final class TelegramHookInstaller {
             Object adapter = chain.getThisObject();
             Object holder = chain.getArg(0);
             Object itemView = Reflect.field(holder, "itemView");
+            boolean dialogRow = itemView instanceof View && isDialogListRow(adapter, (View) itemView);
+            if (dialogRow) {
+                clearDialogClassifyState((View) itemView);
+            }
             if (applyLocalDialogHide(adapter, itemView)) {
                 return result;
             }
             applyDecisionToBoundViews(itemView);
+            if (dialogRow) {
+                applyDialogClassification((View) itemView);
+            }
         } catch (Throwable throwable) {
             error("RecyclerView attachment filter failed", throwable);
         }
@@ -3711,8 +3927,13 @@ final class TelegramHookInstaller {
     }
 
     private boolean isDialogListCellClass(String className) {
-        return "org.telegram.ui.Cells.DialogCell".equals(className)
-                || "org.telegram.ui.Cells.ProfileSearchCell".equals(className);
+        if (className == null) {
+            return false;
+        }
+        return className.endsWith(".DialogCell")
+                || className.endsWith("$DialogCell")
+                || className.endsWith(".ProfileSearchCell")
+                || className.endsWith("$ProfileSearchCell");
     }
 
     private long resolveDialogIdFromView(View view) {
@@ -4540,13 +4761,22 @@ final class TelegramHookInstaller {
             return;
         }
         FilterConfig existing = configProvider.getConfig(context);
+        FilterConfig.ChatRuleSet existingChatRules = snapshot.dialogId == 0L
+                ? null : existing.getChatRuleSet(snapshot.dialogId);
         List<FilterConfig.RuleSpec> candidates = new ArrayList<>();
         for (FilterConfig.RuleSpec rule : MessageRuleFactory.smartRules(snapshot)) {
-            if (rule != null && !MessageRuleFactory.containsEquivalentRule(existing.globalRules, rule)) {
+            if (rule != null
+                    && !MessageRuleFactory.containsEquivalentRule(existing.globalRules, rule)
+                    && (existingChatRules == null
+                    || !MessageRuleFactory.containsEquivalentRule(existingChatRules.rules, rule))) {
                 candidates.add(rule);
             }
         }
-        if (candidates.isEmpty()) {
+        // A local rule list can be empty even when the configured LLM can
+        // still identify useful terms. Do not return before the AI request
+        // in that case; otherwise LLM analysis only works for messages that
+        // already match a local heuristic.
+        if (candidates.isEmpty() && !LlmAiAnalyzer.isLlmEnabled(existing)) {
             Toast.makeText(
                     context,
                     isChineseLocale(context) ? "这条消息没有可提取的过滤词，或已全部在全局规则里" : "No new filter terms found for this message",
@@ -4592,7 +4822,7 @@ final class TelegramHookInstaller {
                     rule.caseSensitive = false;
                     rule = rule.sanitize();
                     if (rule != null
-                            && !MessageRuleFactory.containsEquivalentRule(llmConfig.globalRules, rule)
+                            && !containsRuleInConfigScope(llmConfig, llmSnapshot.dialogId, rule)
                             && !MessageRuleFactory.containsEquivalentRule(merged, rule)) {
                         merged.add(rule);
                     }
@@ -4832,9 +5062,9 @@ final class TelegramHookInstaller {
             }
             // Target selector (Build #17): smart analysis no longer only
             // adds to global rules. The user chooses per dialog: global
-            // (all chats) or current chat only (this dialogId). Default
-            // stays global to preserve existing behaviour; chat target is
-            // disabled when the snapshot has no dialogId.
+            // (all chats) or current chat only (this dialogId). The
+            // current-chat target is the safe default: a long-press action
+            // should not unexpectedly affect unrelated chats.
             // smartDialogId is now a parameter (Build #19 fix: the old
             // method body referenced snapshot, which is out of scope here
             // after the LLM refactor split the dialog out).
@@ -4857,14 +5087,14 @@ final class TelegramHookInstaller {
             globalRadio.setText("全局规则（所有聊天）");
             globalRadio.setTextColor(smartPrimaryColor);
             globalRadio.setTextSize(15f);
-            globalRadio.setChecked(true);
+            globalRadio.setChecked(smartDialogId == 0L);
             dialogView.addView(globalRadio, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             android.widget.CheckBox chatRadio = new android.widget.CheckBox(activity);
             chatRadio.setText(smartDialogId == 0L ? "当前聊天规则（仅本聊天，无法识别当前聊天）" : "当前聊天规则（仅本聊天）");
             chatRadio.setTextColor(smartPrimaryColor);
             chatRadio.setTextSize(15f);
-            chatRadio.setChecked(false);
+            chatRadio.setChecked(smartDialogId != 0L);
             chatRadio.setEnabled(smartDialogId != 0L);
             dialogView.addView(chatRadio, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -4884,7 +5114,7 @@ final class TelegramHookInstaller {
             });
             TextView footer = new TextView(activity);
             footer.setTag("gramsieve_info");
-            footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。确认后加入上面所选的规则范围。");
+            footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。默认只加入当前聊天规则，不影响其他聊天。");
             footer.setTextColor(smartSecondaryColor);
             footer.setTextSize(13f);
             LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
@@ -4929,8 +5159,27 @@ final class TelegramHookInstaller {
             styleSystemDialog(smartDialog, context);
         } catch (Throwable throwable) {
             error("Smart-block dialog failed, adding all candidates directly", throwable);
-            addSmartBlockGlobalRules(context, messageView, candidates);
+            if (smartDialogId != 0L) {
+                addSmartBlockChatRules(context, messageView, candidates, smartDialogId);
+            } else {
+                addSmartBlockGlobalRules(context, messageView, candidates);
+            }
         }
+    }
+
+    private boolean containsRuleInConfigScope(FilterConfig config, long dialogId, FilterConfig.RuleSpec rule) {
+        if (config == null || rule == null) {
+            return false;
+        }
+        if (MessageRuleFactory.containsEquivalentRule(config.globalRules, rule)) {
+            return true;
+        }
+        if (dialogId != 0L) {
+            FilterConfig.ChatRuleSet chatRules = config.getChatRuleSet(dialogId);
+            return chatRules != null
+                    && MessageRuleFactory.containsEquivalentRule(chatRules.rules, rule);
+        }
+        return false;
     }
 
     private void addSmartBlockGlobalRules(Context context, View messageView, List<FilterConfig.RuleSpec> selected) {
@@ -4972,6 +5221,7 @@ final class TelegramHookInstaller {
             return;
         }
         FilterConfig updated = configProvider.getConfig(context).deepCopy();
+        updated.enabled = true;
         FilterConfig.ChatRuleSet chatRuleSet = updated.getOrCreateChatRuleSet(dialogId);
         chatRuleSet.enabled = true;
         int added = 0;
@@ -7649,7 +7899,7 @@ final class TelegramHookInstaller {
         hookPreventMessageDelete(classLoader);
         hookBoostDownloadSpeed(classLoader);
         hookLocalPremium(classLoader);
-        hookAutoTranslate(classLoader);
+        hookTranslationEntryPoints(classLoader);
         hookFolderArchiveSync(classLoader);
         hookDialogListFeatures(classLoader);
     }
@@ -7665,16 +7915,131 @@ final class TelegramHookInstaller {
     //    horizontal bar below the folder tabs (FilterTabsView) with
     //    All / Personal / Groups / Channels. Tapping a button saves
     //    classifyFilter to config and refreshes the dialog list; the
-    //    DialogCell.setDialog hook then hides non-matching cells by
-    //    setting them GONE (recycled cells are re-shown when they match
-    //    again, so scrolling does not leave stale hidden rows).
+    //    the RecyclerView binding hook applies the filter after Telegram
+    //    binds the row, with an onDraw fallback for builds that bypass the
+    //    generic adapter path. Recycled rows restore their baseline before
+    //    each bind, so switching back to All does not leave stale rows hidden.
     //    Classification uses DialogObject.isUserDialog / isChatDialog and
     //    MessagesController.getUserOrChat: User -> Personal (bots included),
     //    TL_chat or megagroup channel -> Groups, broadcast channel -> Channels.
     //    Unknown / unloaded peers are never hidden, to avoid losing chats
     //    on a classification miss. When the bar switch is off, the filter
     //    is ignored entirely, even if a filter value was saved before.
+    private void hookDialogListLayout(ClassLoader classLoader) {
+        try {
+            Class<?> listClass = classLoader.loadClass("org.telegram.ui.DialogsActivity$DialogsRecyclerView");
+            int hooked = 0;
+            for (Method candidate : listClass.getDeclaredMethods()) {
+                if (!"onMeasure".equals(candidate.getName())
+                        || candidate.getParameterTypes().length != 2
+                        || candidate.getParameterTypes()[0] != int.class
+                        || candidate.getParameterTypes()[1] != int.class) {
+                    continue;
+                }
+                candidate.setAccessible(true);
+                deoptimize(candidate, "DialogsActivity.DialogsRecyclerView.onMeasure");
+                Method method = candidate;
+                hook(method, chain -> {
+                    Object result = chain.proceed();
+                    try {
+                        Object list = chain.getThisObject();
+                        if (list instanceof View) {
+                            applyClassifyListInset((View) list);
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    return result;
+                });
+                hooked++;
+            }
+            info("Hooked DialogsActivity.DialogsRecyclerView.onMeasure count=" + hooked);
+        } catch (Throwable throwable) {
+            error("Dialog list: failed to hook list layout", throwable);
+        }
+    }
+
+    private static final class ClassifyListInsetState {
+        int baseLeft;
+        int baseTop;
+        int baseRight;
+        int baseBottom;
+        int appliedExtra;
+
+        ClassifyListInsetState(View view) {
+            baseLeft = view.getPaddingLeft();
+            baseTop = view.getPaddingTop();
+            baseRight = view.getPaddingRight();
+            baseBottom = view.getPaddingBottom();
+        }
+    }
+
+    private void applyClassifyListInset(View listView) {
+        if (listView == null) {
+            return;
+        }
+        try {
+            Object tagged = listView.getTag(R.id.gramsieve_classify_list_inset_state);
+            ClassifyListInsetState state;
+            if (tagged instanceof ClassifyListInsetState) {
+                state = (ClassifyListInsetState) tagged;
+            } else {
+                state = new ClassifyListInsetState(listView);
+                listView.setTag(R.id.gramsieve_classify_list_inset_state, state);
+            }
+
+            int expectedTop = state.baseTop + state.appliedExtra;
+            // Telegram recalculates its own top padding during onMeasure. If
+            // the current value is no longer our previous value, treat it as
+            // the new host baseline before adding the category bar height.
+            if (listView.getPaddingTop() != expectedTop) {
+                state.baseLeft = listView.getPaddingLeft();
+                state.baseTop = listView.getPaddingTop();
+                state.baseRight = listView.getPaddingRight();
+                state.baseBottom = listView.getPaddingBottom();
+            }
+
+            View root = listView.getRootView();
+            View bar = root instanceof ViewGroup
+                    ? findViewWithTag((ViewGroup) root, "gramsieve_classify_bar") : null;
+            FilterConfig config = currentEnhancementConfig();
+            int extra = 0;
+            if (config.showClassifyBar && bar != null && bar.getVisibility() == View.VISIBLE) {
+                extra = Math.max(0, bar.getMeasuredHeight());
+                if (extra == 0) {
+                    extra = Math.max(0, bar.getHeight());
+                }
+            }
+            int targetTop = state.baseTop + extra;
+            if (state.appliedExtra != extra
+                    || listView.getPaddingTop() != targetTop
+                    || listView.getPaddingLeft() != state.baseLeft
+                    || listView.getPaddingRight() != state.baseRight
+                    || listView.getPaddingBottom() != state.baseBottom) {
+                listView.setPadding(state.baseLeft, targetTop, state.baseRight, state.baseBottom);
+                state.appliedExtra = extra;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void applyClassifyListInsetsTree(View view) {
+        if (view == null) {
+            return;
+        }
+        if (isNamedView(view, "RecyclerListView")) {
+            applyClassifyListInset(view);
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                applyClassifyListInsetsTree(group.getChildAt(i));
+            }
+        }
+    }
+
     private void hookDialogListFeatures(ClassLoader classLoader) {
+        hookDialogListLayout(classLoader);
         try {
             Class<?> dialogCellClass = classLoader.loadClass("org.telegram.ui.Cells.DialogCell");
             // Pinned highlight: onDraw after-proceed.
@@ -7683,6 +8048,12 @@ final class TelegramHookInstaller {
                 hook(onDraw, chain -> {
                     Object result = chain.proceed();
                     try {
+                        if (chain.getThisObject() instanceof View) {
+                            // The generic RecyclerView adapter hook is the
+                            // primary path. onDraw is a safe fallback for
+                            // Telegram builds that bind DialogCell directly.
+                            applyDialogClassification((View) chain.getThisObject());
+                        }
                         if (!currentEnhancementConfig().highlightPinnedDialogs) {
                             return result;
                         }
@@ -7724,7 +8095,10 @@ final class TelegramHookInstaller {
             } catch (Throwable t) {
                 error("Dialog list: DialogCell.onDraw hook failed", t);
             }
-            // Classify filter: setDialog after-proceed, all overloads.
+            // Clear recycled-row classification state from every setDialog
+            // overload. The actual filter is applied after adapter binding,
+            // so Telegram's and GramSieve's own row mutations keep a clean
+            // baseline.
             try {
                 for (java.lang.reflect.Method candidate : dialogCellClass.getDeclaredMethods()) {
                     if (!"setDialog".equals(candidate.getName())) {
@@ -7733,6 +8107,12 @@ final class TelegramHookInstaller {
                     candidate.setAccessible(true);
                     java.lang.reflect.Method method = candidate;
                     hook(method, chain -> {
+                        try {
+                            if (chain.getThisObject() instanceof View) {
+                                clearDialogClassifyState((View) chain.getThisObject());
+                            }
+                        } catch (Throwable ignored) {
+                        }
                         Object result = chain.proceed();
                         try {
                             FilterConfig cfg = currentEnhancementConfig();
@@ -7760,39 +8140,6 @@ final class TelegramHookInstaller {
                                 }
                             } catch (Throwable ignored) {
                             }
-                            // Build #40: classify bar cancelled, so no
-                            // category filtering may hide chats either.
-                            int categoryFilter = 0;
-                            if (!(cell instanceof View) || !cfg.showClassifyBar || categoryFilter == 0) {
-                                if (cell instanceof View) {
-                                    ((View) cell).setVisibility(View.VISIBLE);
-                                }
-                                return result;
-                            }
-                            long dialogId = 0L;
-                            Object idFromCell = Reflect.invokeIfExists(cell, "getDialogId", new Class<?>[0]);
-                            if (idFromCell instanceof Number) {
-                                dialogId = ((Number) idFromCell).longValue();
-                            }
-                            if (dialogId == 0L && chain.getArgs() != null && !chain.getArgs().isEmpty()
-                                    && chain.getArgs().get(0) instanceof Number) {
-                                dialogId = ((Number) chain.getArgs().get(0)).longValue();
-                            }
-                            if (dialogId == 0L) {
-                                ((View) cell).setVisibility(View.VISIBLE);
-                                return result;
-                            }
-                            int type = classifyDialogType(cell, dialogId);
-                            // type: 0=unknown (never hide), 1=personal, 2=group, 3=channel
-                            if (type == 0 || type == categoryFilter) {
-                                ((View) cell).setVisibility(View.VISIBLE);
-                            } else {
-                                ((View) cell).setVisibility(View.GONE);
-                            }
-                            // Build #24: keep the bar's highlighted button
-                            // in sync when the user switches folder tabs.
-                            // Throttled to once per 300ms so binding a whole
-                            // list does not spam layout passes.
                             try {
                                 long nowMs = System.currentTimeMillis();
                                 if (nowMs - lastClassifyBarSyncMs > 300L) {
@@ -7835,9 +8182,7 @@ final class TelegramHookInstaller {
                     if (result instanceof View) {
                         ((View) result).post(() -> {
                             try {
-                                if (currentEnhancementConfig().showClassifyBar) {
-                                    installClassifyBar(host, (View) result);
-                                }
+                                syncClassifyBarWithConfig(host, (View) result);
                             } catch (Throwable ignored) {
                             }
                             // TG proxy auto-refresh (Build #20): only when
@@ -7882,9 +8227,9 @@ final class TelegramHookInstaller {
                     if (fragmentView != null) {
                         fragmentView.post(() -> {
                             try {
-                                if (currentEnhancementConfig().showClassifyBar) {
-                                    syncClassifyBarWithConfig(host);
-                                }
+                                // Always sync so turning the switch off also
+                                // removes a bar that was installed earlier.
+                                syncClassifyBarWithConfig(host);
                             } catch (Throwable ignored) {
                             }
                             try {
@@ -8336,13 +8681,20 @@ final class TelegramHookInstaller {
     private int classifyDialogType(Object cell, long dialogId) {
         try {
             ClassLoader cl = cell.getClass().getClassLoader();
-            Class<?> dialogObjectClass = cl.loadClass("org.telegram.messenger.DialogObject");
-            Boolean isUser = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isUserDialog",
-                    new Class<?>[]{long.class}, dialogId);
-            if (Boolean.TRUE.equals(isUser)) {
-                return 1;
+            Class<?> dialogObjectClass = null;
+            try {
+                dialogObjectClass = cl.loadClass("org.telegram.messenger.DialogObject");
+                Boolean isUser = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isUserDialog",
+                        new Class<?>[]{long.class}, dialogId);
+                if (Boolean.TRUE.equals(isUser)) {
+                    return 1;
+                }
+            } catch (Throwable ignored) {
+                // Some Conso builds do not expose DialogObject helpers. The
+                // peer-class path below is independent of those helpers.
             }
-            int account = 0;
+
+            int account = -1;
             try {
                 Object acc = Reflect.field(cell, "currentAccount");
                 if (acc instanceof Number) {
@@ -8350,40 +8702,59 @@ final class TelegramHookInstaller {
                 }
             } catch (Throwable ignored) {
             }
+            if (account < 0) {
+                Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
+                account = Reflect.asInt(Reflect.field(dialogsHost, "currentAccount"), -1);
+            }
+            if (account < 0 && savedClassLoader != null) {
+                account = resolveSelectedTelegramAccount(savedClassLoader);
+            }
+            if (account < 0) {
+                account = 0;
+            }
             Class<?> messagesControllerClass = cl.loadClass("org.telegram.messenger.MessagesController");
             Object controller = Reflect.invokeStatic(messagesControllerClass, "getInstance",
                     new Class<?>[]{int.class}, account);
-            if (controller == null) {
-                return 0;
-            }
-            Object peer = Reflect.invokeIfExists(controller, "getUserOrChat",
+            Object peer = controller == null ? null : Reflect.invokeIfExists(controller, "getUserOrChat",
                     new Class<?>[]{long.class}, dialogId);
-            if (peer == null) {
-                return 0;
+            if (peer != null) {
+                String peerClassLower = peer.getClass().getName().toLowerCase(Locale.ROOT);
+                if (peerClassLower.contains("user")) {
+                    return 1;
+                }
+                if (peerClassLower.contains("channel")) {
+                    Object megagroup = Reflect.field(peer, "megagroup");
+                    boolean isMegagroup = Boolean.TRUE.equals(megagroup)
+                            || (megagroup instanceof Number && ((Number) megagroup).intValue() != 0);
+                    return isMegagroup ? 2 : 3;
+                }
+                if (peerClassLower.contains("chat")) {
+                    return 2;
+                }
             }
-            String peerClass = peer.getClass().getName();
-            if (peerClass.contains("TL_user")) {
-                return 1;
+            // Fallback: chat dialogs that are not users are groups. This is
+            // only consulted after the peer lookup, so a missing DialogObject
+            // helper cannot make a loaded TL_user/TL_channel unclassifiable.
+            if (dialogObjectClass != null) {
+                Boolean isChat = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isChatDialog",
+                        new Class<?>[]{long.class}, dialogId);
+                return Boolean.TRUE.equals(isChat) ? 2 : 0;
             }
-            if (peerClass.contains("TL_channel")) {
-                Object megagroup = Reflect.field(peer, "megagroup");
-                return Boolean.TRUE.equals(megagroup) ? 2 : 3;
-            }
-            if (peerClass.contains("TL_chat")) {
-                return 2;
-            }
-            // Fallback: chat dialogs that are not users are groups.
-            Boolean isChat = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isChatDialog",
-                    new Class<?>[]{long.class}, dialogId);
-            return Boolean.TRUE.equals(isChat) ? 2 : 0;
         } catch (Throwable ignored) {
-            return 0;
         }
+        return 0;
     }
 
     private void syncClassifyBarWithConfig(Object host) {
+        syncClassifyBarWithConfig(host, null);
+    }
+
+    private void syncClassifyBarWithConfig(Object host, View fallbackRoot) {
         try {
             View rootView = resolveHostFragmentView(host);
+            if (!(rootView instanceof ViewGroup) && fallbackRoot != null) {
+                rootView = fallbackRoot;
+            }
             // Build #26: the global panel can be opened from Conso
             // Settings, whose host is NOT DialogsActivity, so resolving
             // the host's fragment view fails and the bar is never
@@ -8405,14 +8776,28 @@ final class TelegramHookInstaller {
                 return;
             }
             ViewGroup root = (ViewGroup) rootView;
+            FilterConfig config = currentEnhancementConfig();
             View existing = findViewWithTag(root, "gramsieve_classify_bar");
-            // Build #40: classify bar cancelled — remove any bar left
-            // from an earlier session and never install a new one.
-            if (existing != null && existing.getParent() instanceof ViewGroup) {
-                ((ViewGroup) existing.getParent()).removeView(existing);
+            if (!config.showClassifyBar) {
+                if (existing != null && existing.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) existing.getParent()).removeView(existing);
+                }
+                applyClassifyListInsetsTree(root);
+                info("ClassifyBar: disabled, removedExisting=" + (existing != null));
+                return;
             }
-            info("ClassifyBar: cancelled in Build #40, removedExisting=" + (existing != null));
-            return;
+            if (existing instanceof ViewGroup) {
+                View tabs = findFilterTabsView(root);
+                if (tabs != null) {
+                    repositionClassifyBar(existing, tabs, true);
+                }
+                updateClassifyBarButtons((ViewGroup) existing);
+                applyClassifyListInsetsTree(root);
+                info("ClassifyBar: already installed, refreshed");
+                return;
+            }
+            installClassifyBar(host, root);
+            applyClassifyListInsetsTree(root);
         } catch (Throwable throwable) {
             error("ClassifyBar: sync failed", throwable);
         }
@@ -8435,21 +8820,14 @@ final class TelegramHookInstaller {
     }
 
     private void installClassifyBar(Object host, View root) {
-        // Build #40: the classify bar (All / Personal / Groups /
-        // Channels below the folder tabs) is cancelled per user
-        // request — it never installed reliably. The guard below is
-        // deliberately a runtime check, not a constant, so the
-        // retained body still compiles; it never runs.
-        if (root != null || root == null) {
-            info("ClassifyBar: cancelled in Build #40, install skipped");
-            return;
-        }
         try {
             if (!(root instanceof ViewGroup)) {
                 info("ClassifyBar: install aborted, root not a ViewGroup");
                 return;
             }
             View tabsView = findFilterTabsView((ViewGroup) root);
+            View anchorView = tabsView;
+            boolean placeBelowAnchor = tabsView != null;
             ViewGroup parent;
             int insertIndex;
             if (tabsView != null && tabsView.getParent() instanceof ViewGroup) {
@@ -8464,6 +8842,8 @@ final class TelegramHookInstaller {
                             + describeViewTree((ViewGroup) root, 0));
                     return;
                 }
+                anchorView = listView;
+                placeBelowAnchor = false;
                 parent = (ViewGroup) listView.getParent();
                 insertIndex = parent.indexOfChild(listView);
                 info("ClassifyBar: tabs not found, falling back to list view, parent=" + parent.getClass().getSimpleName());
@@ -8472,6 +8852,7 @@ final class TelegramHookInstaller {
             for (int i = 0; i < parent.getChildCount(); i++) {
                 View child = parent.getChildAt(i);
                 if (child != null && "gramsieve_classify_bar".equals(child.getTag())) {
+                    repositionClassifyBar(child, anchorView, placeBelowAnchor);
                     updateClassifyBarButtons((ViewGroup) child);
                     return;
                 }
@@ -8481,7 +8862,12 @@ final class TelegramHookInstaller {
             bar.setTag("gramsieve_classify_bar");
             bar.setOrientation(LinearLayout.HORIZONTAL);
             bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            bar.setPadding(dp(context, 12f), dp(context, 8f), dp(context, 12f), dp(context, 8f));
+            bar.setPadding(dp(context, 12f), dp(context, 6f), dp(context, 12f), dp(context, 6f));
+            bar.setBackgroundColor(dialogBackgroundColor(context));
+            try {
+                bar.setElevation(dp(context, 1f));
+            } catch (Throwable ignored) {
+            }
             String[] labels = new String[]{"全部", "个人", "群聊", "频道"};
             for (int i = 0; i < labels.length; i++) {
                 final int filter = i;
@@ -8489,8 +8875,10 @@ final class TelegramHookInstaller {
                 button.setText(labels[i]);
                 button.setTextSize(14f);
                 button.setGravity(android.view.Gravity.CENTER);
-                button.setPadding(dp(context, 12f), dp(context, 6f), dp(context, 12f), dp(context, 6f));
+                button.setMinHeight(dp(context, 36f));
+                button.setPadding(dp(context, 12f), dp(context, 5f), dp(context, 12f), dp(context, 5f));
                 button.setTag(filter);
+                button.setContentDescription(labels[i]);
                 button.setOnClickListener(v -> {
                     try {
                         FilterConfig updated = currentEnhancementConfig().deepCopy();
@@ -8519,16 +8907,66 @@ final class TelegramHookInstaller {
                 bar.addView(button, params);
             }
             updateClassifyBarButtons(bar);
+            ViewGroup.LayoutParams barParams = createClassifyBarLayoutParams(parent, anchorView, placeBelowAnchor);
             if (insertIndex < 0 || insertIndex > parent.getChildCount()) {
-                parent.addView(bar, new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                parent.addView(bar, barParams);
             } else {
-                parent.addView(bar, insertIndex, new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                parent.addView(bar, insertIndex, barParams);
             }
+            repositionClassifyBar(bar, anchorView, placeBelowAnchor);
+            bar.post(() -> {
+                try {
+                    repositionClassifyBar(bar, anchorView, placeBelowAnchor);
+                    View rootView = bar.getRootView();
+                    applyClassifyListInsetsTree(rootView);
+                } catch (Throwable ignored) {
+                }
+            });
             info("ClassifyBar: installed, parent=" + parent.getClass().getSimpleName() + " index=" + insertIndex);
         } catch (Throwable t) {
             error("Dialog list: install classify bar failed", t);
+        }
+    }
+
+    private ViewGroup.LayoutParams createClassifyBarLayoutParams(ViewGroup parent, View anchor, boolean placeBelowAnchor) {
+        if (parent instanceof android.widget.FrameLayout) {
+            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+            if (anchor != null && anchor.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams) {
+                android.widget.FrameLayout.LayoutParams anchorParams =
+                        (android.widget.FrameLayout.LayoutParams) anchor.getLayoutParams();
+                params.leftMargin = anchorParams.leftMargin;
+                params.rightMargin = anchorParams.rightMargin;
+            }
+            if (anchor != null) {
+                params.topMargin = placeBelowAnchor ? Math.max(0, anchor.getBottom()) : Math.max(0, anchor.getTop());
+            }
+            return params;
+        }
+        if (parent instanceof android.widget.LinearLayout) {
+            return new android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        return new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private void repositionClassifyBar(View bar, View anchor, boolean placeBelowAnchor) {
+        if (bar == null || anchor == null || !(bar.getParent() instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup parent = (ViewGroup) bar.getParent();
+        if (!(parent instanceof android.widget.FrameLayout)
+                || !(bar.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams)) {
+            return;
+        }
+        android.widget.FrameLayout.LayoutParams params =
+                (android.widget.FrameLayout.LayoutParams) bar.getLayoutParams();
+        int top = placeBelowAnchor ? anchor.getBottom() : anchor.getTop();
+        if (top >= 0 && params.topMargin != top) {
+            params.topMargin = top;
+            bar.setLayoutParams(params);
         }
     }
 
@@ -8546,6 +8984,18 @@ final class TelegramHookInstaller {
                 Object folderId = Reflect.field(host, "folderId");
                 if (folderId instanceof Number && ((Number) folderId).intValue() == 1) {
                     return "归档";
+                }
+                // Prefer the host's actual folder id when available. It
+                // avoids relying on pager timing during a tab switch. If a
+                // build does not expose matching filter ids, the pager and
+                // tab-colour fallbacks below still work.
+                String byFolderId = classifyCategoryByFolderId(host);
+                if (byFolderId != null && !byFolderId.isBlank()) {
+                    return byFolderId.trim();
+                }
+                String bySelectedType = classifyCategoryBySelectedType(host);
+                if (bySelectedType != null && !bySelectedType.isBlank()) {
+                    return bySelectedType.trim();
                 }
                 // Build #24: prefer ViewPager page index over tab colour.
                 // Colour detection (Build #23) failed on hosts whose tabs
@@ -8599,6 +9049,76 @@ final class TelegramHookInstaller {
             }
         }
         return null;
+    }
+
+    private String classifyCategoryByFolderId(Object host) {
+        try {
+            Object folderIdValue = Reflect.field(host, "folderId");
+            if (!(folderIdValue instanceof Number)) {
+                return null;
+            }
+            int folderId = ((Number) folderIdValue).intValue();
+            if (folderId <= 1) {
+                return null;
+            }
+            Object controller = messagesControllerForChat(host);
+            if (controller == null) {
+                return null;
+            }
+            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (!(filtersObj instanceof List<?>)) {
+                return null;
+            }
+            for (Object filter : (List<?>) filtersObj) {
+                int id = Reflect.asInt(Reflect.field(filter, "id"), -1);
+                String name = Reflect.asString(Reflect.field(filter, "name"));
+                if (id == folderId && name != null && !name.isBlank()
+                        && !"ALL_CHATS".equalsIgnoreCase(name.trim())) {
+                    return name.trim();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private String classifyCategoryBySelectedType(Object host) {
+        try {
+            Object viewPages = Reflect.field(host, "viewPages");
+            Object firstPage = null;
+            if (viewPages instanceof Object[] && ((Object[]) viewPages).length > 0) {
+                firstPage = ((Object[]) viewPages)[0];
+            } else if (viewPages instanceof Iterable<?>) {
+                java.util.Iterator<?> iterator = ((Iterable<?>) viewPages).iterator();
+                if (iterator.hasNext()) {
+                    firstPage = iterator.next();
+                }
+            }
+            int selectedType = Reflect.asInt(Reflect.field(firstPage, "selectedType"), -1);
+            if (selectedType <= 0) {
+                return selectedType == 0 ? "所有" : null;
+            }
+            Object controller = messagesControllerForChat(host);
+            if (controller == null) {
+                return null;
+            }
+            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (!(filtersObj instanceof List<?>)) {
+                return null;
+            }
+            List<?> filters = (List<?>) filtersObj;
+            if (selectedType < 0 || selectedType >= filters.size()) {
+                return null;
+            }
+            Object filter = filters.get(selectedType);
+            String name = Reflect.asString(Reflect.field(filter, "name"));
+            if (name == null || name.isBlank() || "ALL_CHATS".equalsIgnoreCase(name.trim())) {
+                return "所有";
+            }
+            return name.trim();
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private String classifyCategoryByViewPager(Object host) {
@@ -8710,6 +9230,121 @@ final class TelegramHookInstaller {
         return null;
     }
 
+    private static final class DialogClassifyState {
+        final int visibility;
+        final float alpha;
+        final int minimumHeight;
+        final int height;
+        final int topMargin;
+        final int bottomMargin;
+        final int leftMargin;
+        final int rightMargin;
+
+        DialogClassifyState(View view) {
+            visibility = view.getVisibility();
+            alpha = view.getAlpha();
+            minimumHeight = view.getMinimumHeight();
+            ViewGroup.LayoutParams params = view.getLayoutParams();
+            height = params == null ? ViewGroup.LayoutParams.WRAP_CONTENT : params.height;
+            if (params instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+                topMargin = margins.topMargin;
+                bottomMargin = margins.bottomMargin;
+                leftMargin = margins.leftMargin;
+                rightMargin = margins.rightMargin;
+            } else {
+                topMargin = 0;
+                bottomMargin = 0;
+                leftMargin = 0;
+                rightMargin = 0;
+            }
+        }
+    }
+
+    private void clearDialogClassifyState(View view) {
+        if (view == null) {
+            return;
+        }
+        Object tagged = view.getTag(R.id.gramsieve_dialog_classify_state);
+        if (!(tagged instanceof DialogClassifyState)) {
+            return;
+        }
+        DialogClassifyState state = (DialogClassifyState) tagged;
+        try {
+            ViewGroup.LayoutParams params = view.getLayoutParams();
+            if (params != null) {
+                params.height = state.height;
+                if (params instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+                    margins.topMargin = state.topMargin;
+                    margins.bottomMargin = state.bottomMargin;
+                    margins.leftMargin = state.leftMargin;
+                    margins.rightMargin = state.rightMargin;
+                }
+                view.setLayoutParams(params);
+            }
+            view.setMinimumHeight(state.minimumHeight);
+            view.setAlpha(state.alpha);
+            view.setVisibility(state.visibility);
+        } catch (Throwable ignored) {
+        } finally {
+            view.setTag(R.id.gramsieve_dialog_classify_state, null);
+            view.requestLayout();
+        }
+    }
+
+    private void applyDialogClassification(View view) {
+        if (view == null || (!isDialogListCellClass(view.getClass().getName())
+                && !(view instanceof ViewGroup && containsDialogListCell(view)))) {
+            return;
+        }
+        FilterConfig cfg = currentEnhancementConfig();
+        if (!cfg.showClassifyBar) {
+            clearDialogClassifyState(view);
+            return;
+        }
+        String category = currentClassifyCategory();
+        int selected = classifyFilterForCategory(category, cfg);
+        if (selected == 0) {
+            clearDialogClassifyState(view);
+            return;
+        }
+        long dialogId = resolveDialogIdFromView(view);
+        if (dialogId == 0L) {
+            clearDialogClassifyState(view);
+            return;
+        }
+        int type = classifyDialogType(view, dialogId);
+        if (type == 0 || type == selected) {
+            clearDialogClassifyState(view);
+            return;
+        }
+        if (!(view.getTag(R.id.gramsieve_dialog_classify_state) instanceof DialogClassifyState)) {
+            view.setTag(R.id.gramsieve_dialog_classify_state, new DialogClassifyState(view));
+        }
+        try {
+            ViewGroup.LayoutParams params = view.getLayoutParams();
+            if (params != null) {
+                params.height = 0;
+                if (params instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+                    margins.topMargin = 0;
+                    margins.bottomMargin = 0;
+                }
+                view.setLayoutParams(params);
+            }
+            view.setMinimumHeight(0);
+            view.setAlpha(0f);
+            view.setVisibility(View.GONE);
+            view.requestLayout();
+            ViewParent parent = view.getParent();
+            if (parent instanceof View) {
+                ((View) parent).requestLayout();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private int classifyFilterForCategory(String category, FilterConfig cfg) {
         if (cfg != null && cfg.classifyFiltersByCategory != null && category != null) {
             Integer value = cfg.classifyFiltersByCategory.get(category);
@@ -8733,16 +9368,19 @@ final class TelegramHookInstaller {
                 Object tag = child.getTag();
                 boolean isSelected = tag instanceof Number && ((Number) tag).intValue() == selected;
                 TextView button = (TextView) child;
+                int accent = dialogAccentColor(button.getContext());
+                int secondary = dialogSecondaryColor(button.getContext());
                 if (isSelected) {
-                    button.setTextColor(0xFFFFFFFF);
+                    button.setTextColor(ensureDialogTextColor(0xFFFFFFFF, accent));
                     android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-                    bg.setColor(0xFF3390EC);
+                    bg.setColor(accent);
                     bg.setCornerRadius(dp(button.getContext(), 16f));
                     button.setBackground(bg);
                 } else {
-                    button.setTextColor(0xFF8A8A8A);
+                    button.setTextColor(secondary);
                     button.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                 }
+                button.setContentDescription(button.getText());
             }
         } catch (Throwable ignored) {
         }
@@ -9125,18 +9763,11 @@ final class TelegramHookInstaller {
 
 
     // ------------------------------------------------------------------
-    // Auto-translate to Chinese (Build #5, second push): uses Conso's own
-    // TranslateController (org.telegram.messenger.TranslateController,
-    // verified in Conso 2.0.0 dex: getTranslateController(),
-    // setDialogTranslateTo(long, String), toggleTranslatingDialog(long,
-    // boolean), isChatTranslateEnabled(), isFeatureAvailable(),
-    // isChatAutoTranslated(long), getLanguages() with Language.code).
-    // No third-party translation service is involved: the message goes
-    // through Telegram's own translation path, the same one the host's
-    // Translate button already uses. Whole-chat auto-translate is a
-    // Premium-gated feature in the host, which is why the local-premium
-    // switch (in the Enhancements card) helps here; without it, the
-    // per-chat Translate button should still work.
+    // Translation entry points (Build #5, refined for the current-chat
+    // workflow): use Conso's own TranslateController and Telegram's
+    // existing top-right/message-menu actions. The module exposes those
+    // actions when enabled, but never toggles translation from onResume or
+    // silently changes a chat when it is opened.
     // ------------------------------------------------------------------
     private volatile String cachedZhCode = null;
 
@@ -9184,61 +9815,20 @@ final class TelegramHookInstaller {
         return cachedZhCode;
     }
 
-    private void enableAutoTranslateForChat(Object chatActivity) {
-        try {
-            if (!currentEnhancementConfig().autoTranslateToChinese) {
-                return;
-            }
-            long dialogId = Reflect.asLong(Reflect.invokeIfExists(chatActivity, "getDialogId", new Class<?>[0]), 0L);
-            if (dialogId == 0L) {
-                return;
-            }
-            int account = Reflect.asInt(Reflect.field(chatActivity, "currentAccount"), -1);
-            if (account < 0 && savedClassLoader != null) {
-                account = resolveSelectedTelegramAccount(savedClassLoader);
-            }
-            if (account < 0) {
-                account = 0;
-            }
-            ClassLoader cl = savedClassLoader != null ? savedClassLoader : chatActivity.getClass().getClassLoader();
-            Class<?> mcClass = cl.loadClass("org.telegram.messenger.MessagesController");
-            Object controller = Reflect.invokeStatic(mcClass, "getInstance", new Class<?>[]{int.class}, account);
-            Object tc = Reflect.invokeIfExists(controller, "getTranslateController", new Class<?>[0]);
-            if (tc == null) {
-                return;
-            }
-            String zh = resolveZhCode(tc);
-            Reflect.invokeIfExists(tc, "setChatTranslateEnabled", new Class<?>[]{boolean.class}, true);
-            Reflect.invokeIfExists(tc, "setDialogTranslateTo", new Class<?>[]{long.class, String.class}, dialogId, zh);
-            Object toggled = Reflect.invokeIfExists(tc, "toggleTranslatingDialog", new Class<?>[]{long.class, boolean.class}, dialogId, true);
-            if (toggled == null || Boolean.FALSE.equals(toggled)) {
-                Reflect.invokeIfExists(tc, "toggleTranslatingDialog", new Class<?>[]{long.class}, dialogId);
-            }
-            // 2026-10-25 fix for Build #7 feedback "no translate item in
-            // chat, no translation": toggling alone does not refresh the
-            // chat UI. Ask the ChatActivity itself to re-check translation
-            // for visible messages and to refresh the translate button.
-            Reflect.invokeIfExists(chatActivity, "checkTranslation", new Class<?>[]{boolean.class}, true);
-            Reflect.invokeIfExists(chatActivity, "updateTranslateItemVisibility", new Class<?>[0]);
-            info("Auto-translate: enabled for dialog " + dialogId + " to " + zh);
-        } catch (Throwable throwable) {
-            error("Auto-translate enable failed", throwable);
-        }
-    }
-
-    private void hookAutoTranslate(ClassLoader classLoader) {
+    private void hookTranslationEntryPoints(ClassLoader classLoader) {
         hookTranslatedLinkRestore(classLoader);
         hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isChatTranslateEnabled",
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
         hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isFeatureAvailable",
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
-        hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isChatAutoTranslated",
+        hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isContextTranslateEnabled",
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
         hookBooleanMethod(classLoader, "org.telegram.messenger.TranslateController", "isDialogTranslatable",
                 () -> currentEnhancementConfig().autoTranslateToChinese, true);
-        // Force the chat translate button/item visible after the host
-        // recomputes visibility, so the translate item actually appears
-        // in the chat interface when auto-translate is on.
+        // Force the host's existing per-chat translation entry points visible
+        // after it recomputes visibility. The click remains Telegram's own
+        // action: it toggles translation for the current chat and does not
+        // silently enable translation when a chat is opened.
         try {
             Class<?> clazz = classLoader.loadClass("org.telegram.ui.ChatActivity");
             for (Method candidate : clazz.getDeclaredMethods()) {
@@ -9252,10 +9842,15 @@ final class TelegramHookInstaller {
                     try {
                         if (currentEnhancementConfig().autoTranslateToChinese) {
                             Object chatActivity = chain.getThisObject();
+                            // Recent Telegram builds keep the action-bar
+                            // entry as ActionBarMenuItem.Item rather than a
+                            // View. Its public setVisibility(int) method
+                            // updates the lazily-created menu cell; checking
+                            // only for View made the top-right Translate
+                            // entry stay hidden on those builds.
                             Object translateItem = Reflect.field(chatActivity, "translateItem");
-                            if (translateItem instanceof android.view.View) {
-                                ((android.view.View) translateItem).setVisibility(android.view.View.VISIBLE);
-                            }
+                            Reflect.invokeIfExists(translateItem, "setVisibility",
+                                    new Class<?>[]{int.class}, android.view.View.VISIBLE);
                             Object translateButton = Reflect.field(chatActivity, "translateButton");
                             if (translateButton instanceof android.view.View) {
                                 ((android.view.View) translateButton).setVisibility(android.view.View.VISIBLE);
@@ -9289,7 +9884,7 @@ final class TelegramHookInstaller {
                     return chain.proceed();
                 });
             }
-            info("Enhancement: hooked TranslateController for auto-translate to Chinese");
+            info("Enhancement: hooked TranslateController translation entry points");
         } catch (Throwable throwable) {
             error("Enhancement: failed to hook TranslateController", throwable);
         }

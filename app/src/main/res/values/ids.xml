@@ -4,4 +4,7 @@
     <item name="gramsieve_last_decision_action" type="id" />
     <item name="gramsieve_menu_item_id" type="id" />
     <item name="gramsieve_host_config_panel_id" type="id" />
+    <item name="gramsieve_anti_recall_visual_state" type="id" />
+    <item name="gramsieve_dialog_classify_state" type="id" />
+    <item name="gramsieve_classify_list_inset_state" type="id" />
 </resources>

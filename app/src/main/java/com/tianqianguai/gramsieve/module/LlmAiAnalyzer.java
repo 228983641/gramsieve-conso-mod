@@ -46,6 +46,81 @@ final class LlmAiAnalyzer {
         String error = "";
     }
 
+    static final class ModelsResult {
+        final List<String> modelIds = new ArrayList<>();
+        String error = "";
+    }
+
+    /**
+     * Fetch model ids from an OpenAI-compatible /models endpoint. This is
+     * deliberately separate from analysis so the settings screen can offer
+     * a picker without making a chat request or logging the API key.
+     */
+    static ModelsResult fetchModels(FilterConfig config) {
+        ModelsResult result = new ModelsResult();
+        if (config == null || config.aiApiBaseUrl == null || config.aiApiBaseUrl.isBlank()) {
+            result.error = "missing base url";
+            return result;
+        }
+        try {
+            String base = config.aiApiBaseUrl.trim();
+            while (base.endsWith("/")) {
+                base = base.substring(0, base.length() - 1);
+            }
+            URL url = new URL(base + "/models");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(20000);
+            conn.setRequestProperty("Accept", "application/json");
+            if (config.aiApiKey != null && !config.aiApiKey.isBlank()) {
+                conn.setRequestProperty("Authorization", "Bearer " + config.aiApiKey.trim());
+            }
+            int code = conn.getResponseCode();
+            InputStream in = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
+            StringBuilder body = new StringBuilder();
+            if (in != null) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        body.append(line).append('\n');
+                    }
+                }
+            }
+            conn.disconnect();
+            if (code < 200 || code >= 300) {
+                result.error = "http " + code;
+                return result;
+            }
+            result.modelIds.addAll(parseModelIds(body.toString()));
+            if (result.modelIds.isEmpty()) {
+                result.error = "no models";
+            }
+            return result;
+        } catch (Throwable throwable) {
+            result.error = throwable.getClass().getSimpleName();
+            return result;
+        }
+    }
+
+    /** Package-visible for JVM tests; accepts a JSON response without network access. */
+    static List<String> parseModelIds(String responseJson) {
+        List<String> ids = new ArrayList<>();
+        if (responseJson == null || responseJson.isBlank()) {
+            return ids;
+        }
+        Matcher data = Pattern.compile("\"data\"\\s*:\\s*\\[(.*?)\\]", Pattern.DOTALL).matcher(responseJson);
+        String block = data.find() ? data.group(1) : responseJson;
+        Matcher item = Pattern.compile("\"id\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(block);
+        while (item.find() && ids.size() < 200) {
+            String id = unescape(item.group(1)).trim();
+            if (!id.isEmpty() && !ids.contains(id)) {
+                ids.add(id);
+            }
+        }
+        return ids;
+    }
+
     static boolean isLlmEnabled(FilterConfig config) {
         return config != null
                 && config.aiAnalysisMode == 1

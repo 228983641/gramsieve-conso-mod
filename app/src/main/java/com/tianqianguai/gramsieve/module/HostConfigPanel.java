@@ -87,6 +87,8 @@ final class HostConfigPanel {
     private final int strokeColor;
     private final int accentColor;
     private final int switchOnColor;
+    private final int switchOffColor;
+    private final int switchKnobColor;
     private final float screenWidthDp;
     private final int toolbarColor;
     private final int toolbarTextColor;
@@ -180,6 +182,8 @@ final class HostConfigPanel {
         this.toolbarTextColor = telegramThemeColor("key_actionBarDefaultTitle", primaryTextColor);
         this.accentColor = android.graphics.Color.parseColor("#007AFF"); // Build #46: HTML v2 iOS primary blue
         switchOnColor = android.graphics.Color.parseColor("#34C759"); // Build #46: HTML v2 switch-on green
+        switchOffColor = blend(backgroundColor, primaryTextColor, 0.14f);
+        switchKnobColor = android.graphics.Color.WHITE;
     }
 
     static boolean show(
@@ -334,19 +338,26 @@ final class HostConfigPanel {
 
         screen.addView(createToolbar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
+                dp(56)
+        ));
+        View toolbarDivider = new View(context);
+        toolbarDivider.setBackgroundColor(strokeColor);
+        screen.addView(toolbarDivider, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Math.max(1, dp(1))
         ));
 
         ScrollView scrollView = new ScrollView(context);
         scrollView.setFillViewport(false);
         scrollView.setBackgroundColor(cardColor);
+        scrollView.setClipToPadding(false);
+        scrollView.setVerticalScrollBarEnabled(false);
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
-        // Build #32: iOS grouped-list screen: the gray grouped
-        // background fills the screen, groups are full-width solid
-        // blocks, so the container has no horizontal padding.
+        // Keep the grouped background visible around solid cards so
+        // the page has a clear rhythm without adding another surface.
         container.setBackgroundColor(cardColor);
-        container.setPadding(dp(12), dp(8), dp(12), dp(16));
+        container.setPadding(dp(16), dp(12), dp(16), dp(24));
         scrollView.addView(container, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -424,32 +435,30 @@ final class HostConfigPanel {
         LinearLayout toolbar = new LinearLayout(context);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(16), 0, dp(16), 0);
-        toolbar.setBackgroundColor(cardColor);
+        toolbar.setPadding(dp(12), 0, dp(12), 0);
+        toolbar.setBackgroundColor(backgroundColor);
 
         Button backButton = toolbarButton(t("返回", "Back"));
-        backButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        backButton.setContentDescription(t("关闭设置", "Close settings"));
         backButton.setOnClickListener(v -> close());
-        toolbar.addView(backButton, new LinearLayout.LayoutParams(dp(80), ViewGroup.LayoutParams.WRAP_CONTENT));
+        toolbar.addView(backButton, new LinearLayout.LayoutParams(dp(72), dp(44)));
 
         TextView title = new TextView(context);
         title.setText(chatMode ? t("GramSieve 聊天设置", "GramSieve Chat Settings") : t("GramSieve 设置", "GramSieve Settings"));
         title.setTextColor(toolbarTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setMaxLines(1);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        title.setGravity(Gravity.CENTER_VERTICAL);
+        title.setGravity(Gravity.CENTER);
+        try { title.setLetterSpacing(0.01f); } catch (Throwable ignored) {}
         toolbar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
-        Button saveButton = toolbarButton(t("保存", "Save"));
-        saveButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        Button saveButton = toolbarPrimaryButton(t("保存", "Save"));
+        saveButton.setContentDescription(t("保存设置", "Save settings"));
         saveButton.setOnClickListener(v -> save());
-        toolbar.addView(saveButton, new LinearLayout.LayoutParams(dp(80), ViewGroup.LayoutParams.WRAP_CONTENT));
+        toolbar.addView(saveButton, new LinearLayout.LayoutParams(dp(72), dp(40)));
         return toolbar;
     }
 
@@ -537,6 +546,10 @@ final class HostConfigPanel {
         pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
         setRowDesc(pinnedHighlightSwitch, t("色条 + 浅色背景", "Color bar + light background"));
+        classifyBarSwitch = addSwitch(card, t("显示自动分类栏", "Show automatic chat category bar"));
+        classifyBarSwitch.setChecked(baseConfig.showClassifyBar);
+        setRowDesc(classifyBarSwitch, t("文件夹下方：全部 / 个人 / 群聊 / 频道", "Below folders: All / Personal / Groups / Channels"));
+        addInfo(card, t("分类栏与文件夹独立：个人包含私聊和机器人，群聊包含普通群与超级群，频道只包含广播频道。关闭后不再筛选聊天列表。", "The category bar is independent from folders: Personal includes private chats and bots, Groups includes basic groups and megagroups, and Channels includes broadcast channels only. Turning it off disables the filter."));
         autoArchiveFolderSwitch = addSwitch(card, t("文件夹聊天自动归档", "Auto-archive chats in folders"));
         autoArchiveFolderSwitch.setChecked(baseConfig.autoArchiveFolderChats);
         setRowDesc(autoArchiveFolderSwitch, t("仅影响列表外观", "Only affects the list appearance"));
@@ -567,10 +580,77 @@ final class HostConfigPanel {
             aiModelInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
             aiKeyInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         } catch (Throwable ignored) {}
+        LinearLayout modelActions = new LinearLayout(context);
+        modelActions.setOrientation(LinearLayout.HORIZONTAL);
+        modelActions.setGravity(Gravity.CENTER_VERTICAL);
+        Button fetchModelsButton = borderedButton(t("获取模型列表", "Fetch models"));
+        fetchModelsButton.setOnClickListener(v -> fetchAiModels(fetchModelsButton));
+        modelActions.addView(fetchModelsButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView modelHint = new TextView(context);
+        modelHint.setText(t("从 API 的 /models 获取，可继续手动填写模型名", "Loads models from the API /models endpoint; manual model names are still supported"));
+        modelHint.setTextColor(secondaryTextColor);
+        modelHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        modelHint.setPadding(dp(10), 0, 0, 0);
+        modelActions.addView(modelHint, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        addView(aiSettings, modelActions, 4);
         aiSettings.setVisibility(aiLlmSwitch.isChecked() ? View.VISIBLE : View.GONE);
         aiLlmSwitch.setOnCheckedChangeListener((button, isChecked) ->
                 aiSettings.setVisibility(isChecked ? View.VISIBLE : View.GONE));
         styleBodyDividers(aiSettings);
+    }
+
+    private void fetchAiModels(Button button) {
+        Activity activity = activityFromContext(context);
+        if (activity == null || aiBaseUrlInput == null || aiModelInput == null) {
+            Toast.makeText(context, t("无法打开模型列表", "Cannot open model list"), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        FilterConfig request = baseConfig == null ? FilterConfig.createDefault() : baseConfig.deepCopy();
+        request.aiApiBaseUrl = valueOf(aiBaseUrlInput).trim();
+        request.aiApiKey = aiKeyInput == null ? "" : valueOf(aiKeyInput).trim();
+        if (request.aiApiBaseUrl.isEmpty()) {
+            Toast.makeText(context, t("请先填写 API 地址", "Enter the API base URL first"), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        button.setEnabled(false);
+        button.setText(t("获取中…", "Loading…"));
+        new Thread(() -> {
+            LlmAiAnalyzer.ModelsResult result = LlmAiAnalyzer.fetchModels(request);
+            activity.runOnUiThread(() -> {
+                button.setEnabled(true);
+                button.setText(t("获取模型列表", "Fetch models"));
+                if (activity.isFinishing()) {
+                    return;
+                }
+                if (result == null || result.modelIds.isEmpty()) {
+                    String suffix = result == null || result.error == null || result.error.isBlank()
+                            ? "" : "：" + result.error;
+                    Toast.makeText(context, t("未获取到模型" + suffix, "No models returned" + suffix), Toast.LENGTH_LONG).show();
+                    return;
+                }
+                String current = valueOf(aiModelInput).trim();
+                int[] selected = new int[]{Math.max(0, result.modelIds.indexOf(current))};
+                AlertDialog picker = new AlertDialog.Builder(activity)
+                        .setTitle(t("选择模型", "Choose model"))
+                        .setSingleChoiceItems(
+                                result.modelIds.toArray(new String[0]),
+                                selected[0],
+                                (dialog, which) -> selected[0] = which
+                        )
+                        .setNegativeButton(t("取消", "Cancel"), null)
+                        .setPositiveButton(t("使用", "Use"), (dialog, which) -> {
+                            if (selected[0] >= 0 && selected[0] < result.modelIds.size()) {
+                                aiModelInput.setText(result.modelIds.get(selected[0]));
+                                aiModelInput.setSelection(aiModelInput.length());
+                            }
+                        })
+                        .create();
+                picker.show();
+                DialogTheme.styleAlertDialog(picker, context);
+            });
+        }, "gramsieve-ai-models").start();
     }
 
     private void buildProxyCard(LinearLayout container) {
@@ -1789,11 +1869,11 @@ final class HostConfigPanel {
 
     private void buildTranslateCard(LinearLayout container) {
         LinearLayout card = addGroup(container, t("翻译", "Translation"));
-        addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后，打开聊天时会自动把该聊天的翻译目标设为中文，并尝试开启整聊自动翻译；中文消息不受影响。", "Uses Conso's built-in translation service, no third-party translator. When on, opening a chat sets its translate target to Chinese and tries to enable whole-chat auto-translate; Chinese messages are unaffected."));
-        autoTranslateSwitch = addSwitch(card, t("自动翻译外文为中文", "Auto-translate foreign messages to Chinese"));
+        addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后只显示聊天右上角的当前聊天翻译入口，并显示消息菜单里的翻译按钮；不会在打开聊天时自动翻译。", "Uses Conso's built-in translation service, not a third-party website. When on, it only exposes the current-chat translation entry in the top-right and the message-menu Translate action; it does not auto-translate when a chat opens."));
+        autoTranslateSwitch = addSwitch(card, t("显示翻译入口", "Show translation entry points"));
         autoTranslateSwitch.setChecked(baseConfig.autoTranslateToChinese);
-        setRowDesc(autoTranslateSwitch, t("使用 Conso 自带服务，开启后自动设置目标语言并开启整聊翻译", "Uses Conso built-in service; turns on whole-chat translation"));
-        addInfo(card, t("目标语言固定为简体中文。翻译由 Telegram 服务端完成，首次打开聊天、消息多时需要几秒到十几秒，属正常；若长时间不翻，退出重进该聊天再试一次。整聊自动翻译在宿主里是 Premium 功能，若未自动翻译，请同时开启“增强功能”里的本地 Premium，或点聊天顶部的翻译按钮手动翻译整聊。", "Target language is Simplified Chinese. Translation runs on Telegram's servers, so the first open of a chat with many messages can take seconds to tens of seconds; if it still does not translate, leave and reopen the chat. Whole-chat auto-translate is a Premium-gated host feature; also enable Local Premium in Enhancements, or use the chat's Translate button."));
+        setRowDesc(autoTranslateSwitch, t("右上角开启当前聊天翻译；点击消息可翻译单条消息", "Top-right toggles current-chat translation; message menu translates one message"));
+        addInfo(card, t("目标语言固定为简体中文。翻译由 Telegram 服务端完成；如果宿主仍受 Premium 限制，只能使用消息菜单的单条翻译或开启“增强功能”里的本地 Premium。", "The target language is Simplified Chinese and translation is handled by Telegram's servers. If the host still gates whole-chat translation behind Premium, use the message-menu translation or enable Local Premium in Enhancements."));
     }
 
     private void buildChatAntiRecallCard(LinearLayout container) {
@@ -1923,7 +2003,7 @@ final class HostConfigPanel {
                 updated.localPremium = localPremiumSwitch != null && localPremiumSwitch.isChecked();
                 updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
                 updated.highlightPinnedDialogs = pinnedHighlightSwitch != null && pinnedHighlightSwitch.isChecked();
-                updated.showClassifyBar = false; // Build #40: classify bar cancelled per user request.
+                updated.showClassifyBar = classifyBarSwitch != null && classifyBarSwitch.isChecked();
                 updated.autoArchiveFolderChats = autoArchiveFolderSwitch != null && autoArchiveFolderSwitch.isChecked();
                 updated.aiAnalysisMode = aiLlmSwitch != null && aiLlmSwitch.isChecked() ? 1 : 0;
                 updated.aiFallbackToLocal = aiFallbackSwitch == null || aiFallbackSwitch.isChecked();
@@ -2082,12 +2162,17 @@ final class HostConfigPanel {
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(dp(4), dp(12), dp(4), dp(4));
+        headerRow.setPadding(dp(4), dp(14), dp(4), dp(6));
+        View marker = new View(context);
+        marker.setBackground(rounded(adjustAlpha(accentColor, 0.9f), dp(2), adjustAlpha(accentColor, 0.9f)));
+        LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(3), dp(18));
+        markerParams.rightMargin = dp(8);
+        headerRow.addView(marker, markerParams);
         TextView titleView = new TextView(context);
         titleView.setText(title);
         titleView.setTextColor(primaryTextColor);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         titleView.setMaxLines(1);
         titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         headerRow.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -2110,10 +2195,10 @@ final class HostConfigPanel {
         // no row, status bar or button can draw past the card's
         // own background (user: text must not exceed the card).
         try { card.setClipToOutline(true); } catch (Throwable ignored) {}
-        try { card.setElevation(dp(2)); } catch (Throwable ignored) {}
+        try { card.setElevation(dp(1)); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.bottomMargin = dp(8);
+        cardParams.bottomMargin = dp(14);
         parent.addView(card, cardParams);
         LinearLayout body = new LinearLayout(context);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -2129,16 +2214,19 @@ final class HostConfigPanel {
         // Hidden until addInfo assigns the section introduction.
         TextView help = new TextView(context);
         help.setText("?");
-        help.setTextColor(android.graphics.Color.WHITE);
+        help.setTextColor(accentColor);
         help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        help.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         help.setGravity(Gravity.CENTER);
         help.setVisibility(View.GONE);
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
         bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        bg.setColor(0xFFC7C7CC);
+        bg.setColor(adjustAlpha(accentColor, 0.12f));
+        bg.setStroke(1, adjustAlpha(accentColor, 0.28f));
         help.setBackground(bg);
-        help.setMinWidth(dp(18));
-        help.setMinHeight(dp(18));
+        help.setMinWidth(dp(24));
+        help.setMinHeight(dp(24));
+        help.setContentDescription(t("查看本分区说明", "Show section details"));
         return help;
     }
 
@@ -2274,10 +2362,17 @@ final class HostConfigPanel {
         help.setText("?");
         help.setTextColor(accentColor);
         help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        help.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        help.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         help.setGravity(Gravity.CENTER);
-        help.setMinWidth(dp(32));
-        help.setPadding(dp(4), dp(4), dp(4), dp(4));
+        help.setMinWidth(dp(28));
+        help.setMinHeight(dp(28));
+        help.setPadding(0, 0, 0, 0);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        bg.setColor(adjustAlpha(accentColor, 0.10f));
+        bg.setStroke(1, adjustAlpha(accentColor, 0.24f));
+        help.setBackground(bg);
+        help.setContentDescription(t("查看说明", "Show details"));
         help.setVisibility(View.GONE);
         return help;
     }
@@ -2324,10 +2419,21 @@ final class HostConfigPanel {
         private final android.graphics.Paint trackPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Paint knobPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final float density;
+        private final int onTrackColor;
+        private final int offTrackColor;
+        private final int knobColor;
+
         IosSwitchView(android.content.Context context) {
+            this(context, 0xFF34C759, 0xFFE9E9EB, android.graphics.Color.WHITE);
+        }
+
+        IosSwitchView(android.content.Context context, int onTrackColor, int offTrackColor, int knobColor) {
             super(context);
             density = context.getResources().getDisplayMetrics().density;
-            knobPaint.setColor(android.graphics.Color.WHITE);
+            this.onTrackColor = onTrackColor;
+            this.offTrackColor = offTrackColor;
+            this.knobColor = knobColor;
+            knobPaint.setColor(knobColor);
             knobPaint.setShadowLayer(3f * density, 0f, 1f * density, 0x33000000);
             setLayerType(LAYER_TYPE_SOFTWARE, null);
             setClickable(true);
@@ -2357,19 +2463,27 @@ final class HostConfigPanel {
         protected void onDraw(android.graphics.Canvas canvas) {
             float w = getWidth();
             float h = getHeight();
-            trackPaint.setColor(checked ? 0xFF34C759 : 0xFFE9E9EB);
+            trackPaint.setColor(checked ? onTrackColor : offTrackColor);
             android.graphics.RectF track = new android.graphics.RectF(0, 0, w, h);
             canvas.drawRoundRect(track, h / 2, h / 2, trackPaint);
             float knobD = 24 * density;
             float knobY = (h - knobD) / 2;
             float knobX = checked ? w - knobD - 2 * density : 2 * density;
+            knobPaint.setColor(knobColor);
             canvas.drawCircle(knobX + knobD / 2, knobY + knobD / 2, knobD / 2, knobPaint);
         }
+
+        @Override
+        public boolean performClick() {
+            super.performClick();
+            setChecked(!checked);
+            return true;
+        }
+
         @Override
         public boolean onTouchEvent(android.view.MotionEvent event) {
             if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
-                setChecked(!checked);
-                return true;
+                return performClick();
             }
             return super.onTouchEvent(event);
         }
@@ -2401,9 +2515,11 @@ final class HostConfigPanel {
         row.addView(labelBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         row.addView(createHelpButton(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        IosSwitchView toggle = new IosSwitchView(context);
+        IosSwitchView toggle = new IosSwitchView(context, switchOnColor, switchOffColor, switchKnobColor);
+        toggle.setContentDescription(text);
         row.addView(toggle, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
         addView(parent, row, 0);
         return toggle;
     }
@@ -2435,7 +2551,8 @@ final class HostConfigPanel {
     }
 
     private Button secondaryButton(String text) {
-        // HTML v2 btn-secondary: gray fill, dark text, 10dp corners.
+        // Secondary actions use a theme-aware surface instead of a
+        // hard-coded light gray, so dark Telegram themes stay balanced.
         Button button = new Button(context);
         button.setAllCaps(false);
         button.setText(text);
@@ -2443,12 +2560,13 @@ final class HostConfigPanel {
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         button.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         try {
-            button.setBackground(rounded(0xFFE5E5EA, dp(10), 0xFFE5E5EA));
+            button.setBackground(rounded(blend(backgroundColor, primaryTextColor, 0.06f), dp(10), strokeColor));
         } catch (Throwable ignored) {}
         button.setPadding(dp(12), dp(10), dp(12), dp(10));
         button.setMaxLines(1);
         button.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        button.setMinHeight(dp(40));
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(42));
         return button;
     }
 
@@ -2461,12 +2579,14 @@ final class HostConfigPanel {
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         button.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         try {
-            button.setBackground(rounded(0xFF007AFF, dp(10), 0xFF007AFF));
+            button.setBackground(rounded(accentColor, dp(10), accentColor));
         } catch (Throwable ignored) {}
         button.setPadding(dp(12), dp(10), dp(12), dp(10));
         button.setMaxLines(1);
         button.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        button.setMinHeight(dp(40));
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(42));
+        try { button.setElevation(dp(1)); } catch (Throwable ignored) {}
         return button;
     }
 
@@ -2686,18 +2806,19 @@ final class HostConfigPanel {
     }
 
     private Button borderedButton(String text) {
-        // Build #45: HTML reference bordered buttons (backup grid,
-        // proxy refresh/manage): dark text, 1px border, 8dp corners.
+        // Bordered actions remain quiet but still use the current theme
+        // surface, which makes them legible in both light and dark mode.
         Button button = new Button(context);
         button.setAllCaps(false);
         button.setText(text);
         button.setTextColor(primaryTextColor);
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
-            button.setBackground(rounded(android.graphics.Color.TRANSPARENT, dp(8), strokeColor));
+            button.setBackground(rounded(blend(backgroundColor, primaryTextColor, 0.035f), dp(10), strokeColor));
         } catch (Throwable ignored) {}
         button.setPadding(dp(12), dp(8), dp(12), dp(8));
-        button.setMinHeight(dp(40));
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(42));
         return button;
     }
 
@@ -3015,10 +3136,24 @@ final class HostConfigPanel {
         button.setText(text);
         button.setTextColor(accentColor);
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        button.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         button.setMinHeight(0);
         button.setMinimumHeight(0);
+        button.setMinWidth(dp(52));
         button.setPadding(dp(8), dp(6), dp(8), dp(6));
+        button.setGravity(Gravity.CENTER);
         button.setBackgroundColor(Color.TRANSPARENT);
+        return button;
+    }
+
+    private Button toolbarPrimaryButton(String text) {
+        Button button = toolbarButton(text);
+        button.setTextColor(Color.WHITE);
+        button.setMinWidth(dp(64));
+        button.setMinHeight(dp(40));
+        button.setPadding(dp(10), dp(6), dp(10), dp(6));
+        button.setBackground(rounded(accentColor, dp(10), accentColor));
+        try { button.setElevation(dp(1)); } catch (Throwable ignored) {}
         return button;
     }
 

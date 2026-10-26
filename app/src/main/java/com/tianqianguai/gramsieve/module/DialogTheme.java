@@ -128,13 +128,13 @@ public final class DialogTheme {
     public static void styleTitle(TextView view, Colors colors) {
         view.setTextColor(colors.primary);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
-        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
     }
 
     public static void styleSection(TextView view, Colors colors) {
         view.setTextColor(colors.primary);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
     }
 
     public static void styleBody(TextView view, Colors colors, boolean secondary) {
@@ -244,6 +244,7 @@ public final class DialogTheme {
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawable(
                         cardBackground(colors, dialog.getContext()));
+                dialog.getWindow().setDimAmount(0.30f);
                 // Build #49: mark the card as applied, so
                 // ensureCardWindow (called afterwards) can tell a
                 // successfully styled window from one where styling
@@ -273,6 +274,13 @@ public final class DialogTheme {
                     android.widget.Button button = dialog.getButton(which);
                     if (button != null) {
                         button.setTextColor(colors.accent);
+                        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+                        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                        button.setMinHeight(dp(dialog.getContext(), 40f));
+                        button.setPadding(dp(dialog.getContext(), 10f),
+                                dp(dialog.getContext(), 6f),
+                                dp(dialog.getContext(), 10f),
+                                dp(dialog.getContext(), 6f));
                     }
                 } catch (Throwable ignored) {
                 }
@@ -302,6 +310,7 @@ public final class DialogTheme {
             drawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
             drawable.setCornerRadius(dp(dialog.getContext(), 16f));
             drawable.setColor(colors.background);
+            drawable.setStroke(1, colors.divider);
             dialog.getWindow().setBackgroundDrawable(drawable);
         } catch (Throwable ignored) {
         }
