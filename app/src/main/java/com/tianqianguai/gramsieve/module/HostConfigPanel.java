@@ -798,7 +798,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -821,7 +821,7 @@ final class HostConfigPanel {
             jsonView.setTextColor(primaryTextColor);
             jsonView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
             jsonView.setTextIsSelectable(true);
-            jsonView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            jsonView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(8), strokeColor));
             android.widget.ScrollView scroll = new android.widget.ScrollView(context);
             scroll.addView(jsonView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
@@ -863,7 +863,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+            DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
         }
@@ -883,7 +883,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -905,7 +905,7 @@ final class HostConfigPanel {
             input.setHint(t("粘贴规则备份 JSON", "Paste rules backup JSON"));
             input.setTextColor(primaryTextColor);
             input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(8), strokeColor));
             input.setMinLines(6);
             android.widget.ScrollView scroll = new android.widget.ScrollView(context);
             scroll.addView(input, new LinearLayout.LayoutParams(
@@ -1039,7 +1039,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+            DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导入失败", "Import failed"), Toast.LENGTH_SHORT).show();
         }
@@ -1060,7 +1060,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1083,7 +1083,7 @@ final class HostConfigPanel {
             contentView.setTextColor(primaryTextColor);
             contentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
             contentView.setTextIsSelectable(true);
-            contentView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            contentView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(8), strokeColor));
             // Build #38: scroll area takes remaining space (weight 1)
             // so the button row below always stays on screen, no
             // matter how long the log is; the log scrolls inside.
@@ -1130,7 +1130,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+            DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导出失败", "Export failed"), Toast.LENGTH_SHORT).show();
         }
@@ -1208,7 +1208,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1230,7 +1230,7 @@ final class HostConfigPanel {
             input.setHint(t("粘贴完整备份文本", "Paste full backup text"));
             input.setTextColor(primaryTextColor);
             input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(8), strokeColor));
             android.widget.ScrollView scroll = new android.widget.ScrollView(context);
             scroll.addView(input, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
@@ -1288,7 +1288,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+            DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("导入失败", "Import failed"), Toast.LENGTH_SHORT).show();
         }
@@ -1550,7 +1550,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1596,7 +1596,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+            DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("打开文件夹选择失败", "Failed to open folder picker"), Toast.LENGTH_SHORT).show();
         }
@@ -1611,7 +1611,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
+            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1764,7 +1764,7 @@ final class HostConfigPanel {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
-            DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+            DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
         } catch (Throwable throwable) {
             Toast.makeText(context, t("管理界面打开失败", "Failed to open management dialog"), Toast.LENGTH_SHORT).show();
         }
@@ -2103,6 +2103,8 @@ final class HostConfigPanel {
         cardBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         cardBg.setCornerRadius(dp(16));
         cardBg.setColor(backgroundColor);
+        // Build #49: same 1px divider stroke as the dialog card.
+        cardBg.setStroke(1, strokeColor);
         card.setBackground(cardBg);
         // Build #47: clip children to the rounded card outline, so
         // no row, status bar or button can draw past the card's
@@ -2534,7 +2536,7 @@ final class HostConfigPanel {
     private void showKeywordEditorDialog(EditText hidden, TextView summary) {
         LinearLayout dialogView = new LinearLayout(context);
         dialogView.setOrientation(LinearLayout.VERTICAL);
-        dialogView.setPadding(dp(20), dp(20), dp(20), dp(12)); // Build #41: wider dialog side margins
+        dialogView.setPadding(dp(16), dp(16), dp(16), dp(16)); // Build #49: spacing token L
         try {
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
@@ -2651,7 +2653,7 @@ final class HostConfigPanel {
         // the glass window's rounded corners and rim). The glass
         // background from styleAlertDialog stays, with a rounded
         // fallback if it ever failed to apply.
-        DialogTheme.ensureGlassWindow(dialog, DialogTheme.resolve(context));
+        DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
     }
 
     private static String canonicalKeywords(String raw) {

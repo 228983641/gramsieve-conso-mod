@@ -17,8 +17,8 @@ import android.widget.TextView;
  * and row spacing in their own way, which is exactly how the panel
  * ended up dark-on-dark in one place and white-on-white in another.
  * Every surface now goes through here: the same theme keys, the
- * same type scale (17sp bold title, 13sp bold accent section label,
- * 15sp rows, 13sp secondary info), the same row padding (16dp
+ * same type scale (17sp bold page title, 16sp bold section title,
+ * 14sp rows, 12sp secondary info), the same row padding (16dp
  * horizontal, 12dp vertical) and the same 1px inset divider. New
  * features must use these helpers too, not invent their own colours.
  */
@@ -115,8 +115,12 @@ public final class DialogTheme {
                 androidThemeColor(context, android.R.attr.textColorPrimary, 0xFFFFFFFF)), background);
         int secondary = ensureTextColor(telegramThemeColor(context, "key_windowBackgroundWhiteGrayText2",
                 androidThemeColor(context, android.R.attr.textColorSecondary, 0xFFAAAAAA)), background);
-        int accent = telegramThemeColor(context, "key_dialogButton",
-                androidThemeColor(context, android.R.attr.colorAccent, 0xFF2AABEE));
+        // Build #49: ONE accent for panel + dialogs. The panel
+        // already uses fixed iOS blue; dialog buttons used to
+        // follow the host's key_dialogButton (green on this device),
+        // which split the system in two. Fixed blue works on light
+        // and dark themes alike.
+        int accent = 0xFF007AFF;
         int divider = telegramThemeColor(context, "key_divider", adjustAlpha(primary, 0.14f));
         return new Colors(background, screen, primary, secondary, accent, divider);
     }
@@ -128,14 +132,14 @@ public final class DialogTheme {
     }
 
     public static void styleSection(TextView view, Colors colors) {
-        view.setTextColor(colors.accent);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        view.setTextColor(colors.primary);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
     }
 
     public static void styleBody(TextView view, Colors colors, boolean secondary) {
         view.setTextColor(secondary ? colors.secondary : colors.primary);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, secondary ? 13f : 14f);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, secondary ? 12f : 14f);
     }
 
     public static View divider(Context context, Colors colors) {
@@ -213,20 +217,22 @@ public final class DialogTheme {
         styleAlertDialog(dialog, resolve(context));
     }
 
-    // Build #34: glass card. Translucent fill over the screen
-    // background, a 1px rim-light stroke, 16dp rounded corners.
-    // Honest limit: a View overlay inside the host activity cannot
-    // blur the host content behind it, so panel glass is translucency
-    // + rim light, not a true backdrop blur. Dialog windows CAN blur
-    // (see styleAlertDialog), because they own their window.
-    public static android.graphics.drawable.GradientDrawable glassBackground(
+    // Build #49: THE card. Solid theme background, 16dp rounded
+    // corners, 1px divider stroke. This replaces the Build #34
+    // glass card (translucent fill + rim light + window blur):
+    // the retrieved UI rules (no-slop-ui, hallmark) name
+    // glassmorphism and fake blur as generic-AI tells, and the
+    // panel cards were already opaque, so dialogs were the odd
+    // ones out. Panel cards and dialog windows now share this
+    // exact definition.
+    public static android.graphics.drawable.GradientDrawable cardBackground(
             Colors colors, Context context) {
         android.graphics.drawable.GradientDrawable drawable =
                 new android.graphics.drawable.GradientDrawable();
         drawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         drawable.setCornerRadius(dp(context, 16f));
-        drawable.setColor(adjustAlpha(colors.background, 0.88f));
-        drawable.setStroke(1, adjustAlpha(colors.primary, 0.12f));
+        drawable.setColor(colors.background);
+        drawable.setStroke(1, colors.divider);
         return drawable;
     }
 
@@ -237,27 +243,21 @@ public final class DialogTheme {
             }
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawable(
-                        glassBackground(colors, dialog.getContext()));
-                // Build #43: mark the glass as applied, so
-                // ensureGlassWindow (called afterwards) can tell a
+                        cardBackground(colors, dialog.getContext()));
+                // Build #49: mark the card as applied, so
+                // ensureCardWindow (called afterwards) can tell a
                 // successfully styled window from one where styling
                 // failed partway. Window itself exposes no getter
                 // for its background drawable, hence this tag.
                 try {
                     if (dialog.getWindow().getDecorView() != null) {
-                        dialog.getWindow().getDecorView().setTag("gramsieve_glass");
+                        dialog.getWindow().getDecorView().setTag("gramsieve_card");
                     }
                 } catch (Throwable ignored) {
                 }
-                // Build #34: real backdrop blur for dialog windows on
-                // Android 12+. The blur radius is in pixels.
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    try {
-                        dialog.getWindow().setBackgroundBlurRadius(
-                                (int) dp(dialog.getContext(), 24f));
-                    } catch (Throwable ignored) {
-                    }
-                }
+                // No backdrop blur: with a solid card there is
+                // nothing behind it to blur, and fake blur was
+                // part of the old glass look.
             }
             View titleView = dialog.findViewById(android.R.id.title);
             if (titleView instanceof TextView) {
@@ -280,21 +280,21 @@ public final class DialogTheme {
         } catch (Throwable ignored) {
         }
     }
-    // Build #43: safety net for the glass window. styleAlertDialog
-    // sets the rounded glass background, but it swallows failures,
+    // Build #43: safety net for the card window. styleAlertDialog
+    // sets the rounded card background, but it swallows failures,
     // and the panel used to overwrite it afterwards with a flat
     // square colour (Build #18 fix), which is why screenshots showed
-    // square white dialogs next to rounded glass groups. Call this
-    // after styleAlertDialog: if the window already has the glass,
+    // square white dialogs next to rounded card groups. Call this
+    // after styleAlertDialog: if the window already has the card,
     // it does nothing; otherwise it applies the same 16dp rounded
     // shape in the theme background colour, never a square slab.
-    public static void ensureGlassWindow(AlertDialog dialog, Colors colors) {
+    public static void ensureCardWindow(AlertDialog dialog, Colors colors) {
         try {
             if (dialog == null || dialog.getWindow() == null || colors == null) {
                 return;
             }
-            Object glassTag = dialog.getWindow().getDecorView().getTag();
-            if ("gramsieve_glass".equals(glassTag)) {
+            Object cardTag = dialog.getWindow().getDecorView().getTag();
+            if ("gramsieve_card".equals(cardTag)) {
                 return;
             }
             android.graphics.drawable.GradientDrawable drawable =
