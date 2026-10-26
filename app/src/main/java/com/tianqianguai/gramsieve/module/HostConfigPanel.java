@@ -405,7 +405,7 @@ final class HostConfigPanel {
         footerNote.setTextColor(secondaryTextColor);
         footerNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         footerNote.setGravity(Gravity.CENTER);
-        footerNote.setPadding(0, dp(24), 0, 0);
+        footerNote.setPadding(0, dp(16), 0, 0);
         container.addView(footerNote, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -437,6 +437,8 @@ final class HostConfigPanel {
         title.setTextColor(toolbarTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setMaxLines(1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setSingleLine(true);
@@ -544,7 +546,7 @@ final class HostConfigPanel {
     private void buildAiCard(LinearLayout container) {
         LinearLayout card = addGroup(container, t("智能分析（AI）", "Smart Analysis (AI)"));
         addInfo(card, t("默认是本地规则分析：离线、免费、私密、即时，关键词、域名、IP、@、混淆网址、QQ、USDT 地址都能识别。开启大模型后，智能分析会变成可插拔后端：本地先出候选，大模型再补充建议，两者去重后一起让你确认；大模型失败时按下面开关回退本地。", "Default is local rule analysis: offline, free, private, instant, covering keywords, domains, IPs, @handles, obfuscated URLs, QQ and USDT addresses. With the LLM on, smart analysis becomes a pluggable backend: local candidates first, LLM suggestions added and deduplicated, all confirmed by you; on LLM failure it falls back to local if the switch below is on."));
-        aiLlmSwitch = addSwitch(card, t("启用大模型智能分析（需自备 API Key）", "Enable LLM smart analysis (bring your own API key)"));
+        aiLlmSwitch = addSwitch(card, t("启用大模型智能分析", "Enable LLM smart analysis"));
         aiLlmSwitch.setChecked(baseConfig.aiAnalysisMode == 1);
         setRowDesc(aiLlmSwitch, t("需自备 API Key", "Bring your own API key"));
         addInfo(card, t("只在你点“智能分析并屏蔽”时才调用大模型，不会对每条消息自动过滤。每次只发消息正文/说明/按钮文字（最多 2000 字），不发发送者名、聊天 id、用户 id。消息会发给上面地址的服务方，按该服务方计费，并受其隐私政策约束；Key 只存在本机模块配置里，不进代码仓库，不打进日志。", "Only called when you tap smart analysis, never for automatic per-message filtering. Each call sends only message text / caption / button text (max 2000 chars), no sender name, chat id or user id. Messages go to the service at the base URL above, billed by that provider under its privacy policy; the key lives only in this device's module config, never in the repo, never in logs."));
@@ -634,12 +636,12 @@ final class HostConfigPanel {
         proxySummary.setTextColor(secondaryTextColor);
         proxySummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         proxySummary.setBackgroundColor(cardColor);
-        proxySummary.setPadding(dp(16), dp(10), dp(16), dp(10));
+        proxySummary.setPadding(dp(12), dp(8), dp(12), dp(8));
         addView(card, proxySummary, 0);
         updateProxySummary();
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        buttonRow.setPadding(dp(16), dp(16), dp(16), dp(16));
+        buttonRow.setPadding(dp(12), dp(12), dp(12), dp(12));
         Button refreshButton = secondaryButton(t("立即刷新", "Refresh now"));
         refreshButton.setOnClickListener(v -> {
             refreshButton.setEnabled(false);
@@ -721,7 +723,7 @@ final class HostConfigPanel {
         int btnCols = Math.max(2, gridCols(3));
         LinearLayout btnContainer = new LinearLayout(context);
         btnContainer.setOrientation(LinearLayout.VERTICAL);
-        btnContainer.setPadding(dp(16), dp(16), dp(16), dp(16));
+        btnContainer.setPadding(dp(12), dp(12), dp(12), dp(12));
         for (int start = 0; start < backupButtons.size(); start += btnCols) {
             LinearLayout btnRow = new LinearLayout(context);
             btnRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2456,7 +2458,9 @@ final class HostConfigPanel {
         try {
             button.setBackground(rounded(0xFF007AFF, dp(10), 0xFF007AFF));
         } catch (Throwable ignored) {}
-        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setPadding(dp(12), dp(10), dp(12), dp(10));
+        button.setMaxLines(1);
+        button.setEllipsize(android.text.TextUtils.TruncateAt.END);
         button.setMinHeight(dp(40));
         return button;
     }
@@ -2475,13 +2479,15 @@ final class HostConfigPanel {
         cell.setOrientation(LinearLayout.HORIZONTAL);
         cell.setGravity(Gravity.CENTER_VERTICAL);
         cell.setTag("gramsieve_rule_item");
-        cell.setPadding(dp(16), dp(14), dp(16), dp(14));
+        cell.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout textBox = new LinearLayout(context);
         textBox.setOrientation(LinearLayout.VERTICAL);
         TextView title = new TextView(context);
         title.setText(label);
         title.setTextColor(primaryTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        title.setMaxLines(2);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         textBox.addView(title, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         EditText hidden = new EditText(context);
@@ -3022,6 +3028,8 @@ final class HostConfigPanel {
         box.setText(text);
         box.setTextColor(primaryTextColor);
         box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        box.setMaxLines(2);
+        box.setEllipsize(android.text.TextUtils.TruncateAt.END);
         box.setTag(value);
         try {
             int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
