@@ -610,7 +610,7 @@ final class HostConfigPanel {
 
     private void buildLogExportCard(LinearLayout container) {
         LinearLayout card = addGroup(container, t("日志导出", "Export log"));
-        addInfo(card, t("导出最近的日志（最多约 2000 行），点“导出日志”后选“导出为文件”，会保存为下载目录 GramSieve 下的 .log 文件并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key，发给排查时用。", "Export the recent log (up to about 2000 lines). Tap Export log, then Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."));
+        addInfo(card, t("导出最近的日志（最多约 2000 行），点“导出日志”后选“导出为文件”，会保存到下载目录，成功后弹框里会写明文件名和位置；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key，发给排查时用。", "Export the recent log (up to about 2000 lines). Tap Export log, then Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."));
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
         Button exportLogButton = toolbarButton(t("导出日志", "Export log"));
@@ -1280,8 +1280,31 @@ final class HostConfigPanel {
             if (!(context instanceof android.app.Activity)) {
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
-            context.startActivity(chooser);
-            Toast.makeText(context, t("日志文件已保存到下载目录", "Log file saved to Download"), Toast.LENGTH_LONG).show();
+            // Build #37: a toast alone is too easy to miss behind the
+            // share chooser, which is exactly what happened on #35
+            // ("no location shown"). Confirm persistently in a dialog
+            // that names the file and both locations; Share opens the
+            // chooser from there, and closing the dialog still leaves
+            // the file in Downloads.
+            if (context instanceof android.app.Activity) {
+                android.app.AlertDialog savedDialog = new android.app.AlertDialog.Builder(context)
+                        .setTitle(t("已保存到下载目录", "Saved to Download"))
+                        .setMessage(t("文件名：" + name + "\n位置：手机下载目录\n应用 GramSieve 目录里也有一份同名副本，可在文件管理里找到它发给我。",
+                                "File: " + name + "\nLocation: phone Download folder\nA copy with the same name is also in the app GramSieve folder; find it in a file manager and send it."))
+                        .setPositiveButton(t("分享", "Share"), (d, w) -> {
+                            try {
+                                context.startActivity(chooser);
+                            } catch (Throwable ignored) {
+                            }
+                        })
+                        .setNegativeButton(t("知道了", "OK"), null)
+                        .create();
+                savedDialog.show();
+                DialogTheme.styleAlertDialog(savedDialog, context);
+            } else {
+                context.startActivity(chooser);
+                Toast.makeText(context, t("日志文件已保存到下载目录", "Log file saved to Download"), Toast.LENGTH_LONG).show();
+            }
         } catch (Throwable shareError) {
             Toast.makeText(context, t("分享打开失败，但文件已保存到 GramSieve 目录：" + name
                     + "，可以在文件管理里找到它发给我", "Share failed, but the file is saved in the GramSieve folder: "
@@ -1300,7 +1323,7 @@ final class HostConfigPanel {
                 "yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".log";
         showCopyShareDialogInternal(
                 t("导出日志", "Export log"),
-                t("下面是最近的日志，点“导出为文件”会保存到下载目录并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file in Download and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."),
+                t("下面是最近的日志，点“导出为文件”会保存到下载目录，成功后弹框里会写明文件名和位置；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file in Download; a dialog will then confirm the file name and location. Or tap Copy or Share for the text version. The log does not contain the LLM key."),
                 log, "GramSieve log", t("分享日志", "Share log"), fileName, log);
     }
 
