@@ -6475,8 +6475,7 @@ final class TelegramHookInstaller {
                                 if (fresh instanceof List) {
                                     for (Object next : (List<?>) fresh) {
                                         if (Reflect.asInt(Reflect.field(next, "id"), -999) == filterId) {
-                                            Object dialogs = Reflect.field(next, "dialogs");
-                                            if (dialogs instanceof List && ((List<?>) dialogs).contains(dialogId)) {
+                                            if (folderMemberDialogIds(next).contains(dialogId)) {
                                                 verified = true;
                                             }
                                         }
@@ -6486,9 +6485,20 @@ final class TelegramHookInstaller {
                             }
                             if (!verified) {
                                 try {
-                                    Object dialogs = Reflect.field(filter, "dialogs");
-                                    if (dialogs instanceof List && !((List<?>) dialogs).contains(dialogId)) {
-                                        ((List) dialogs).add(dialogId);
+                                    // Build #36: the fallback must write to
+                                    // the same membership list the host
+                                    // actually reads (alwaysShow), or the
+                                    // added chat never shows in the folder.
+                                    Object members = Reflect.field(filter, "alwaysShow");
+                                    if (!(members instanceof List)) {
+                                        members = Reflect.field(filter, "dialogs");
+                                    }
+                                    if (members instanceof List && !((List<?>) members).contains(dialogId)) {
+                                        ((List) members).add(dialogId);
+                                    }
+                                    Object neverShow = Reflect.field(filter, "neverShow");
+                                    if (neverShow instanceof List) {
+                                        ((List<?>) neverShow).remove(dialogId);
                                     }
                                     Reflect.invokeIfExists(controller, "updateFilterDialogs",
                                             new Class<?>[]{filter.getClass()}, filter);
@@ -7832,6 +7842,49 @@ final class TelegramHookInstaller {
         }
     }
 
+    // Build #36: Conso 2.0.0 stores folder membership in
+    // TL_dialogFilter.alwaysShow (minus neverShow), not in dialogs:
+    // the 2026-10-26 08:20 log shows the 节点 filter with dialogs=0
+    // but alwaysShow=38. Reading dialogs alone made proxy scan and
+    // archive sync see zero folder chats forever. Fall back to
+    // dialogs only when alwaysShow is absent, for older hosts.
+    private List<Long> folderMemberDialogIds(Object filter) {
+        List<Long> ids = new ArrayList<>();
+        try {
+            Object neverShow = Reflect.field(filter, "neverShow");
+            java.util.Set<Long> excluded = new java.util.HashSet<>();
+            if (neverShow instanceof List) {
+                for (Object o : (List<?>) neverShow) {
+                    long id = Reflect.asLong(o, 0L);
+                    if (id != 0L) {
+                        excluded.add(id);
+                    }
+                }
+            }
+            Object alwaysShow = Reflect.field(filter, "alwaysShow");
+            if (alwaysShow instanceof List) {
+                for (Object o : (List<?>) alwaysShow) {
+                    long id = Reflect.asLong(o, 0L);
+                    if (id != 0L && !excluded.contains(id)) {
+                        ids.add(id);
+                    }
+                }
+                return ids;
+            }
+            Object dialogs = Reflect.field(filter, "dialogs");
+            if (dialogs instanceof List) {
+                for (Object o : (List<?>) dialogs) {
+                    long id = Reflect.asLong(o, 0L);
+                    if (id != 0L && !excluded.contains(id)) {
+                        ids.add(id);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return ids;
+    }
+
     private void syncFolderArchive(Object controller) {
         if (controller == null || configProvider == null) {
             return;
@@ -7861,15 +7914,7 @@ final class TelegramHookInstaller {
                 }
                 userFilterCount++;
                 int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
-                Object dialogs = Reflect.field(filter, "dialogs");
-                if (!(dialogs instanceof List)) {
-                    continue;
-                }
-                for (Object dialogIdObj : (List<?>) dialogs) {
-                    long dialogId = Reflect.asLong(dialogIdObj, 0L);
-                    if (dialogId == 0L) {
-                        continue;
-                    }
+                for (long dialogId : folderMemberDialogIds(filter)) {
                     Set<Integer> set = current.get(dialogId);
                     if (set == null) {
                         set = new HashSet<>();
@@ -8258,7 +8303,8 @@ final class TelegramHookInstaller {
                 // Fallback: insert above the first dialog list view found.
                 View listView = findFirstRecyclerListView((ViewGroup) root);
                 if (listView == null || !(listView.getParent() instanceof ViewGroup)) {
-                    info("ClassifyBar: install aborted, tabs=null and no list view found");
+                    info("ClassifyBar: install aborted, tabs=null and no list view found, rootTree="
+                            + describeViewTree((ViewGroup) root, 0));
                     return;
                 }
                 parent = (ViewGroup) listView.getParent();
@@ -8545,10 +8591,51 @@ final class TelegramHookInstaller {
         }
     }
 
+    private static boolean isNamedView(View view, String simpleName) {
+        if (view == null) {
+            return false;
+        }
+        for (Class<?> k = view.getClass(); k != null; k = k.getSuperclass()) {
+            if (simpleName.equals(k.getSimpleName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Build #36: compact hierarchy snapshot for the abort log:
+    // simple class names only, depth 2, capped, no user data.
+    private String describeViewTree(ViewGroup group, int depth) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            sb.append(group.getClass().getSimpleName()).append("[");
+            int count = Math.min(group.getChildCount(), 20);
+            for (int i = 0; i < count; i++) {
+                View child = group.getChildAt(i);
+                if (child == null) {
+                    continue;
+                }
+                if (i > 0) {
+                    sb.append(",");
+                }
+                sb.append(child.getClass().getSimpleName());
+                if (child instanceof ViewGroup && depth < 2) {
+                    sb.append("(").append(((ViewGroup) child).getChildCount()).append(")");
+                }
+            }
+            if (group.getChildCount() > 20) {
+                sb.append(",+").append(group.getChildCount() - 20).append(" more");
+            }
+            sb.append("]");
+        } catch (Throwable ignored) {
+        }
+        return sb.toString();
+    }
+
     private View findFilterTabsView(ViewGroup group) {
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
-            if (child != null && "org.telegram.ui.Components.FilterTabsView".equals(child.getClass().getName())) {
+            if (isNamedView(child, "FilterTabsView")) {
                 return child;
             }
             if (child instanceof ViewGroup) {
@@ -8564,7 +8651,7 @@ final class TelegramHookInstaller {
     private View findFirstRecyclerListView(ViewGroup group) {
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
-            if (child != null && "org.telegram.ui.Components.RecyclerListView".equals(child.getClass().getName())) {
+            if (isNamedView(child, "RecyclerListView")) {
                 return child;
             }
             if (child instanceof ViewGroup) {

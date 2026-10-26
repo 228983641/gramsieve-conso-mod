@@ -203,3 +203,9 @@ Untested on a real device. Known risks:
 ## 2026-10-26 日志导出位置改为下载目录（Build #35）
 - 导出位置按用户要求改到手机下载目录根目录，不再放 GramSieve 子文件夹，打开文件管理的下载就能直接看见 gramsieve-log-*.log；应用自己 GramSieve 目录里的副本只作兜底（下载目录写入失败时提示里仍会报出它）。
 - 其他逻辑不变；安装后必须强制停止 Conso 再重新打开，否则 LSPosed 仍加载旧代码。
+
+## 2026-10-26 文件夹成员改读 alwaysShow（Build #36）
+- 根因（2026-10-26 08:20 日志的 folder scan fields）：Conso 2.0.0 的文件夹成员在 TL_dialogFilter.alwaysShow（节点：38 个）减 neverShow 里，dialogs 恒为空。以前只读 dialogs，所以代理扫描和归档同步永远看到 0 个聊天。
+- 改动：代理文件夹扫描、归档同步、添加到文件夹的验证与兜底写入，一律改读 alwaysShow 减 neverShow；alwaysShow 不存在时才回退到 dialogs。归档同步现在起会真正把文件夹里的聊天归档到官方归档（主列表不再出现，只在文件夹标签和归档里找得到），这正是用户 2026-10-26 00:14 定下的标准。
+- 分类栏：查找改按类名后缀匹配（Conso 子类或改包也不再认不出），安装失败时日志里附带根视图层级快照，下次日志能直接看到安装时根视图里到底有什么。
+- 其他逻辑不变；安装后必须强制停止 Conso 再重新打开，否则 LSPosed 仍加载旧代码。

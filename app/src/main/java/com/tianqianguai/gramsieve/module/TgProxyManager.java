@@ -339,12 +339,27 @@ final class TgProxyManager {
                 if (name != null && name.trim().equals(folderName.trim())) {
                     matchedFilter = filter;
                     matchedDialogsRaw = Reflect.field(filter, "dialogs");
-                    Object dialogs = matchedDialogsRaw;
-                    if (dialogs instanceof List) {
-                        dialogIds = new ArrayList<>();
-                        for (Object idObj : (List<?>) dialogs) {
+                    // Build #36: Conso 2.0.0 membership lives in
+                    // alwaysShow minus neverShow (2026-10-26 08:20 log:
+                    // 节点 dialogs=0, alwaysShow=38). Fall back to
+                    // dialogs only when alwaysShow is absent.
+                    dialogIds = new ArrayList<>();
+                    java.util.Set<Long> excluded = new java.util.HashSet<>();
+                    Object neverShow = Reflect.field(filter, "neverShow");
+                    if (neverShow instanceof List) {
+                        for (Object idObj : (List<?>) neverShow) {
                             long id = Reflect.asLong(idObj, 0L);
                             if (id != 0L) {
+                                excluded.add(id);
+                            }
+                        }
+                    }
+                    Object alwaysShow = Reflect.field(filter, "alwaysShow");
+                    Object members = alwaysShow instanceof List ? alwaysShow : matchedDialogsRaw;
+                    if (members instanceof List) {
+                        for (Object idObj : (List<?>) members) {
+                            long id = Reflect.asLong(idObj, 0L);
+                            if (id != 0L && !excluded.contains(id)) {
                                 dialogIds.add(id);
                             }
                         }
@@ -368,6 +383,12 @@ final class TgProxyManager {
                     dump.append(" rawDialogs=").append(matchedDialogsRaw instanceof List
                             ? String.valueOf(((List<?>) matchedDialogsRaw).size())
                             : (matchedDialogsRaw == null ? "null" : matchedDialogsRaw.getClass().getSimpleName()));
+                    Object dumpAlways = Reflect.field(matchedFilter, "alwaysShow");
+                    Object dumpNever = Reflect.field(matchedFilter, "neverShow");
+                    dump.append(" alwaysShow=").append(dumpAlways instanceof List
+                            ? String.valueOf(((List<?>) dumpAlways).size()) : "null");
+                    dump.append(" neverShow=").append(dumpNever instanceof List
+                            ? String.valueOf(((List<?>) dumpNever).size()) : "null");
                     dump.append(" converted=").append(dialogIds == null ? "null" : String.valueOf(dialogIds.size()));
                     dump.append(" filters=[");
                     for (Object f : (List<?>) filtersObj) {
