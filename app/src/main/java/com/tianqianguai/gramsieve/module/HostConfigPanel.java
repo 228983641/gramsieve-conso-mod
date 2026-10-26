@@ -1255,7 +1255,9 @@ final class HostConfigPanel {
             android.content.ContentValues values = new android.content.ContentValues();
             values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
             values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain");
-            values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/GramSieve");
+            // Build #35: Downloads root, not a GramSieve subfolder,
+            // so the file is visible the moment Downloads is opened.
+            values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/");
             android.net.Uri uri = context.getContentResolver().insert(
                     android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
             if (uri == null) {
@@ -1279,7 +1281,7 @@ final class HostConfigPanel {
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
             context.startActivity(chooser);
-            Toast.makeText(context, t("日志文件已保存到下载目录 GramSieve", "Log file saved to Download/GramSieve"), Toast.LENGTH_LONG).show();
+            Toast.makeText(context, t("日志文件已保存到下载目录", "Log file saved to Download"), Toast.LENGTH_LONG).show();
         } catch (Throwable shareError) {
             Toast.makeText(context, t("分享打开失败，但文件已保存到 GramSieve 目录：" + name
                     + "，可以在文件管理里找到它发给我", "Share failed, but the file is saved in the GramSieve folder: "
@@ -1298,7 +1300,7 @@ final class HostConfigPanel {
                 "yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".log";
         showCopyShareDialogInternal(
                 t("导出日志", "Export log"),
-                t("下面是最近的日志，点“导出为文件”会保存为下载目录 GramSieve 下的 .log 文件并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."),
+                t("下面是最近的日志，点“导出为文件”会保存到下载目录并打开分享；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file in Download and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."),
                 log, "GramSieve log", t("分享日志", "Share log"), fileName, log);
     }
 
