@@ -974,11 +974,14 @@ final class HostConfigPanel {
             contentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
             contentView.setTextIsSelectable(true);
             contentView.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+            // Build #38: scroll area takes remaining space (weight 1)
+            // so the button row below always stays on screen, no
+            // matter how long the log is; the log scrolls inside.
             android.widget.ScrollView scroll = new android.widget.ScrollView(context);
             scroll.addView(contentView, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
-            dialogView.addView(scroll, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialogView.addView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
             android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
                     .setView(dialogView)
                     .create();
