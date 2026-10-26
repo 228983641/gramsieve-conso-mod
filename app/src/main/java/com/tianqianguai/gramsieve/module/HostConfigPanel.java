@@ -2085,8 +2085,11 @@ final class HostConfigPanel {
         headerRow.setPadding(dp(4), dp(12), dp(4), dp(4));
         TextView titleView = new TextView(context);
         titleView.setText(title);
-        titleView.setTextColor(secondaryTextColor);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        titleView.setTextColor(primaryTextColor);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        titleView.setMaxLines(1);
+        titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         headerRow.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView sectionHelp = createSectionHelpButton();
         headerRow.addView(sectionHelp, new LinearLayout.LayoutParams(
@@ -2098,14 +2101,14 @@ final class HostConfigPanel {
         card.setTag("gramsieve_card");
         android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
         cardBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        cardBg.setCornerRadius(dp(12));
+        cardBg.setCornerRadius(dp(16));
         cardBg.setColor(backgroundColor);
         card.setBackground(cardBg);
         // Build #47: clip children to the rounded card outline, so
         // no row, status bar or button can draw past the card's
         // own background (user: text must not exceed the card).
         try { card.setClipToOutline(true); } catch (Throwable ignored) {}
-        try { card.setElevation(dp(1)); } catch (Throwable ignored) {}
+        try { card.setElevation(dp(2)); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cardParams.bottomMargin = dp(8);
@@ -2417,7 +2420,7 @@ final class HostConfigPanel {
                     TextView d = new TextView(context);
                     d.setText(desc);
                     d.setTextColor(secondaryTextColor);
-                    d.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+                    d.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
                     d.setMaxLines(2);
                     d.setEllipsize(android.text.TextUtils.TruncateAt.END);
                     ((LinearLayout) child).addView(d, new LinearLayout.LayoutParams(
