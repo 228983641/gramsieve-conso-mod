@@ -8907,16 +8907,19 @@ final class TelegramHookInstaller {
                 bar.addView(button, params);
             }
             updateClassifyBarButtons(bar);
-            ViewGroup.LayoutParams barParams = createClassifyBarLayoutParams(parent, anchorView, placeBelowAnchor);
+            final View classifyAnchorView = anchorView;
+            final boolean classifyPlaceBelowAnchor = placeBelowAnchor;
+            ViewGroup.LayoutParams barParams = createClassifyBarLayoutParams(
+                    parent, classifyAnchorView, classifyPlaceBelowAnchor);
             if (insertIndex < 0 || insertIndex > parent.getChildCount()) {
                 parent.addView(bar, barParams);
             } else {
                 parent.addView(bar, insertIndex, barParams);
             }
-            repositionClassifyBar(bar, anchorView, placeBelowAnchor);
+            repositionClassifyBar(bar, classifyAnchorView, classifyPlaceBelowAnchor);
             bar.post(() -> {
                 try {
-                    repositionClassifyBar(bar, anchorView, placeBelowAnchor);
+                    repositionClassifyBar(bar, classifyAnchorView, classifyPlaceBelowAnchor);
                     View rootView = bar.getRootView();
                     applyClassifyListInsetsTree(rootView);
                 } catch (Throwable ignored) {
