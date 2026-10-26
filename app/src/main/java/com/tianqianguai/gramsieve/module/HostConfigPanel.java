@@ -174,7 +174,7 @@ final class HostConfigPanel {
         this.strokeColor = telegramThemeColor("key_divider", adjustAlpha(primaryTextColor, 0.14f));
         this.toolbarColor = telegramThemeColor("key_actionBarDefault", backgroundColor);
         this.toolbarTextColor = telegramThemeColor("key_actionBarDefaultTitle", primaryTextColor);
-        this.accentColor = telegramThemeColor("key_actionBarDefaultIcon", androidAccent);
+        this.accentColor = android.graphics.Color.parseColor("#3B82F6"); // Build #45: HTML reference primary blue
     }
 
     static boolean show(
@@ -353,27 +353,27 @@ final class HostConfigPanel {
         ));
 
         buildGeneralCard(container);
-        pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+        styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         if (chatMode) {
             buildChatAntiRecallCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         } else {
             buildEnhancementCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildDialogListCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildAiCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildProxyCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
             buildTranslateCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         }
         buildRulesCard(container);
-        pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+        styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         if (!chatMode) {
             buildBackupCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         } else {
             // Build #31: the backup card (and its log export) only
             // existed in the global panel, so a user opening settings
@@ -383,7 +383,7 @@ final class HostConfigPanel {
             // importing a full backup from a chat panel could replace
             // global settings from the wrong context.
             buildLogExportCard(container);
-            pairCheckboxRows((LinearLayout) container.getChildAt(container.getChildCount() - 1)); styleGroup((LinearLayout) container.getChildAt(container.getChildCount() - 1));
+            styleHtmlCard((LinearLayout) container.getChildAt(container.getChildCount() - 1));
         }
 
         root.addView(overlay, new ViewGroup.LayoutParams(
@@ -425,7 +425,7 @@ final class HostConfigPanel {
     }
 
     private void buildGeneralCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, chatMode ? t("当前聊天", "Current Chat") : t("全局配置", "Global Settings"));
+        LinearLayout card = addGroup(container, chatMode ? t("当前聊天", "Current Chat") : t("全局配置", "Global Settings"), false, true);
 
         FilterConfig.ChatRuleSet chatRuleSet = chatMode
                 ? baseConfig.getOrCreateChatRuleSet(dialogId).deepCopy().sanitize()
@@ -450,57 +450,56 @@ final class HostConfigPanel {
         addSectionLabel(card, t("界面语言", "Interface language"));
         languageGroup = new LinearLayout(context);
         languageGroup.setOrientation(LinearLayout.VERTICAL);
-        addExclusiveCheck(languageGroup, t("跟随系统", "Follow system"), FilterConfig.APP_LANGUAGE_SYSTEM);
-        addExclusiveCheck(languageGroup, "English", FilterConfig.APP_LANGUAGE_ENGLISH);
-        addExclusiveCheck(languageGroup, "简体中文", FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE);
-        checkTaggedBox(languageGroup, FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
+        addRadioChoice(languageGroup, t("跟随系统", "Follow system"), FilterConfig.APP_LANGUAGE_SYSTEM);
+        addRadioChoice(languageGroup, "English", FilterConfig.APP_LANGUAGE_ENGLISH);
+        addRadioChoice(languageGroup, "简体中文", FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE);
+        checkTaggedChoice(languageGroup, FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
         addView(card, languageGroup, 8);
 
         addSectionLabel(card, t("匹配后的动作", "Match action"));
         actionGroup = new LinearLayout(context);
         actionGroup.setOrientation(LinearLayout.VERTICAL);
-        addExclusiveCheck(actionGroup, t("仅本地隐藏", "Hide locally"), FilterConfig.Action.HIDE);
-        addExclusiveCheck(actionGroup, t("仅本地折叠", "Collapse locally"), FilterConfig.Action.COLLAPSE);
-        addExclusiveCheck(actionGroup, t("调试标记", "Debug mark"), FilterConfig.Action.DEBUG_MARK);
-        checkTaggedBox(actionGroup, baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
+        addRadioChoice(actionGroup, t("仅本地隐藏", "Hide locally"), FilterConfig.Action.HIDE);
+        addRadioChoice(actionGroup, t("仅本地折叠", "Collapse locally"), FilterConfig.Action.COLLAPSE);
+        addRadioChoice(actionGroup, t("调试标记", "Debug mark"), FilterConfig.Action.DEBUG_MARK);
+        checkTaggedChoice(actionGroup, baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
         addView(card, actionGroup, 0);
+        // Build #45: HTML reference lays single-choice groups out
+        // in a 2-column grid too.
+        pairBareChoices(languageGroup);
+        pairBareChoices(actionGroup);
     }
 
     private void buildEnhancementCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("增强功能", "Enhancements"));
+        LinearLayout card = addGroup(container, t("增强功能", "Enhancements"), true, true);
         addInfo(card, t("从 NoAdsTelegram / TeleVip 移植的功能，按分类开关，默认全部关闭，开启后保存即生效（部分需重新打开聊天列表）。", "Features ported from NoAdsTelegram / TeleVip, grouped by category. All off by default; saving applies them (some need the chat list reopened)."));
 
-        addSectionLabel(card, t("广告", "Ads"));
         sponsoredSwitch = addSwitch(card, t("去赞助消息", "Remove sponsored messages"));
         sponsoredSwitch.setChecked(baseConfig.disableSponsoredMessages);
         videoAdsSwitch = addSwitch(card, t("去视频广告", "Remove video ads"));
         videoAdsSwitch.setChecked(baseConfig.disableVideoAds);
 
-        addSectionLabel(card, t("消息", "Messages"));
         forwardSaveSwitch = addSwitch(card, t("允许转发和保存", "Allow forwarding and saving"));
         forwardSaveSwitch.setChecked(baseConfig.enableForwardSave);
         preventDeleteSwitch = addSwitch(card, t("防止消息删除", "Prevent message deletion"));
         preventDeleteSwitch.setChecked(baseConfig.preventMessageDelete);
         addInfo(card, t("防删除与主动加载防撤回是两套机制，可同时开；防删除会直接拦下服务端的删除更新。", "Delete prevention is a second mechanism alongside proactive-loading anti-recall; it blocks the server delete update itself."));
 
-        addSectionLabel(card, t("动态", "Stories"));
         saveStoriesSwitch = addSwitch(card, t("允许保存动态", "Allow saving stories"));
         saveStoriesSwitch.setChecked(baseConfig.enableSaveStories);
         addInfo(card, t("本版为简化移植：允许动态截图、启用已有的保存菜单项；若 Conso 的动态菜单里本来就没有保存项，本开关单独不起作用，需后续再补。", "Simplified port in this build: allows story screenshots and enables an existing save menu item. If Conso's story menu has no save item at all, this switch alone will not add one."));
 
-        addSectionLabel(card, t("性能", "Performance"));
         downloadSpeedSwitch = addSwitch(card, t("提升下载速度", "Boost download speed"));
         downloadSpeedSwitch.setChecked(baseConfig.boostDownloadSpeed);
         addInfo(card, t("只改客户端下载并行度（大文件分块 512 KiB、并行 8 路）；服务端限速仍在。", "Only changes client download parallelism (512 KiB chunks, 8 parallel requests); server limits still apply."));
 
-        addSectionLabel(card, t("本地 Premium", "Local Premium"));
         localPremiumSwitch = addSwitch(card, t("本地 Premium 解锁", "Enable local Premium"));
         localPremiumSwitch.setChecked(baseConfig.localPremium);
         addInfo(card, t("仅本地生效：让客户端认为你是 Premium，可突破置顶聊天数等客户端检查（实测为准，服务端仍可能限制）。服务端 Premium 功能（大文件上传、语音转文字等）仍需官方订阅，且开启本地 Premium 有封号风险，请自行决定。", "Local only: makes the client treat you as Premium, unlocking client-side checks such as the pinned-chat limit (verify on device; the server may still limit). Server Premium features still need a real subscription, and local Premium carries a ban risk."));
     }
 
     private void buildDialogListCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("聊天列表", "Chat List"));
+        LinearLayout card = addGroup(container, t("聊天列表", "Chat List"), true, false);
         addInfo(card, t("只影响聊天列表的外观，不改动聊天内容与置顶本身。", "Only affects the chat list appearance, not chat content or pinning itself."));
         pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
@@ -510,7 +509,7 @@ final class HostConfigPanel {
     }
 
     private void buildAiCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("智能分析（AI）", "Smart Analysis (AI)"));
+        LinearLayout card = addGroup(container, t("智能分析（AI）", "Smart Analysis (AI)"), true, false);
         addInfo(card, t("默认是本地规则分析：离线、免费、私密、即时，关键词、域名、IP、@、混淆网址、QQ、USDT 地址都能识别。开启大模型后，智能分析会变成可插拔后端：本地先出候选，大模型再补充建议，两者去重后一起让你确认；大模型失败时按下面开关回退本地。", "Default is local rule analysis: offline, free, private, instant, covering keywords, domains, IPs, @handles, obfuscated URLs, QQ and USDT addresses. With the LLM on, smart analysis becomes a pluggable backend: local candidates first, LLM suggestions added and deduplicated, all confirmed by you; on LLM failure it falls back to local if the switch below is on."));
         aiLlmSwitch = addSwitch(card, t("启用大模型智能分析（需自备 API Key）", "Enable LLM smart analysis (bring your own API key)"));
         aiLlmSwitch.setChecked(baseConfig.aiAnalysisMode == 1);
@@ -526,7 +525,7 @@ final class HostConfigPanel {
     }
 
     private void buildProxyCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("代理（TG 直链）", "Proxy (TG Links)"));
+        LinearLayout card = addGroup(container, t("代理（TG 直链）", "Proxy (TG Links)"), true, false);
         addInfo(card, t("自动抓取、测速、自动添加并切换到最快代理。来源不会硬编码某个第三方：填一个你信任的代理列表页地址（页面里含 t.me/proxy 链接即可），或在下面直接粘贴链接；模块按刷新间隔自动抓取，测速后把最快的设为当前代理。公开代理的运营者能看到你的 IP 和 Telegram 连接时间信息，但 MTProto 内容本身是加密的。", "Auto-fetch, test, auto-add and switch to the fastest proxy. No third-party source is hardcoded: fill a trusted proxy list page URL (containing t.me/proxy links) or paste links below; the module fetches on the refresh interval, tests, and sets the fastest as current. A proxy operator can see your IP and Telegram connection timing, but MTProto content stays encrypted."));
         boolean firstOpen = !baseConfig.proxyConfigured;
         proxyAutoAddSwitch = addSwitch(card, t("自动添加新代理", "Auto-add new proxies"));
@@ -534,8 +533,11 @@ final class HostConfigPanel {
         proxyAutoSwitchSwitch = addSwitch(card, t("自动切换到最快代理", "Auto-switch to the fastest proxy"));
         proxyAutoSwitchSwitch.setChecked(firstOpen || baseConfig.proxyAutoSwitch);
         proxySourceInput = addInput(card, t("代理来源地址（可空，页面需含 t.me/proxy 链接）", "Proxy source URL (optional, page must contain t.me/proxy links)"), baseConfig.proxySourceUrl == null ? "" : baseConfig.proxySourceUrl);
-        proxyRefreshInput = addInput(card, t("刷新间隔（小时，默认 6）", "Refresh interval (hours, default 6)"), Integer.toString(firstOpen ? 6 : baseConfig.proxyRefreshHours));
-        proxyExpiryInput = addInput(card, t("失效时间（小时，默认 24：超过此时间未测通即为失效）", "Expiry time (hours, default 24: untested longer than this counts as expired)"), Integer.toString(firstOpen ? 24 : baseConfig.proxyExpiryHours));
+        EditText[] proxyIntervalInputs = addInputPair(card,
+                t("刷新间隔（小时，默认 6）", "Refresh interval (hours, default 6)"), Integer.toString(firstOpen ? 6 : baseConfig.proxyRefreshHours),
+                t("失效时间（小时，默认 24）", "Expiry time (hours, default 24)"), Integer.toString(firstOpen ? 24 : baseConfig.proxyExpiryHours));
+        proxyRefreshInput = proxyIntervalInputs[0];
+        proxyExpiryInput = proxyIntervalInputs[1];
         proxyPastedInput = addInput(card, t("直接粘贴代理链接（每行一个 t.me/proxy 或 tg://proxy 链接）", "Paste proxy links directly (one t.me/proxy or tg://proxy link per line)"), baseConfig.proxyPastedLinks == null ? "" : baseConfig.proxyPastedLinks);
         proxyFolderInput = addInput(card, t("代理文件夹（只扫这个文件夹里的聊天，默认 节点）", "Proxy folder (only scan chats in this folder, default 节点)"), firstOpen ? "节点" : (baseConfig.proxyFolderName == null ? "节点" : baseConfig.proxyFolderName));
         addInfo(card, t("自动维护：只要 Conso 在运行，“自动添加”开着时，每到刷新间隔就会自动跑一轮：扫描上面这些来源、测速、切到最快、把测通的同步进 Conso 代理列表，并把本轮测死的（且是模块同步进去的）从客户端列表里剔除；Conso 被彻底关掉后，下次打开聊天列表时会补跑一次。", "Auto-maintenance: while Conso is running and auto-add is on, every refresh interval runs a full round: scan these sources, test, switch to fastest, sync tested-good entries into Conso's proxy list, and prune entries this round tested dead (and synced by the module) from the client list. If Conso was fully closed, the next chat-list open catches up once."));
@@ -565,7 +567,7 @@ final class HostConfigPanel {
         updateProxySummary();
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button refreshButton = toolbarButton(t("立即刷新", "Refresh now"));
+        Button refreshButton = borderedButton(t("立即刷新", "Refresh now"));
         refreshButton.setOnClickListener(v -> {
             refreshButton.setEnabled(false);
             refreshButton.setText(t("刷新中…", "Refreshing…"));
@@ -598,16 +600,16 @@ final class HostConfigPanel {
             }).start();
         });
         buttonRow.addView(refreshButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Button manageButton = toolbarButton(t("管理代理", "Manage proxies"));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button manageButton = borderedButton(t("管理代理", "Manage proxies"));
         manageButton.setOnClickListener(v -> showProxyManageDialog());
         buttonRow.addView(manageButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         addView(card, buttonRow, 4);
     }
 
     private void buildLogExportCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("日志导出", "Export log"));
+        LinearLayout card = addGroup(container, t("日志导出", "Export log"), true, true);
         addInfo(card, t("导出最近的日志（最多约 2000 行），点“导出日志”后选“导出为文件”，会保存到下载目录，成功后弹框里会写明文件名和位置；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key，发给排查时用。", "Export the recent log (up to about 2000 lines). Tap Export log, then Export as file to save it as a .log file under Download/GramSieve and share it; or tap Copy or Share for the text version. The log does not contain the LLM key."));
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -619,33 +621,37 @@ final class HostConfigPanel {
     }
 
     private void buildBackupCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("数据备份", "Data backup"));
+        LinearLayout card = addGroup(container, t("数据备份", "Data backup"), true, true);
         addInfo(card, t("“导出规则 / 导入规则”只管规则，导入时合并，不会改动其他设置，已有的相同规则不会重复。“导出完整备份 / 导入完整备份”管全部设置：开关、规则、分类、翻译、代理列表、大模型地址 / 模型 / Key、文件夹设置，一起备份和恢复；导入完整备份会替换当前全部设置，不是合并。完整备份里有你的大模型 Key 和代理信息，不要发给别人，只存到你自己的地方。", "Export / Import rules only handles rules, merged on import without changing other settings, and identical rules are not duplicated. Export / Import full backup covers ALL settings: switches, rules, classify, translate, proxy list, LLM base URL / model / key, folder settings, backed up and restored together; importing a full backup REPLACES all current settings, it does not merge. A full backup contains your LLM key and proxy info, do not send it to anyone, keep it in your own place."));
+        // Build #45: HTML reference 3-column button grid (3 + 2,
+        // the last row's empty third cell is a spacer).
         LinearLayout buttonRow = new LinearLayout(context);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button exportButton = toolbarButton(t("导出规则", "Export rules"));
+        Button exportButton = borderedButton(t("导出规则", "Export rules"));
         exportButton.setOnClickListener(v -> showExportRulesDialog());
         buttonRow.addView(exportButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Button importButton = toolbarButton(t("导入规则", "Import rules"));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button importButton = borderedButton(t("导入规则", "Import rules"));
         importButton.setOnClickListener(v -> showImportRulesDialog());
         buttonRow.addView(importButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button exportFullButton = borderedButton(t("导出完整备份", "Export full backup"));
+        exportFullButton.setOnClickListener(v -> showExportFullDialog());
+        buttonRow.addView(exportFullButton, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         addView(card, buttonRow, 4);
         LinearLayout buttonRow2 = new LinearLayout(context);
         buttonRow2.setOrientation(LinearLayout.HORIZONTAL);
-        Button exportFullButton = toolbarButton(t("导出完整备份", "Export full backup"));
-        exportFullButton.setOnClickListener(v -> showExportFullDialog());
-        buttonRow2.addView(exportFullButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Button importFullButton = toolbarButton(t("导入完整备份", "Import full backup"));
+        Button importFullButton = borderedButton(t("导入完整备份", "Import full backup"));
         importFullButton.setOnClickListener(v -> showImportFullDialog());
         buttonRow2.addView(importFullButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Button exportLogButton = toolbarButton(t("导出日志", "Export log"));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button exportLogButton = borderedButton(t("导出日志", "Export log"));
         exportLogButton.setOnClickListener(v -> showExportLogDialog());
         buttonRow2.addView(exportLogButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        buttonRow2.addView(new View(context), new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         addView(card, buttonRow2, 4);
         addInfo(card, t("导出日志会取最近的日志（最多约 2000 行），里面有代理文件夹扫描的诊断（例如文件夹里几个聊天、历史成功几个、消息几条），发给排查时用；日志里不含大模型 Key。", "Export log takes the recent log (up to about 2000 lines), including the proxy folder scan diagnosis (for example how many chats in the folder, how many histories succeeded, how many messages); it does not contain the LLM key."));
     }
@@ -1684,7 +1690,7 @@ final class HostConfigPanel {
     }
 
     private void buildTranslateCard(LinearLayout container) {
-        LinearLayout card = addGroup(container, t("翻译", "Translation"));
+        LinearLayout card = addGroup(container, t("翻译", "Translation"), true, false);
         addInfo(card, t("使用 Conso 自带的翻译服务，不经过第三方翻译网站。开启后，打开聊天时会自动把该聊天的翻译目标设为中文，并尝试开启整聊自动翻译；中文消息不受影响。", "Uses Conso's built-in translation service, no third-party translator. When on, opening a chat sets its translate target to Chinese and tries to enable whole-chat auto-translate; Chinese messages are unaffected."));
         autoTranslateSwitch = addSwitch(card, t("自动翻译外文为中文", "Auto-translate foreign messages to Chinese"));
         autoTranslateSwitch.setChecked(baseConfig.autoTranslateToChinese);
@@ -1695,7 +1701,7 @@ final class HostConfigPanel {
         if (antiRecallConfigStore == null || dialogId == 0L) {
             return;
         }
-        LinearLayout card = addGroup(container, t("当前聊天主动加载", "Current Chat Proactive Loading"));
+        LinearLayout card = addGroup(container, t("当前聊天主动加载", "Current Chat Proactive Loading"), true, true);
         chatAntiRecallSwitch = addSwitch(card, t("为这个聊天启用主动加载/防撤回", "Enable proactive loading for this chat"));
         chatAntiRecallSwitch.setChecked(isChatAntiRecallEnabled());
         addInfo(card, t("保存后会立即同步到宿主里的后台加载器。", "Saving updates the host background loader immediately."));
@@ -1710,7 +1716,7 @@ final class HostConfigPanel {
         // Everything else (regex, and all other targets) lives in one
         // collapsible "高级规则" section, still created and still saved
         // when hidden, so existing rules are never lost by collapsing.
-        LinearLayout card = addGroup(container, t("规则内容", "Rules"));
+        LinearLayout card = addGroup(container, t("规则内容", "Rules"), true, true);
         addInfo(card, chatMode
                 ? t("这里只影响当前聊天。关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
                 : t("关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
@@ -1964,51 +1970,76 @@ final class HostConfigPanel {
     // helper; panel builders now use addGroup.
     private final java.util.Map<LinearLayout, TextView> groupHeaderHelp = new java.util.HashMap<>();
 
-    private LinearLayout addGroup(LinearLayout parent, String title) {
-        // Build #44: the header is a row now, so a card's general
-        // introduction can hang its "?" here (next to the title)
-        // instead of taking a whole standalone row inside the card.
+    private LinearLayout addGroup(LinearLayout parent, String title, boolean collapsible, boolean expanded) {
+        // Build #45: HTML reference layout (user 2026-10-26):
+        // white rounded card (12dp corners, soft shadow) on the
+        // gray page, header row inside the card (title + "?" +
+        // chevron, bottom border), body with 16dp padding. Groups
+        // after the first are collapsible; the first group has no
+        // header and is always open. Returns the BODY, so builders
+        // keep adding to it unchanged.
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setTag("gramsieve_card");
+        android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
+        cardBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        cardBg.setCornerRadius(dp(12));
+        cardBg.setColor(backgroundColor);
+        card.setBackground(cardBg);
+        try { card.setElevation(dp(2)); } catch (Throwable ignored) {}
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.leftMargin = dp(12);
+        cardParams.rightMargin = dp(12);
+        cardParams.bottomMargin = dp(16);
+        parent.addView(card, cardParams);
+        LinearLayout body = new LinearLayout(context);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setTag("gramsieve_body");
+        if (!collapsible) {
+            card.setTag("gramsieve_body");
+            return card;
+        }
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        TextView header = new TextView(context);
-        header.setText(title);
-        header.setTextColor(secondaryTextColor);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        headerRow.addView(header, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setPadding(dp(16), dp(12), dp(16), dp(12));
+        TextView titleView = new TextView(context);
+        titleView.setText(title);
+        titleView.setTextColor(primaryTextColor);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        headerRow.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView headerHelp = createHelpButton();
         headerRow.addView(headerHelp, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        // Build #41: wider side margins (group inset 24 + row
-        // padding 16 = 40), so groups breathe more on both sides.
-        headerParams.leftMargin = dp(40);
-        headerParams.rightMargin = dp(40);
-        headerParams.topMargin = dp(20);
-        headerParams.bottomMargin = dp(6);
-        parent.addView(headerRow, headerParams);
-        LinearLayout group = new LinearLayout(context);
-        group.setOrientation(LinearLayout.VERTICAL);
-        // Build #41: inset glass group, not a full-width flat slab.
-        // 24dp side inset on each side (was 16dp) keeps the content
-        // width in proportion on a wide phone screen and gives the
-        // glass card more air on both sides.
-        group.setBackground(DialogTheme.glassBackground(
-                DialogTheme.resolve(context), context));
-        LinearLayout.LayoutParams groupParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        groupParams.leftMargin = dp(24);
-        groupParams.rightMargin = dp(24);
-        // Build #33: a gap after each group, so groups read as
-        // separate blocks instead of one continuous sheet.
-        groupParams.bottomMargin = dp(12);
-        parent.addView(group, groupParams);
-        groupHeaderHelp.put(group, headerHelp);
-        return group;
+        TextView chevron = new TextView(context);
+        chevron.setText(">");
+        chevron.setTextColor(secondaryTextColor);
+        chevron.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        chevron.setGravity(Gravity.CENTER);
+        chevron.setMinWidth(dp(32));
+        chevron.setRotation(expanded ? 90f : 0f);
+        headerRow.addView(chevron, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        card.addView(headerRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        View border = new View(context);
+        border.setBackgroundColor(strokeColor);
+        card.addView(border, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        card.addView(body, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        groupHeaderHelp.put(body, headerHelp);
+        final LinearLayout toggleBody = body;
+        final TextView toggleChevron = chevron;
+        headerRow.setOnClickListener(v -> {
+            boolean open = toggleBody.getVisibility() != View.VISIBLE;
+            toggleBody.setVisibility(open ? View.VISIBLE : View.GONE);
+            toggleChevron.setRotation(open ? 90f : 0f);
+        });
+        return body;
     }
 
     // Build #32: called by attach() right after each panel builder
@@ -2052,17 +2083,20 @@ final class HostConfigPanel {
     }
 
     private TextView addSectionLabel(LinearLayout parent, String text) {
+        // Build #45: HTML reference section labels are small gray
+        // text, not bold accent. Spacing comes from the body
+        // styling (16dp gaps, 4dp after labels), so no top margin
+        // here.
         TextView label = new TextView(context);
         label.setTag("gramsieve_section");
         label.setText(text);
-        label.setTextColor(accentColor);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setTextColor(secondaryTextColor);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.topMargin = dp(12);
+        params.topMargin = 0;
         params.bottomMargin = dp(4);
         parent.addView(label, params);
         return label;
@@ -2410,6 +2444,70 @@ final class HostConfigPanel {
                 raw, com.tianqianguai.gramsieve.core.FilterConfig.RuleMode.KEYWORD).size();
     }
 
+    private Button borderedButton(String text) {
+        // Build #45: HTML reference bordered buttons (backup grid,
+        // proxy refresh/manage): dark text, 1px border, 8dp corners.
+        Button button = new Button(context);
+        button.setAllCaps(false);
+        button.setText(text);
+        button.setTextColor(primaryTextColor);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try {
+            button.setBackground(rounded(android.graphics.Color.TRANSPARENT, dp(8), strokeColor));
+        } catch (Throwable ignored) {}
+        button.setPadding(dp(12), dp(8), dp(12), dp(8));
+        button.setMinHeight(dp(40));
+        return button;
+    }
+
+    private EditText[] addInputPair(LinearLayout parent, String label1, String initial1,
+            String label2, String initial2) {
+        // Build #45: HTML reference 2-column inputs (proxy refresh
+        // interval + expiry side by side, 12dp gap).
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        EditText[] result = new EditText[2];
+        String[] labels = new String[]{label1, label2};
+        String[] initials = new String[]{initial1, initial2};
+        for (int i = 0; i < 2; i++) {
+            LinearLayout col = new LinearLayout(context);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView title = new TextView(context);
+            title.setText(labels[i]);
+            title.setTextColor(secondaryTextColor);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+            col.addView(title, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            EditText input = new EditText(context);
+            input.setText(initials[i] == null ? "" : initials[i]);
+            input.setTextColor(primaryTextColor);
+            input.setHintTextColor(secondaryTextColor);
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            try {
+                input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
+                input.setPadding(dp(16), dp(12), dp(16), dp(12));
+            } catch (Throwable ignored) {}
+            input.setMinLines(1);
+            input.setMaxLines(1);
+            input.setInputType(InputType.TYPE_CLASS_NUMBER);
+            LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            inputParams.topMargin = dp(4);
+            col.addView(input, inputParams);
+            result[i] = input;
+            LinearLayout.LayoutParams colParams = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i == 0) {
+                colParams.rightMargin = dp(6);
+            } else {
+                colParams.leftMargin = dp(6);
+            }
+            row.addView(col, colParams);
+        }
+        addView(parent, row, 8);
+        return result;
+    }
+
     private EditText addInput(LinearLayout parent, String label, String initialValue) {
         // Build #43: the label sits in a horizontal row with a
         // "?" slot, so an explanation added after this input lands
@@ -2462,7 +2560,13 @@ final class HostConfigPanel {
             }
             java.util.ArrayList<View> children = new java.util.ArrayList<>();
             for (int i = 0; i < group.getChildCount(); i++) {
-                children.add(group.getChildAt(i));
+                View child = group.getChildAt(i);
+                // Build #45: hidden explanations must not break a
+                // grid run (a row, its hidden info, then the next
+                // row still pair up).
+                if (child.getVisibility() != View.GONE) {
+                    children.add(child);
+                }
             }
             for (int i = 0; i + 1 < children.size(); i++) {
                 View first = children.get(i);
@@ -2530,6 +2634,9 @@ final class HostConfigPanel {
 
     private android.widget.CheckBox checkboxRowBox(View row) {
         try {
+            if (row instanceof android.widget.CheckBox) {
+                return (android.widget.CheckBox) row;
+            }
             if (!(row instanceof LinearLayout) || !"gramsieve_row".equals(row.getTag())) {
                 return null;
             }
@@ -2542,6 +2649,58 @@ final class HostConfigPanel {
         } catch (Throwable ignored) {
         }
         return null;
+    }
+
+    // Build #45: HTML card body styling. Pairs the body's small
+    // checkboxes into two columns first, then gives the body
+    // 16dp padding and HTML-like spacing: 16dp between rows,
+    // 4dp after a label row (label hugs its input), nothing after
+    // the last visible row. No dividers inside bodies anymore.
+    private void styleHtmlCard(LinearLayout card) {
+        try {
+            if (card == null) {
+                return;
+            }
+            LinearLayout body = null;
+            if ("gramsieve_body".equals(card.getTag())) {
+                body = card;
+            } else {
+                for (int i = 0; i < card.getChildCount(); i++) {
+                    View child = card.getChildAt(i);
+                    if ("gramsieve_body".equals(child.getTag())) {
+                        body = (LinearLayout) child;
+                        break;
+                    }
+                }
+            }
+            if (body == null) {
+                return;
+            }
+            pairCheckboxRows(body);
+            body.setPadding(dp(16), dp(16), dp(16), dp(16));
+            java.util.ArrayList<View> visible = new java.util.ArrayList<>();
+            for (int i = 0; i < body.getChildCount(); i++) {
+                View child = body.getChildAt(i);
+                if (child.getVisibility() != View.GONE) {
+                    visible.add(child);
+                }
+            }
+            for (int i = 0; i < visible.size(); i++) {
+                View child = visible.get(i);
+                ViewGroup.LayoutParams lp = child.getLayoutParams();
+                LinearLayout.LayoutParams params;
+                if (lp instanceof LinearLayout.LayoutParams) {
+                    params = (LinearLayout.LayoutParams) lp;
+                } else {
+                    params = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    child.setLayoutParams(params);
+                }
+                boolean isLabel = "gramsieve_row_label".equals(child.getTag());
+                params.bottomMargin = (i == visible.size() - 1) ? 0 : (isLabel ? dp(4) : dp(16));
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private void addDivider(LinearLayout parent) {
@@ -2578,12 +2737,13 @@ final class HostConfigPanel {
         return button;
     }
 
-    // Build #44: single-choice groups are mutually exclusive
-    // checkboxes now, so every choice in the panel is a checkbox
-    // (user 2026-10-26: all choices as ticks). Same semantics as
-    // the old radios: exactly one checked, at least one stays on.
-    private void addExclusiveCheck(LinearLayout group, String text, Object value) {
-        android.widget.CheckBox box = new android.widget.CheckBox(context);
+    // Build #45: single-choice groups are radios again, per the
+    // HTML reference (user 2026-10-26: radios in a 2-column grid).
+    // Exclusion lives on the buttons themselves, not on a
+    // RadioGroup, so pairing them into grid rows later is safe.
+    // Semantics: exactly one checked, at least one stays on.
+    private void addRadioChoice(LinearLayout group, String text, Object value) {
+        android.widget.RadioButton box = new android.widget.RadioButton(context);
         box.setMinHeight(dp(44));
         box.setText(text);
         box.setTextColor(primaryTextColor);
@@ -2599,8 +2759,8 @@ final class HostConfigPanel {
                 boolean anyChecked = false;
                 for (int i = 0; i < group.getChildCount(); i++) {
                     View sibling = group.getChildAt(i);
-                    if (sibling instanceof android.widget.CheckBox
-                            && ((android.widget.CheckBox) sibling).isChecked()) {
+                    if (sibling instanceof android.widget.RadioButton
+                            && ((android.widget.RadioButton) sibling).isChecked()) {
                         anyChecked = true;
                         break;
                     }
@@ -2612,8 +2772,8 @@ final class HostConfigPanel {
             }
             for (int i = 0; i < group.getChildCount(); i++) {
                 View sibling = group.getChildAt(i);
-                if (sibling instanceof android.widget.CheckBox && sibling != box) {
-                    ((android.widget.CheckBox) sibling).setChecked(false);
+                if (sibling instanceof android.widget.RadioButton && sibling != box) {
+                    ((android.widget.RadioButton) sibling).setChecked(false);
                 }
             }
         });
@@ -2623,44 +2783,103 @@ final class HostConfigPanel {
         ));
     }
 
-    private void checkTaggedBox(LinearLayout group, Object value) {
+    private void checkTaggedChoice(LinearLayout group, Object value) {
         if (group == null) {
             return;
         }
-        boolean matched = false;
+        View target = null;
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
-            if (!(child instanceof android.widget.CheckBox)) {
+            if (!(child instanceof android.widget.RadioButton)) {
                 continue;
             }
             Object tag = child.getTag();
-            boolean hit = value == null ? tag == null : value.equals(tag);
-            ((android.widget.CheckBox) child).setChecked(hit);
-            matched = matched || hit;
+            if (value == null ? tag == null : value.equals(tag)) {
+                target = child;
+                break;
+            }
         }
-        if (!matched && group.getChildCount() > 0 && group.getChildAt(0) instanceof android.widget.CheckBox) {
-            ((android.widget.CheckBox) group.getChildAt(0)).setChecked(true);
+        if (target == null && group.getChildCount() > 0
+                && group.getChildAt(0) instanceof android.widget.RadioButton) {
+            target = group.getChildAt(0);
+        }
+        if (target != null) {
+            ((android.widget.RadioButton) target).setChecked(true);
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child instanceof android.widget.RadioButton && child != target) {
+                    ((android.widget.RadioButton) child).setChecked(false);
+                }
+            }
+        }
+    }
+
+    private void pairBareChoices(LinearLayout group) {
+        // Pairs consecutive RadioButtons into 2-column rows; a
+        // leftover gets an empty spacer so it sits in the left
+        // column, exactly like the HTML reference grid.
+        try {
+            if (group == null) {
+                return;
+            }
+            java.util.ArrayList<View> items = new java.util.ArrayList<>();
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child instanceof android.widget.RadioButton) {
+                    items.add(child);
+                }
+            }
+            for (int i = 0; i + 1 < items.size(); i += 2) {
+                View first = items.get(i);
+                View second = items.get(i + 1);
+                int index = group.indexOfChild(first);
+                if (index < 0) {
+                    continue;
+                }
+                group.removeView(first);
+                group.removeView(second);
+                LinearLayout pair = new LinearLayout(context);
+                pair.setOrientation(LinearLayout.HORIZONTAL);
+                pair.addView(first, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                pair.addView(second, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                group.addView(pair, index, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            if (items.size() % 2 == 1) {
+                View last = items.get(items.size() - 1);
+                int index = group.indexOfChild(last);
+                if (index >= 0) {
+                    group.removeView(last);
+                    LinearLayout pair = new LinearLayout(context);
+                    pair.setOrientation(LinearLayout.HORIZONTAL);
+                    pair.addView(last, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                    pair.addView(new View(context), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                    group.addView(pair, index, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+            }
+        } catch (Throwable ignored) {
         }
     }
 
     private String selectedLanguageTag() {
-        Object tag = selectedBoxTag(languageGroup);
+        Object tag = selectedChoiceTag(languageGroup);
         return tag instanceof String ? (String) tag : FilterConfig.APP_LANGUAGE_SYSTEM;
     }
 
     private FilterConfig.Action selectedAction() {
-        Object tag = selectedBoxTag(actionGroup);
+        Object tag = selectedChoiceTag(actionGroup);
         return tag instanceof FilterConfig.Action ? (FilterConfig.Action) tag : FilterConfig.Action.HIDE;
     }
 
-    private Object selectedBoxTag(LinearLayout group) {
+    private Object selectedChoiceTag(LinearLayout group) {
         if (group == null) {
             return null;
         }
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
-            if (child instanceof android.widget.CheckBox
-                    && ((android.widget.CheckBox) child).isChecked()) {
+            if (child instanceof android.widget.RadioButton
+                    && ((android.widget.RadioButton) child).isChecked()) {
                 return child.getTag();
             }
         }
