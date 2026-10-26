@@ -69,6 +69,7 @@ final class TgProxyManager {
         int tested = 0;
         int availableCount = 0;
         int imported = 0;
+        int addedToHost = 0;
         FilterConfig.ProxyEntry fastest;
         boolean switched = false;
         String error = "";
@@ -762,10 +763,77 @@ final class TgProxyManager {
         updated.proxyLastRefreshMs = System.currentTimeMillis();
         updated.updatedAtEpochMs = System.currentTimeMillis();
         result.updated = updated;
+        // Build #41: until now only the single fastest proxy ever
+        // reached Conso's own proxy list (applyToHost); every other
+        // scanned proxy lived only in the module config, so Conso's
+        // proxy management never showed them. When auto-add is on,
+        // sync every tested-good entry into the host list (deduped
+        // by address+port, host version wins). This never changes
+        // the currently used proxy; switching to fastest stays a
+        // separate step below, gated by both switches as before.
+        if (updated.proxyAutoAdd) {
+            result.addedToHost = syncAvailableToHost(context, available);
+        }
         if (updated.proxyAutoAdd && updated.proxyAutoSwitch && result.fastest != null) {
             result.switched = applyToHost(context, result.fastest);
         }
         return result;
+    }
+
+    /** Add every tested-good entry to Conso's own proxy list, so
+     * they show up in Conso's proxy management, not just in the
+     * module's list. Returns how many were newly added. Never
+     * touches currentProxy or the live connection: picking the
+     * fastest stays with applyToHost. All reflection, all failures
+     * are silent 0 so a host API change never crashes refresh. */
+    static int syncAvailableToHost(Context context, List<FilterConfig.ProxyEntry> available) {
+        if (context == null || available == null || available.isEmpty()) {
+            return 0;
+        }
+        try {
+            ClassLoader cl = context.getClassLoader();
+            Class<?> sharedConfig = Class.forName("org.telegram.messenger.SharedConfig", false, cl);
+            Class<?> proxyInfoClass = Class.forName("org.telegram.messenger.SharedConfig$ProxyInfo", false, cl);
+            Method load = sharedConfig.getDeclaredMethod("loadProxyList");
+            load.setAccessible(true);
+            load.invoke(null);
+            java.util.Set<String> hostKeys = new java.util.HashSet<>();
+            for (FilterConfig.ProxyEntry hostEntry : importHostProxies(context)) {
+                if (hostEntry != null && hostEntry.address != null) {
+                    hostKeys.add(hostEntry.address.toLowerCase(java.util.Locale.ROOT) + ":" + hostEntry.port);
+                }
+            }
+            Method addProxy = sharedConfig.getDeclaredMethod("addProxy", proxyInfoClass);
+            addProxy.setAccessible(true);
+            java.lang.reflect.Constructor<?> ctor = proxyInfoClass.getDeclaredConstructor(
+                    String.class, int.class, String.class, String.class, String.class);
+            ctor.setAccessible(true);
+            int added = 0;
+            for (FilterConfig.ProxyEntry entry : available) {
+                if (entry == null || entry.address == null) {
+                    continue;
+                }
+                String key = entry.address.toLowerCase(java.util.Locale.ROOT) + ":" + entry.port;
+                if (hostKeys.contains(key)) {
+                    continue;
+                }
+                Object info = ctor.newInstance(entry.address, entry.port,
+                        entry.username == null ? "" : entry.username,
+                        entry.password == null ? "" : entry.password,
+                        entry.secret);
+                addProxy.invoke(null, info);
+                hostKeys.add(key);
+                added++;
+            }
+            if (added > 0) {
+                Method save = sharedConfig.getDeclaredMethod("saveProxyList");
+                save.setAccessible(true);
+                save.invoke(null);
+            }
+            return added;
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 
     /** Write one proxy into Conso's own proxy list and make it current.

@@ -586,7 +586,7 @@ final class HostConfigPanel {
                         updateProxySummary();
                         String msg = result.error != null && !result.error.isEmpty() && result.fetched == 0
                                 ? t("刷新失败（来源不可用），已保留旧列表", "Refresh failed (source unavailable), old list kept")
-                                : t("刷新完成：抓到 " + result.fetched + " 个（文件夹 " + result.folderFetched + " 个），测通 " + result.availableCount + " 个，新进 " + result.imported + " 个" + (result.switched && result.fastest != null ? "，已切到最快 " + result.fastest.display() + "（" + result.fastest.pingMs + " ms）" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "；" + result.folderDiag : ""), "Refresh done: fetched " + result.fetched + " (folder " + result.folderFetched + "), available " + result.availableCount + ", newly imported " + result.imported + (result.switched && result.fastest != null ? ", switched to fastest " + result.fastest.display() + " (" + result.fastest.pingMs + " ms)" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "; " + result.folderDiag : ""));
+                                : t("刷新完成：抓到 " + result.fetched + " 个（文件夹 " + result.folderFetched + " 个），测通 " + result.availableCount + " 个，新进 " + result.imported + " 个" + (result.addedToHost > 0 ? "，已同步到客户端 " + result.addedToHost + " 个" : "") + (result.switched && result.fastest != null ? "，已切到最快 " + result.fastest.display() + "（" + result.fastest.pingMs + " ms）" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "；" + result.folderDiag : ""), "Refresh done: fetched " + result.fetched + " (folder " + result.folderFetched + "), available " + result.availableCount + ", newly imported " + result.imported + (result.addedToHost > 0 ? ", synced to client " + result.addedToHost : "") + (result.switched && result.fastest != null ? ", switched to fastest " + result.fastest.display() + " (" + result.fastest.pingMs + " ms)" : "") + (result.folderFetched == 0 && result.folderDiag != null && !result.folderDiag.isEmpty() ? "; " + result.folderDiag : ""));
                         Toast.makeText(context, msg, Toast.LENGTH_LONG).show();
                     } catch (Throwable ignored) {
                     } finally {
@@ -693,7 +693,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -780,7 +780,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -947,7 +947,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1099,7 +1099,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1410,7 +1410,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1476,7 +1476,7 @@ final class HostConfigPanel {
             }
             LinearLayout dialogView = new LinearLayout(context);
             dialogView.setOrientation(LinearLayout.VERTICAL);
-            dialogView.setPadding(dp(16), dp(16), dp(16), dp(16));
+            dialogView.setPadding(dp(20), dp(20), dp(20), dp(20)); // Build #41: wider dialog side margins
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
@@ -1564,8 +1564,11 @@ final class HostConfigPanel {
                 box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
                 box.setTag(entry);
                 boxes.add(box);
-                proxyListContainer.addView(box, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                boxParams.topMargin = dp(4); // Build #41: row breathing room
+                boxParams.bottomMargin = dp(4);
+                proxyListContainer.addView(box, boxParams);
             }
             dialogView.addView(proxyScroll, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -1931,27 +1934,27 @@ final class HostConfigPanel {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        // Build #34: header text aligns with row text (group inset
-        // 16 + row padding 16 = 32), not with the group edge.
-        headerParams.leftMargin = dp(32);
-        headerParams.rightMargin = dp(32);
+        // Build #41: wider side margins (group inset 24 + row
+        // padding 16 = 40), so groups breathe more on both sides.
+        headerParams.leftMargin = dp(40);
+        headerParams.rightMargin = dp(40);
         headerParams.topMargin = dp(20);
         headerParams.bottomMargin = dp(6);
         parent.addView(header, headerParams);
         LinearLayout group = new LinearLayout(context);
         group.setOrientation(LinearLayout.VERTICAL);
-        // Build #34: inset glass group, not a full-width flat slab.
-        // 16dp side inset on each side keeps the content width in
-        // proportion on a wide phone screen and gives the glass
-        // card a visible edge against the screen background.
+        // Build #41: inset glass group, not a full-width flat slab.
+        // 24dp side inset on each side (was 16dp) keeps the content
+        // width in proportion on a wide phone screen and gives the
+        // glass card more air on both sides.
         group.setBackground(DialogTheme.glassBackground(
                 DialogTheme.resolve(context), context));
         LinearLayout.LayoutParams groupParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        groupParams.leftMargin = dp(16);
-        groupParams.rightMargin = dp(16);
+        groupParams.leftMargin = dp(24);
+        groupParams.rightMargin = dp(24);
         // Build #33: a gap after each group, so groups read as
         // separate blocks instead of one continuous sheet.
         groupParams.bottomMargin = dp(12);
@@ -2105,7 +2108,7 @@ final class HostConfigPanel {
     private void showKeywordEditorDialog(EditText hidden, TextView summary) {
         LinearLayout dialogView = new LinearLayout(context);
         dialogView.setOrientation(LinearLayout.VERTICAL);
-        dialogView.setPadding(dp(16), dp(16), dp(16), dp(12));
+        dialogView.setPadding(dp(20), dp(20), dp(20), dp(12)); // Build #41: wider dialog side margins
         try {
             // Build #34: dialogView stays transparent; the glass card is
             // the dialog window background set by styleAlertDialog after show(),
@@ -2145,7 +2148,7 @@ final class HostConfigPanel {
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
-            input.setPadding(dp(12), dp(10), dp(12), dp(10));
+            input.setPadding(dp(16), dp(12), dp(16), dp(12)); // Build #41: roomier input fields
         } catch (Throwable ignored) {}
         input.setMinLines(3);
         input.setMaxLines(6);
@@ -2276,7 +2279,7 @@ final class HostConfigPanel {
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.07f), dp(10), strokeColor));
-            input.setPadding(dp(12), dp(10), dp(12), dp(10));
+            input.setPadding(dp(16), dp(12), dp(16), dp(12)); // Build #41: roomier input fields
         } catch (Throwable ignored) {}
         input.setMinLines(1);
         input.setMaxLines(4);
