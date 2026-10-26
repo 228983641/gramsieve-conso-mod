@@ -4868,15 +4868,15 @@ final class TelegramHookInstaller {
             chatRadio.setEnabled(smartDialogId != 0L);
             dialogView.addView(chatRadio, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            globalRadio.setOnCheckedChangeListener((button, checked) -> {
-                if (checked) {
+            globalRadio.setOnCheckedChangeListener((button, isGlobalChecked) -> {
+                if (isGlobalChecked) {
                     chatRadio.setChecked(false);
                 } else if (!chatRadio.isChecked()) {
                     globalRadio.setChecked(true);
                 }
             });
-            chatRadio.setOnCheckedChangeListener((button, checked) -> {
-                if (checked) {
+            chatRadio.setOnCheckedChangeListener((button, isChatChecked) -> {
+                if (isChatChecked) {
                     globalRadio.setChecked(false);
                 } else if (!globalRadio.isChecked()) {
                     chatRadio.setChecked(true);

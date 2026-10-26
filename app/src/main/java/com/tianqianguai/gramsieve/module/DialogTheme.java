@@ -238,6 +238,17 @@ public final class DialogTheme {
             if (dialog.getWindow() != null) {
                 dialog.getWindow().setBackgroundDrawable(
                         glassBackground(colors, dialog.getContext()));
+                // Build #43: mark the glass as applied, so
+                // ensureGlassWindow (called afterwards) can tell a
+                // successfully styled window from one where styling
+                // failed partway. Window itself exposes no getter
+                // for its background drawable, hence this tag.
+                try {
+                    if (dialog.getWindow().getDecorView() != null) {
+                        dialog.getWindow().getDecorView().setTag("gramsieve_glass");
+                    }
+                } catch (Throwable ignored) {
+                }
                 // Build #34: real backdrop blur for dialog windows on
                 // Android 12+. The blur radius is in pixels.
                 if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -282,7 +293,8 @@ public final class DialogTheme {
             if (dialog == null || dialog.getWindow() == null || colors == null) {
                 return;
             }
-            if (dialog.getWindow().getBackground() instanceof android.graphics.drawable.GradientDrawable) {
+            Object glassTag = dialog.getWindow().getDecorView().getTag();
+            if ("gramsieve_glass".equals(glassTag)) {
                 return;
             }
             android.graphics.drawable.GradientDrawable drawable =

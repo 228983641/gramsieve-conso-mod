@@ -1750,7 +1750,7 @@ final class HostConfigPanel {
         }
 
         addDivider(card);
-        Switch advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
+        android.widget.CheckBox advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
         // UI sync (Build #15): advanced rules must not look lost on reopen.
         // If any advanced rule exists (any non-TEXT target, or TEXT regex),
         // open the panel with Advanced already expanded.
