@@ -1666,7 +1666,7 @@ final class HostConfigPanel {
             android.widget.ScrollView proxyScroll = new android.widget.ScrollView(context);
             proxyScroll.addView(proxyListContainer, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            java.util.List<IosSwitchView> boxes = new java.util.ArrayList<>();
+            java.util.List<android.widget.CheckBox> boxes = new java.util.ArrayList<>();
             java.util.List<FilterConfig.ProxyEntry> entries = proxyWorkingEntries == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(proxyWorkingEntries);
             if (entries.isEmpty()) {
                 TextView empty = new TextView(context);
@@ -1678,7 +1678,7 @@ final class HostConfigPanel {
             FilterConfig refConfig = baseConfig.deepCopy().sanitize();
             applyProxyUiToConfig(refConfig);
             for (FilterConfig.ProxyEntry entry : entries) {
-                IosSwitchView box = new IosSwitchView(context);
+                android.widget.CheckBox box = new android.widget.CheckBox(context);
                 // Build #40: stop labelling every non-good entry "失效".
                 // Untested entries are not dead, they just never got a
                 // test slot (max 20 per refresh), and must read as 未测.
@@ -1722,7 +1722,7 @@ final class HostConfigPanel {
             LinearLayout buttonRow = new LinearLayout(context);
             buttonRow.setOrientation(LinearLayout.HORIZONTAL);
             Button selectAll = toolbarButton(t("全选", "Select all"));
-            selectAll.setOnClickListener(v -> { for (IosSwitchView b : boxes) b.setChecked(true); });
+            selectAll.setOnClickListener(v -> { for (android.widget.CheckBox b : boxes) b.setChecked(true); });
             buttonRow.addView(selectAll);
             Button deleteSelected = toolbarButton(t("删除所选", "Delete selected"));
             deleteSelected.setOnClickListener(v -> {
@@ -2773,67 +2773,6 @@ final class HostConfigPanel {
     // squeezed, sections and inputs break a run, and full-width
     // rows stay full-width. Widths are weights, never fixed dp, so
     // nothing can overflow a narrow screen; longer labels wrap.
-    private void pairCheckboxRows(LinearLayout group) {
-        try {
-            if (group == null) {
-                return;
-            }
-            java.util.ArrayList<View> children = new java.util.ArrayList<>();
-            for (int i = 0; i < group.getChildCount(); i++) {
-                View child = group.getChildAt(i);
-                // Build #45: hidden explanations must not break a
-                // grid run (a row, its hidden info, then the next
-                // row still pair up).
-                if (child.getVisibility() != View.GONE) {
-                    children.add(child);
-                }
-            }
-            for (int i = 0; i + 1 < children.size(); i++) {
-                View first = children.get(i);
-                View second = children.get(i + 1);
-                IosSwitchView firstBox = checkboxRowBox(first);
-                IosSwitchView secondBox = checkboxRowBox(second);
-                if (firstBox == null || secondBox == null) {
-                    continue;
-                }
-                CharSequence firstText = firstBox.getText();
-                CharSequence secondText = secondBox.getText();
-                if (firstText == null || secondText == null
-                        || firstText.length() > 10 || secondText.length() > 10) {
-                    continue;
-                }
-                int index = group.indexOfChild(first);
-                if (index < 0) {
-                    continue;
-                }
-                group.removeView(first);
-                group.removeView(second);
-                // Build #44: if only one side of the pair has a
-                // visible "?", give the other side an invisible
-                // placeholder of the same size, so the two columns
-                // stay aligned instead of one hanging a lone "?".
-                TextView firstHelp = rowHelpButton(first);
-                TextView secondHelp = rowHelpButton(second);
-                if (firstHelp != null && secondHelp != null) {
-                    if (firstHelp.getVisibility() == View.VISIBLE && secondHelp.getVisibility() == View.GONE) {
-                        secondHelp.setVisibility(View.INVISIBLE);
-                    } else if (secondHelp.getVisibility() == View.VISIBLE && firstHelp.getVisibility() == View.GONE) {
-                        firstHelp.setVisibility(View.INVISIBLE);
-                    }
-                }
-                LinearLayout pair = new LinearLayout(context);
-                pair.setOrientation(LinearLayout.HORIZONTAL);
-                pair.addView(first, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                pair.addView(second, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                group.addView(pair, index, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                children.set(i, pair);
-                children.set(i + 1, pair);
-                i++;
-            }
-        } catch (Throwable ignored) {
-        }
-    }
 
     private TextView rowHelpButton(View row) {
         try {
@@ -2852,24 +2791,6 @@ final class HostConfigPanel {
         return null;
     }
 
-    private IosSwitchView checkboxRowBox(View row) {
-        try {
-            if (row instanceof IosSwitchView) {
-                return (IosSwitchView) row;
-            }
-            if (!(row instanceof LinearLayout) || !"gramsieve_row".equals(row.getTag())) {
-                return null;
-            }
-            LinearLayout container = (LinearLayout) row;
-            for (int i = 0; i < container.getChildCount(); i++) {
-                if (container.getChildAt(i) instanceof IosSwitchView) {
-                    return (IosSwitchView) container.getChildAt(i);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
-    }
 
     private LinearLayout findCardBody(LinearLayout card) {
         if (card == null) {
