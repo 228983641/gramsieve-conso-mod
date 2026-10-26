@@ -346,7 +346,7 @@ final class HostConfigPanel {
         // background fills the screen, groups are full-width solid
         // blocks, so the container has no horizontal padding.
         container.setBackgroundColor(cardColor);
-        container.setPadding(dp(16), dp(16), dp(16), dp(24));
+        container.setPadding(dp(12), dp(8), dp(12), dp(16));
         scrollView.addView(container, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -603,7 +603,7 @@ final class HostConfigPanel {
         proxyFolderInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             proxyFolderInput.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
-            proxyFolderInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+            proxyFolderInput.setPadding(dp(12), dp(8), dp(12), dp(8));
         } catch (Throwable ignored) {}
         proxyFolderInput.setMinLines(1);
         proxyFolderInput.setMaxLines(1);
@@ -2080,7 +2080,7 @@ final class HostConfigPanel {
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(dp(4), dp(20), dp(4), dp(8));
+        headerRow.setPadding(dp(4), dp(12), dp(4), dp(4));
         TextView titleView = new TextView(context);
         titleView.setText(title);
         titleView.setTextColor(secondaryTextColor);
@@ -2099,10 +2099,14 @@ final class HostConfigPanel {
         cardBg.setCornerRadius(dp(12));
         cardBg.setColor(backgroundColor);
         card.setBackground(cardBg);
+        // Build #47: clip children to the rounded card outline, so
+        // no row, status bar or button can draw past the card's
+        // own background (user: text must not exceed the card).
+        try { card.setClipToOutline(true); } catch (Throwable ignored) {}
         try { card.setElevation(dp(1)); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.bottomMargin = dp(12);
+        cardParams.bottomMargin = dp(8);
         parent.addView(card, cardParams);
         LinearLayout body = new LinearLayout(context);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -2262,11 +2266,11 @@ final class HostConfigPanel {
         TextView help = new TextView(context);
         help.setText("?");
         help.setTextColor(accentColor);
-        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         help.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         help.setGravity(Gravity.CENTER);
         help.setMinWidth(dp(32));
-        help.setPadding(dp(8), dp(4), dp(8), dp(4));
+        help.setPadding(dp(4), dp(4), dp(4), dp(4));
         help.setVisibility(View.GONE);
         return help;
     }
@@ -2374,8 +2378,8 @@ final class HostConfigPanel {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setTag("gramsieve_row");
-        row.setPadding(dp(14), dp(13), dp(14), dp(13));
-        row.setMinimumHeight(dp(54));
+        row.setPadding(dp(12), dp(8), dp(12), dp(8));
+        row.setMinimumHeight(dp(44));
         LinearLayout labelBox = new LinearLayout(context);
         labelBox.setOrientation(LinearLayout.VERTICAL);
         labelBox.setTag("gramsieve_row_labelbox");
@@ -2383,6 +2387,8 @@ final class HostConfigPanel {
         label.setText(text);
         label.setTextColor(primaryTextColor);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        label.setMaxLines(2);
+        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         labelBox.addView(label, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         row.addView(labelBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -2410,6 +2416,8 @@ final class HostConfigPanel {
                     d.setText(desc);
                     d.setTextColor(secondaryTextColor);
                     d.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+                    d.setMaxLines(2);
+                    d.setEllipsize(android.text.TextUtils.TruncateAt.END);
                     ((LinearLayout) child).addView(d, new LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return;
@@ -2430,7 +2438,9 @@ final class HostConfigPanel {
         try {
             button.setBackground(rounded(0xFFE5E5EA, dp(10), 0xFFE5E5EA));
         } catch (Throwable ignored) {}
-        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setPadding(dp(12), dp(10), dp(12), dp(10));
+        button.setMaxLines(1);
+        button.setEllipsize(android.text.TextUtils.TruncateAt.END);
         button.setMinHeight(dp(40));
         return button;
     }
@@ -2555,7 +2565,7 @@ final class HostConfigPanel {
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
-            input.setPadding(dp(12), dp(10), dp(12), dp(10));
+            input.setPadding(dp(12), dp(8), dp(12), dp(8));
         } catch (Throwable ignored) {}
         input.setMinLines(3);
         input.setMaxLines(6);
@@ -2753,7 +2763,7 @@ final class HostConfigPanel {
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
-            input.setPadding(dp(12), dp(10), dp(12), dp(10));
+            input.setPadding(dp(12), dp(8), dp(12), dp(8));
         } catch (Throwable ignored) {}
         input.setMinLines(1);
         input.setMaxLines(4);
