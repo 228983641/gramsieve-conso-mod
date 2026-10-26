@@ -70,6 +70,7 @@ final class TgProxyManager {
         int availableCount = 0;
         int imported = 0;
         int addedToHost = 0;
+        int prunedFromHost = 0;
         FilterConfig.ProxyEntry fastest;
         boolean switched = false;
         String error = "";
@@ -78,6 +79,8 @@ final class TgProxyManager {
     private static final Pattern PROXY_LINK = Pattern.compile(
             "(?:https://t\\.me/proxy|tg://proxy)\\?([^\\s\"'<>]+)");
     private static volatile long lastAutoAttemptMs = 0L;
+    private static final java.util.concurrent.atomic.AtomicBoolean autoRefreshRunning =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
     static volatile String lastFolderScanDiag = "";
 
     static boolean isExpired(FilterConfig.ProxyEntry entry, FilterConfig config) {
@@ -723,6 +726,10 @@ final class TgProxyManager {
             return Long.compare(pa, pb);
         });
         int toTest = Math.min(20, merged.size());
+        // Build #42: remember exactly which entries this round
+        // tested dead, so the host prune below only removes
+        // proven-dead entries, never untested ones.
+        java.util.Set<String> testedDeadHostKeys = new java.util.HashSet<>();
         for (int i = 0; i < toTest; i++) {
             FilterConfig.ProxyEntry entry = merged.get(i);
             long ping = testProxy(context, entry);
@@ -733,6 +740,9 @@ final class TgProxyManager {
             } else {
                 entry.available = false;
                 entry.pingMs = -1L;
+                if (entry.address != null) {
+                    testedDeadHostKeys.add(entry.address.toLowerCase(java.util.Locale.ROOT) + ":" + entry.port);
+                }
             }
             result.tested++;
         }
@@ -776,6 +786,36 @@ final class TgProxyManager {
         }
         if (updated.proxyAutoAdd && updated.proxyAutoSwitch && result.fastest != null) {
             result.switched = applyToHost(context, result.fastest);
+        }
+        // Build #42: prune the client list. Only entries this round
+        // actually tested dead, that are module-managed (still in
+        // the merged module list), and that are NOT the currently
+        // used proxy after any switch above, are removed from
+        // Conso's own list. Host-only entries the user added by
+        // hand in Conso settings are never touched, and untested
+        // entries stay until their own test round proves them dead.
+        if (updated.proxyAutoAdd && !testedDeadHostKeys.isEmpty()) {
+            String currentKey = currentHostProxyKey(context);
+            java.util.Set<String> moduleHostKeys = new java.util.HashSet<>();
+            for (FilterConfig.ProxyEntry entry : merged) {
+                if (entry != null && entry.address != null) {
+                    moduleHostKeys.add(entry.address.toLowerCase(java.util.Locale.ROOT) + ":" + entry.port);
+                }
+            }
+            for (String deadKey : testedDeadHostKeys) {
+                if (!moduleHostKeys.contains(deadKey) || deadKey.equals(currentKey)) {
+                    continue;
+                }
+                for (FilterConfig.ProxyEntry entry : merged) {
+                    if (entry != null && entry.address != null
+                            && (entry.address.toLowerCase(java.util.Locale.ROOT) + ":" + entry.port).equals(deadKey)) {
+                        if (deleteFromHost(context, entry)) {
+                            result.prunedFromHost++;
+                        }
+                        break;
+                    }
+                }
+            }
         }
         return result;
     }
@@ -833,6 +873,38 @@ final class TgProxyManager {
             return added;
         } catch (Throwable ignored) {
             return 0;
+        }
+    }
+
+    /** Address:port of Conso's currently used proxy, or null.
+     * Used by the prune step so a dead current proxy is never
+     * pulled out from under a live connection. */
+    static String currentHostProxyKey(Context context) {
+        try {
+            if (context == null) {
+                return null;
+            }
+            ClassLoader cl = context.getClassLoader();
+            Class<?> sharedConfig = Class.forName("org.telegram.messenger.SharedConfig", false, cl);
+            Method load = sharedConfig.getDeclaredMethod("loadProxyList");
+            load.setAccessible(true);
+            load.invoke(null);
+            java.lang.reflect.Field currentField = sharedConfig.getDeclaredField("currentProxy");
+            currentField.setAccessible(true);
+            Object current = currentField.get(null);
+            if (current == null) {
+                return null;
+            }
+            Class<?> proxyInfoClass = Class.forName("org.telegram.messenger.SharedConfig$ProxyInfo", false, cl);
+            java.lang.reflect.Field addressField = proxyInfoClass.getDeclaredField("address");
+            addressField.setAccessible(true);
+            java.lang.reflect.Field portField = proxyInfoClass.getDeclaredField("port");
+            portField.setAccessible(true);
+            String address = (String) addressField.get(current);
+            int port = (Integer) portField.get(current);
+            return address == null ? null : address.toLowerCase(java.util.Locale.ROOT) + ":" + port;
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
@@ -955,6 +1027,9 @@ final class TgProxyManager {
                 return;
             }
             lastAutoAttemptMs = now;
+            if (!autoRefreshRunning.compareAndSet(false, true)) {
+                return;
+            }
             new Thread(() -> {
                 try {
                     Result result = refresh(context, config);
@@ -962,6 +1037,8 @@ final class TgProxyManager {
                         callback.onDone(result);
                     }
                 } catch (Throwable ignored) {
+                } finally {
+                    autoRefreshRunning.set(false);
                 }
             }).start();
         } catch (Throwable ignored) {

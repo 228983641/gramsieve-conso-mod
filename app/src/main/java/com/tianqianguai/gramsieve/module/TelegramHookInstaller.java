@@ -8200,6 +8200,47 @@ final class TelegramHookInstaller {
         }
     }
 
+    private volatile boolean proxyLoopStarted = false;
+
+    // Build #42: the auto-maintenance loop. List-open refresh alone
+    // only fires when the user opens the chat list; while Conso
+    // stays alive (even in the background) this hourly tick checks
+    // whether the user's refresh interval has passed and runs the
+    // same refresh, so scanning, testing, fastest switching,
+    // client sync and dead pruning all happen on schedule without
+    // the user tapping anything. If Conso is fully killed the loop
+    // dies with the process, and the next list open catches up.
+    private void startProxyLoop(final Context appContext) {
+        if (proxyLoopStarted || configProvider == null) {
+            return;
+        }
+        proxyLoopStarted = true;
+        try {
+            java.util.concurrent.ScheduledExecutorService loop =
+                    java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                        Thread thread = new Thread(r, "GramSieve-ProxyLoop");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+            loop.scheduleAtFixedRate(() -> {
+                try {
+                    FilterConfig config = configProvider.getConfig(appContext);
+                    TgProxyManager.maybeAutoRefresh(appContext, config, result -> {
+                        try {
+                            if (result != null && result.updated != null) {
+                                saveUpdatedConfig(appContext, result.updated);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    });
+                } catch (Throwable ignored) {
+                }
+            }, 60L, 60L, java.util.concurrent.TimeUnit.MINUTES);
+        } catch (Throwable ignored) {
+            proxyLoopStarted = false;
+        }
+    }
+
     private void maybeAutoRefreshProxies(Object host) {
         try {
             if (host == null || configProvider == null) {
@@ -8220,6 +8261,7 @@ final class TelegramHookInstaller {
             }
             final Context appContext = hostContext.getApplicationContext() != null
                     ? hostContext.getApplicationContext() : hostContext;
+            startProxyLoop(appContext);
             FilterConfig config = configProvider.getConfig(appContext);
             TgProxyManager.maybeAutoRefresh(appContext, config, result -> {
                 try {
