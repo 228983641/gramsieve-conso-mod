@@ -6466,48 +6466,70 @@ final class TelegramHookInstaller {
                                 Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
                                 return;
                             }
+                            // Build #40: addDialogToFolder is the host's
+                            // own official call, but it applies
+                            // asynchronously (server round-trip), so an
+                            // immediate re-read always missed it and the
+                            // old code then wrote the membership a second
+                            // time itself — two writers, one official and
+                            // one local, fighting over the same filter.
+                            // Trust the host call first; verify after a
+                            // delay, and only then fall back, at most
+                            // once, on a freshly re-read filter object.
                             Reflect.invokeIfExists(controller, "addDialogToFolder",
                                     new Class<?>[]{long.class, int.class, int.class, long.class},
                                     dialogId, filterId, 0, 0L);
-                            boolean verified = false;
-                            try {
-                                Object fresh = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
-                                if (fresh instanceof List) {
-                                    for (Object next : (List<?>) fresh) {
-                                        if (Reflect.asInt(Reflect.field(next, "id"), -999) == filterId) {
-                                            if (folderMemberDialogIds(next).contains(dialogId)) {
-                                                verified = true;
+                            final Object verifyController = controller;
+                            final long verifyDialogId = dialogId;
+                            final int verifyFilterId = filterId;
+                            final String verifyFolderName = items[which];
+                            final android.content.Context verifyContext = context;
+                            final android.app.Activity verifyActivity = activity;
+                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                try {
+                                    boolean verified = folderHasDialog(verifyController, verifyFilterId, verifyDialogId);
+                                    if (!verified) {
+                                        try {
+                                            Object freshFilters = Reflect.invokeIfExists(verifyController, "getDialogFilters", new Class<?>[0]);
+                                            if (freshFilters instanceof List) {
+                                                for (Object next : (List<?>) freshFilters) {
+                                                    if (Reflect.asInt(Reflect.field(next, "id"), -999) == verifyFilterId) {
+                                                        Object members = Reflect.field(next, "alwaysShow");
+                                                        if (!(members instanceof List)) {
+                                                            members = Reflect.field(next, "dialogs");
+                                                        }
+                                                        if (members instanceof List && !((List<?>) members).contains(verifyDialogId)) {
+                                                            ((List) members).add(verifyDialogId);
+                                                        }
+                                                        Object neverShow = Reflect.field(next, "neverShow");
+                                                        if (neverShow instanceof List) {
+                                                            ((List<?>) neverShow).remove(verifyDialogId);
+                                                        }
+                                                        Reflect.invokeIfExists(verifyController, "updateFilterDialogs",
+                                                                new Class<?>[]{next.getClass()}, next);
+                                                        Reflect.invokeIfExists(verifyController, "onFilterUpdate",
+                                                                new Class<?>[]{next.getClass()}, next);
+                                                        break;
+                                                    }
+                                                }
                                             }
+                                        } catch (Throwable ignored) {
+                                        }
+                                        verified = folderHasDialog(verifyController, verifyFilterId, verifyDialogId);
+                                        info("AddToFolder: host did not apply, fallback written, verified=" + verified);
+                                    } else {
+                                        info("AddToFolder: host applied, verified=true folderId=" + verifyFilterId);
+                                    }
+                                    if (verifyActivity != null && !verifyActivity.isFinishing()) {
+                                        if (verified) {
+                                            Toast.makeText(verifyContext, localizedAddedToFolder(verifyContext, verifyFolderName), Toast.LENGTH_SHORT).show();
+                                        } else {
+                                            Toast.makeText(verifyContext, localizedAddToFolderFailed(verifyContext), Toast.LENGTH_SHORT).show();
                                         }
                                     }
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                            if (!verified) {
-                                try {
-                                    // Build #36: the fallback must write to
-                                    // the same membership list the host
-                                    // actually reads (alwaysShow), or the
-                                    // added chat never shows in the folder.
-                                    Object members = Reflect.field(filter, "alwaysShow");
-                                    if (!(members instanceof List)) {
-                                        members = Reflect.field(filter, "dialogs");
-                                    }
-                                    if (members instanceof List && !((List<?>) members).contains(dialogId)) {
-                                        ((List) members).add(dialogId);
-                                    }
-                                    Object neverShow = Reflect.field(filter, "neverShow");
-                                    if (neverShow instanceof List) {
-                                        ((List<?>) neverShow).remove(dialogId);
-                                    }
-                                    Reflect.invokeIfExists(controller, "updateFilterDialogs",
-                                            new Class<?>[]{filter.getClass()}, filter);
-                                    Reflect.invokeIfExists(controller, "onFilterUpdate",
-                                            new Class<?>[]{filter.getClass()}, filter);
                                 } catch (Throwable ignored) {
                                 }
-                            }
-                            Toast.makeText(context, localizedAddedToFolder(context, items[which]), Toast.LENGTH_SHORT).show();
+                            }, 2000L);
                         } catch (Throwable throwable) {
                             error("Add-to-folder failed", throwable);
                             Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
@@ -6523,6 +6545,21 @@ final class TelegramHookInstaller {
             error("Add-to-folder dialog failed", throwable);
             Toast.makeText(context, localizedAddToFolderFailed(context), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private boolean folderHasDialog(Object controller, int filterId, long dialogId) {
+        try {
+            Object fresh = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
+            if (fresh instanceof List) {
+                for (Object next : (List<?>) fresh) {
+                    if (Reflect.asInt(Reflect.field(next, "id"), -999) == filterId) {
+                        return folderMemberDialogIds(next).contains(dialogId);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
     private int resolveAddToFolderIcon(Context context) {
@@ -7665,7 +7702,9 @@ final class TelegramHookInstaller {
                                 }
                             } catch (Throwable ignored) {
                             }
-                            int categoryFilter = classifyFilterForCategory(currentClassifyCategory(), cfg);
+                            // Build #40: classify bar cancelled, so no
+                            // category filtering may hide chats either.
+                            int categoryFilter = 0;
                             if (!(cell instanceof View) || !cfg.showClassifyBar || categoryFilter == 0) {
                                 if (cell instanceof View) {
                                     ((View) cell).setVisibility(View.VISIBLE);
@@ -7899,6 +7938,23 @@ final class TelegramHookInstaller {
             Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
             if (!(filtersObj instanceof List)) {
                 info("FolderArchive: no filter list, sync skipped");
+                return;
+            }
+            // Build #40: when the list is (re)created, filters may
+            // briefly be empty; treating that as "everything left its
+            // folder" unarchives chats and then re-archives them on the
+            // next scan (seen 2026-10-26 09:41: folders=0, unarchive=1,
+            // then 141 re-archived). Skip without touching the baseline.
+            boolean anyUserFilter = false;
+            for (Object filter : (List<?>) filtersObj) {
+                String filterName0 = Reflect.asString(Reflect.field(filter, "name"));
+                if (filterName0 == null || !"ALL_CHATS".equalsIgnoreCase(filterName0.trim())) {
+                    anyUserFilter = true;
+                    break;
+                }
+            }
+            if (!anyUserFilter) {
+                info("FolderArchive: no user filters yet, sync skipped");
                 return;
             }
             Map<Long, Set<Integer>> current = new HashMap<>();
@@ -8250,21 +8306,13 @@ final class TelegramHookInstaller {
             }
             ViewGroup root = (ViewGroup) rootView;
             View existing = findViewWithTag(root, "gramsieve_classify_bar");
-            if (!currentEnhancementConfig().showClassifyBar) {
-                if (existing != null && existing.getParent() instanceof ViewGroup) {
-                    ((ViewGroup) existing.getParent()).removeView(existing);
-                }
-                info("ClassifyBar: show=off, removedExisting=" + (existing != null));
-                return;
+            // Build #40: classify bar cancelled — remove any bar left
+            // from an earlier session and never install a new one.
+            if (existing != null && existing.getParent() instanceof ViewGroup) {
+                ((ViewGroup) existing.getParent()).removeView(existing);
             }
-            if (existing != null) {
-                updateClassifyBarButtons((ViewGroup) existing);
-                info("ClassifyBar: existing bar, buttons refreshed");
-                return;
-            }
-            info("ClassifyBar: installing, host=" + (host == null ? "null" : host.getClass().getSimpleName())
-                    + " root=" + root.getClass().getSimpleName());
-            installClassifyBar(host, rootView);
+            info("ClassifyBar: cancelled in Build #40, removedExisting=" + (existing != null));
+            return;
         } catch (Throwable throwable) {
             error("ClassifyBar: sync failed", throwable);
         }
@@ -8287,6 +8335,15 @@ final class TelegramHookInstaller {
     }
 
     private void installClassifyBar(Object host, View root) {
+        // Build #40: the classify bar (All / Personal / Groups /
+        // Channels below the folder tabs) is cancelled per user
+        // request — it never installed reliably. The guard below is
+        // deliberately a runtime check, not a constant, so the
+        // retained body still compiles; it never runs.
+        if (root != null || root == null) {
+            info("ClassifyBar: cancelled in Build #40, install skipped");
+            return;
+        }
         try {
             if (!(root instanceof ViewGroup)) {
                 info("ClassifyBar: install aborted, root not a ViewGroup");

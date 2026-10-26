@@ -501,15 +501,12 @@ final class HostConfigPanel {
 
     private void buildDialogListCard(LinearLayout container) {
         LinearLayout card = addGroup(container, t("聊天列表", "Chat List"));
-        addInfo(card, t("只影响聊天列表的外观与筛选，不改动聊天内容与置顶本身。分类栏点“全部”即恢复全部聊天；关闭分类栏后，筛选即失效，重新打开聊天列表后生效。", "Only affects the chat list appearance and filtering, not chat content or pinning itself. Tapping All in the classify bar restores all chats; turning the bar off disables filtering after reopening the chat list."));
+        addInfo(card, t("只影响聊天列表的外观，不改动聊天内容与置顶本身。", "Only affects the chat list appearance, not chat content or pinning itself."));
         pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
-        classifyBarSwitch = addSwitch(card, t("显示自动分类栏（全部 / 个人 / 群聊 / 频道）", "Show auto-classify bar (All / Personal / Groups / Channels)"));
-        classifyBarSwitch.setChecked(baseConfig.showClassifyBar);
         autoArchiveFolderSwitch = addSwitch(card, t("文件夹聊天自动归档", "Auto-archive chats in folders"));
         autoArchiveFolderSwitch.setChecked(baseConfig.autoArchiveFolderChats);
         addInfo(card, t("进文件夹的聊天自动归档（主列表不再出现，只在文件夹和归档里看）；从所有文件夹移出后自动取消归档回到主列表。只动模块自己归档的聊天：你手动归档的聊天不会被自动取消归档，你手动取消归档的文件夹聊天也不会被重新归档（除非把它移出文件夹再加回来）。", "Chats in a folder are auto-archived (hidden from the main list, visible in the folder and in Archive); removed from all folders, they auto-unarchive back to the main list. Only chats this module archived are touched: a chat you archived manually is never auto-unarchived, and a folder chat you unarchived manually is not re-archived (unless you remove it from the folder and add it back)."));
-        addInfo(card, t("分类栏出现在文件夹栏下方，与文件夹分开；个人含机器人，群聊含普通群与超级群，频道为广播频道。", "The classify bar appears below the folder tabs, separate from folders; Personal includes bots, Groups include regular and supergroups, Channels are broadcast channels."));
     }
 
     private void buildAiCard(LinearLayout container) {
@@ -1492,7 +1489,7 @@ final class HostConfigPanel {
             dialogView.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView hint = new TextView(context);
-            hint.setText(t("勾选后点“删除所选”；“删除失效”会删掉所有过期或测不通的代理（过期按上面自定义的失效时间算）。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick and tap Delete selected; Delete expired removes all expired or unreachable proxies (expired per the custom expiry time above). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+            hint.setText(t("勾选后点“删除所选”；每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。“删除失效”只删测不通和已过期的，不删未测的。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick and tap Delete selected; Delete expired removes all expired or unreachable proxies (expired per the custom expiry time above). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             dialogView.addView(hint, new LinearLayout.LayoutParams(
@@ -1548,8 +1545,21 @@ final class HostConfigPanel {
             applyProxyUiToConfig(refConfig);
             for (FilterConfig.ProxyEntry entry : entries) {
                 android.widget.CheckBox box = new android.widget.CheckBox(context);
+                // Build #40: stop labelling every non-good entry "失效".
+                // Untested entries are not dead, they just never got a
+                // test slot (max 20 per refresh), and must read as 未测.
                 boolean expired = TgProxyManager.isExpired(entry, refConfig);
-                box.setText(entry.display() + "（" + (entry.available && !expired ? entry.pingMs + " ms" : t("失效", "expired")) + "）");
+                String proxyStatus;
+                if (entry.available && !expired) {
+                    proxyStatus = entry.pingMs + " ms";
+                } else if (entry.available) {
+                    proxyStatus = t("已过期", "expired");
+                } else if (entry.lastTestedMs > 0L) {
+                    proxyStatus = t("测不通", "unreachable");
+                } else {
+                    proxyStatus = t("未测", "untested");
+                }
+                box.setText(entry.display() + "（" + proxyStatus + "）");
                 box.setTextColor(primaryTextColor);
                 box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
                 box.setTag(entry);
@@ -1585,7 +1595,12 @@ final class HostConfigPanel {
                 java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
                 int deleted = 0;
                 for (FilterConfig.ProxyEntry entry : entries) {
-                    if (TgProxyManager.isExpired(entry, refConfig)) deleted++;
+                    // Build #40: "删除失效" only removes tested-dead and
+                    // stale entries; untested ones are not dead and stay
+                    // for a later refresh to test.
+                    boolean dead = !entry.available && entry.lastTestedMs > 0L;
+                    boolean stale = entry.available && TgProxyManager.isExpired(entry, refConfig);
+                    if (dead || stale) deleted++;
                     else remaining.add(entry);
                 }
                 saveProxyEntries(remaining);
@@ -1759,7 +1774,7 @@ final class HostConfigPanel {
                 updated.localPremium = localPremiumSwitch != null && localPremiumSwitch.isChecked();
                 updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
                 updated.highlightPinnedDialogs = pinnedHighlightSwitch != null && pinnedHighlightSwitch.isChecked();
-                updated.showClassifyBar = classifyBarSwitch != null && classifyBarSwitch.isChecked();
+                updated.showClassifyBar = false; // Build #40: classify bar cancelled per user request.
                 updated.autoArchiveFolderChats = autoArchiveFolderSwitch != null && autoArchiveFolderSwitch.isChecked();
                 updated.aiAnalysisMode = aiLlmSwitch != null && aiLlmSwitch.isChecked() ? 1 : 0;
                 updated.aiFallbackToLocal = aiFallbackSwitch == null || aiFallbackSwitch.isChecked();
