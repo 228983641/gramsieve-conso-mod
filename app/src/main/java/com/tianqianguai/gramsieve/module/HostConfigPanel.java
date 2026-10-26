@@ -124,8 +124,8 @@ final class HostConfigPanel {
     private EditText aiBaseUrlInput;
     private EditText aiModelInput;
     private EditText aiKeyInput;
-    private RadioGroup languageGroup;
-    private RadioGroup actionGroup;
+    private LinearLayout languageGroup;
+    private LinearLayout actionGroup;
 
     private HostConfigPanel(
             Context context,
@@ -448,21 +448,21 @@ final class HostConfigPanel {
         debugLoggingSwitch.setChecked(baseConfig.debugLogging);
 
         addSectionLabel(card, t("界面语言", "Interface language"));
-        languageGroup = new RadioGroup(context);
-        languageGroup.setOrientation(RadioGroup.VERTICAL);
-        addRadio(languageGroup, t("跟随系统", "Follow system"), FilterConfig.APP_LANGUAGE_SYSTEM);
-        addRadio(languageGroup, "English", FilterConfig.APP_LANGUAGE_ENGLISH);
-        addRadio(languageGroup, "简体中文", FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE);
-        checkTaggedRadio(languageGroup, FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
+        languageGroup = new LinearLayout(context);
+        languageGroup.setOrientation(LinearLayout.VERTICAL);
+        addExclusiveCheck(languageGroup, t("跟随系统", "Follow system"), FilterConfig.APP_LANGUAGE_SYSTEM);
+        addExclusiveCheck(languageGroup, "English", FilterConfig.APP_LANGUAGE_ENGLISH);
+        addExclusiveCheck(languageGroup, "简体中文", FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE);
+        checkTaggedBox(languageGroup, FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
         addView(card, languageGroup, 8);
 
         addSectionLabel(card, t("匹配后的动作", "Match action"));
-        actionGroup = new RadioGroup(context);
-        actionGroup.setOrientation(RadioGroup.VERTICAL);
-        addRadio(actionGroup, t("仅本地隐藏", "Hide locally"), FilterConfig.Action.HIDE);
-        addRadio(actionGroup, t("仅本地折叠", "Collapse locally"), FilterConfig.Action.COLLAPSE);
-        addRadio(actionGroup, t("调试标记", "Debug mark"), FilterConfig.Action.DEBUG_MARK);
-        checkTaggedRadio(actionGroup, baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
+        actionGroup = new LinearLayout(context);
+        actionGroup.setOrientation(LinearLayout.VERTICAL);
+        addExclusiveCheck(actionGroup, t("仅本地隐藏", "Hide locally"), FilterConfig.Action.HIDE);
+        addExclusiveCheck(actionGroup, t("仅本地折叠", "Collapse locally"), FilterConfig.Action.COLLAPSE);
+        addExclusiveCheck(actionGroup, t("调试标记", "Debug mark"), FilterConfig.Action.DEBUG_MARK);
+        checkTaggedBox(actionGroup, baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
         addView(card, actionGroup, 0);
     }
 
@@ -1962,11 +1962,22 @@ final class HostConfigPanel {
     // follows light/dark mode) with thin inset dividers between
     // rows. The old rounded-card addCard is kept only as a legacy
     // helper; panel builders now use addGroup.
+    private final java.util.Map<LinearLayout, TextView> groupHeaderHelp = new java.util.HashMap<>();
+
     private LinearLayout addGroup(LinearLayout parent, String title) {
+        // Build #44: the header is a row now, so a card's general
+        // introduction can hang its "?" here (next to the title)
+        // instead of taking a whole standalone row inside the card.
+        LinearLayout headerRow = new LinearLayout(context);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
         TextView header = new TextView(context);
         header.setText(title);
         header.setTextColor(secondaryTextColor);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        headerRow.addView(header, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView headerHelp = createHelpButton();
+        headerRow.addView(headerHelp, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1977,7 +1988,7 @@ final class HostConfigPanel {
         headerParams.rightMargin = dp(40);
         headerParams.topMargin = dp(20);
         headerParams.bottomMargin = dp(6);
-        parent.addView(header, headerParams);
+        parent.addView(headerRow, headerParams);
         LinearLayout group = new LinearLayout(context);
         group.setOrientation(LinearLayout.VERTICAL);
         // Build #41: inset glass group, not a full-width flat slab.
@@ -1996,6 +2007,7 @@ final class HostConfigPanel {
         // separate blocks instead of one continuous sheet.
         groupParams.bottomMargin = dp(12);
         parent.addView(group, groupParams);
+        groupHeaderHelp.put(group, headerHelp);
         return group;
     }
 
@@ -2072,6 +2084,22 @@ final class HostConfigPanel {
         try { info.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
         info.setPadding(dp(16), dp(6), dp(16), dp(6));
         info.setVisibility(View.GONE);
+        // Build #44: a card's first explanation is its general
+        // introduction, so it belongs on the header "?" (next to
+        // the card title), not on a standalone row inside the card.
+        // Only when the group is still empty is this safe to assume.
+        if (parent.getChildCount() == 0) {
+            TextView headerHelp = groupHeaderHelp.get(parent);
+            if (headerHelp != null && headerHelp.getVisibility() == View.GONE) {
+                headerHelp.setVisibility(View.VISIBLE);
+                headerHelp.setOnClickListener(v -> {
+                    info.setVisibility(info.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+                });
+                parent.addView(info, 0, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                return info;
+            }
+        }
         TextView helpButton = findFreeHelpButton(parent);
         if (helpButton != null) {
             helpButton.setVisibility(View.VISIBLE);
@@ -2456,6 +2484,19 @@ final class HostConfigPanel {
                 }
                 group.removeView(first);
                 group.removeView(second);
+                // Build #44: if only one side of the pair has a
+                // visible "?", give the other side an invisible
+                // placeholder of the same size, so the two columns
+                // stay aligned instead of one hanging a lone "?".
+                TextView firstHelp = rowHelpButton(first);
+                TextView secondHelp = rowHelpButton(second);
+                if (firstHelp != null && secondHelp != null) {
+                    if (firstHelp.getVisibility() == View.VISIBLE && secondHelp.getVisibility() == View.GONE) {
+                        secondHelp.setVisibility(View.INVISIBLE);
+                    } else if (secondHelp.getVisibility() == View.VISIBLE && firstHelp.getVisibility() == View.GONE) {
+                        firstHelp.setVisibility(View.INVISIBLE);
+                    }
+                }
                 LinearLayout pair = new LinearLayout(context);
                 pair.setOrientation(LinearLayout.HORIZONTAL);
                 pair.addView(first, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -2468,6 +2509,23 @@ final class HostConfigPanel {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private TextView rowHelpButton(View row) {
+        try {
+            if (!(row instanceof LinearLayout)) {
+                return null;
+            }
+            LinearLayout container = (LinearLayout) row;
+            for (int i = 0; i < container.getChildCount(); i++) {
+                View inner = container.getChildAt(i);
+                if (inner instanceof TextView && "?".equals(((TextView) inner).getText().toString())) {
+                    return (TextView) inner;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     private android.widget.CheckBox checkboxRowBox(View row) {
@@ -2520,53 +2578,93 @@ final class HostConfigPanel {
         return button;
     }
 
-    private void addRadio(RadioGroup group, String text, Object value) {
-        RadioButton button = new RadioButton(context);
-        button.setId(View.generateViewId());
-        button.setText(text);
-        button.setTextColor(primaryTextColor);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        button.setTag(value);
-        group.addView(button, new RadioGroup.LayoutParams(
+    // Build #44: single-choice groups are mutually exclusive
+    // checkboxes now, so every choice in the panel is a checkbox
+    // (user 2026-10-26: all choices as ticks). Same semantics as
+    // the old radios: exactly one checked, at least one stays on.
+    private void addExclusiveCheck(LinearLayout group, String text, Object value) {
+        android.widget.CheckBox box = new android.widget.CheckBox(context);
+        box.setMinHeight(dp(44));
+        box.setText(text);
+        box.setTextColor(primaryTextColor);
+        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        box.setTag(value);
+        try {
+            int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
+            int[] boxColors = new int[]{accentColor, adjustAlpha(secondaryTextColor, 0.6f)};
+            box.setButtonTintList(new ColorStateList(states, boxColors));
+        } catch (Throwable ignored) {}
+        box.setOnCheckedChangeListener((button, isChecked) -> {
+            if (!isChecked) {
+                boolean anyChecked = false;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    View sibling = group.getChildAt(i);
+                    if (sibling instanceof android.widget.CheckBox
+                            && ((android.widget.CheckBox) sibling).isChecked()) {
+                        anyChecked = true;
+                        break;
+                    }
+                }
+                if (!anyChecked) {
+                    box.setChecked(true);
+                }
+                return;
+            }
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View sibling = group.getChildAt(i);
+                if (sibling instanceof android.widget.CheckBox && sibling != box) {
+                    ((android.widget.CheckBox) sibling).setChecked(false);
+                }
+            }
+        });
+        group.addView(box, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
     }
 
-    private void checkTaggedRadio(RadioGroup group, Object value) {
+    private void checkTaggedBox(LinearLayout group, Object value) {
         if (group == null) {
             return;
         }
+        boolean matched = false;
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
-            Object tag = child.getTag();
-            if (value == null ? tag == null : value.equals(tag)) {
-                group.check(child.getId());
-                return;
+            if (!(child instanceof android.widget.CheckBox)) {
+                continue;
             }
+            Object tag = child.getTag();
+            boolean hit = value == null ? tag == null : value.equals(tag);
+            ((android.widget.CheckBox) child).setChecked(hit);
+            matched = matched || hit;
         }
-        if (group.getChildCount() > 0) {
-            group.check(group.getChildAt(0).getId());
+        if (!matched && group.getChildCount() > 0 && group.getChildAt(0) instanceof android.widget.CheckBox) {
+            ((android.widget.CheckBox) group.getChildAt(0)).setChecked(true);
         }
     }
 
     private String selectedLanguageTag() {
-        Object tag = selectedRadioTag(languageGroup);
+        Object tag = selectedBoxTag(languageGroup);
         return tag instanceof String ? (String) tag : FilterConfig.APP_LANGUAGE_SYSTEM;
     }
 
     private FilterConfig.Action selectedAction() {
-        Object tag = selectedRadioTag(actionGroup);
+        Object tag = selectedBoxTag(actionGroup);
         return tag instanceof FilterConfig.Action ? (FilterConfig.Action) tag : FilterConfig.Action.HIDE;
     }
 
-    private Object selectedRadioTag(RadioGroup group) {
+    private Object selectedBoxTag(LinearLayout group) {
         if (group == null) {
             return null;
         }
-        int checkedId = group.getCheckedRadioButtonId();
-        View checked = group.findViewById(checkedId);
-        return checked == null ? null : checked.getTag();
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof android.widget.CheckBox
+                    && ((android.widget.CheckBox) child).isChecked()) {
+                return child.getTag();
+            }
+        }
+        return null;
     }
 
     private String targetLabel(FilterConfig.RuleTarget target) {
