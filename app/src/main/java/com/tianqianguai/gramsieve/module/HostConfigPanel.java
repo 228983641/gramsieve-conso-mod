@@ -117,10 +117,8 @@ final class HostConfigPanel {
     private IosSwitchView aiFallbackSwitch;
     private IosSwitchView proxyAutoAddSwitch;
     private IosSwitchView proxyAutoSwitchSwitch;
-    private EditText proxySourceInput;
     private EditText proxyRefreshInput;
     private EditText proxyExpiryInput;
-    private EditText proxyPastedInput;
     private EditText proxyFolderInput;
     private TextView proxySummary;
     private String lastProxyFolderDiag = "";
@@ -128,8 +126,10 @@ final class HostConfigPanel {
     private EditText aiBaseUrlInput;
     private EditText aiModelInput;
     private EditText aiKeyInput;
-    private LinearLayout languageGroup;
-    private LinearLayout actionGroup;
+    private android.widget.Spinner languageSpinner;
+    private android.widget.Spinner actionSpinner;
+    private Object[] languageValues;
+    private Object[] actionValues;
 
     private HostConfigPanel(
             Context context,
@@ -488,25 +488,46 @@ final class HostConfigPanel {
         debugLoggingSwitch = addSwitch(card, t("详细调试日志", "Verbose debug logging"));
         debugLoggingSwitch.setChecked(baseConfig.debugLogging);
 
-        LinearLayout langCard = addGroup(container, t("界面语言", "Interface language"));
-        languageGroup = new LinearLayout(context);
-        languageGroup.setOrientation(LinearLayout.VERTICAL);
-        addRadioChoice(languageGroup, t("跟随系统", "Follow system"), FilterConfig.APP_LANGUAGE_SYSTEM);
-        addRadioChoice(languageGroup, "English", FilterConfig.APP_LANGUAGE_ENGLISH);
-        addRadioChoice(languageGroup, "简体中文", FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE);
-        checkTaggedChoice(languageGroup, FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
-        addView(langCard, languageGroup, 0);
-        pairBareChoices(languageGroup, gridCols(3));
+        // Language and match action sit side by side, each as a
+        // dropdown inside its own card, instead of two full-width
+        // radio grids. Columns are weights, never fixed dp, so the
+        // pair cannot overflow a narrow screen.
+        LinearLayout sideRow = new LinearLayout(context);
+        sideRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout langCol = new LinearLayout(context);
+        langCol.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout actionCol = new LinearLayout(context);
+        actionCol.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams langColParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        langColParams.rightMargin = dp(4);
+        LinearLayout.LayoutParams actionColParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        actionColParams.leftMargin = dp(4);
+        sideRow.addView(langCol, langColParams);
+        sideRow.addView(actionCol, actionColParams);
+        container.addView(sideRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout actionCard = addGroup(container, t("匹配后的动作", "Match action"));
-        actionGroup = new LinearLayout(context);
-        actionGroup.setOrientation(LinearLayout.VERTICAL);
-        addRadioChoice(actionGroup, t("仅本地隐藏", "Hide locally"), FilterConfig.Action.HIDE);
-        addRadioChoice(actionGroup, t("仅本地折叠", "Collapse locally"), FilterConfig.Action.COLLAPSE);
-        addRadioChoice(actionGroup, t("调试标记", "Debug mark"), FilterConfig.Action.DEBUG_MARK);
-        checkTaggedChoice(actionGroup, baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
-        addView(actionCard, actionGroup, 0);
-        pairBareChoices(actionGroup, gridCols(3));
+        LinearLayout langCard = addGroup(langCol, t("界面语言", "Interface language"));
+        languageValues = new Object[]{
+                FilterConfig.APP_LANGUAGE_SYSTEM,
+                FilterConfig.APP_LANGUAGE_ENGLISH,
+                FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE};
+        languageSpinner = addDropdown(langCard,
+                new String[]{t("跟随系统", "Follow system"), "English", t("简体中文", "Simplified Chinese")},
+                languageValues,
+                FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
+
+        LinearLayout actionCard = addGroup(actionCol, t("匹配后的动作", "Match action"));
+        actionValues = new Object[]{
+                FilterConfig.Action.HIDE,
+                FilterConfig.Action.COLLAPSE,
+                FilterConfig.Action.DEBUG_MARK};
+        actionSpinner = addDropdown(actionCard,
+                new String[]{t("仅本地隐藏", "Hide locally"), t("仅本地折叠", "Collapse locally"), t("调试标记", "Debug mark")},
+                actionValues,
+                baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
     }
 
     private void buildEnhancementCard(LinearLayout container) {
@@ -655,19 +676,20 @@ final class HostConfigPanel {
 
     private void buildProxyCard(LinearLayout container) {
         LinearLayout card = addGroup(container, t("代理（TG 直链）", "Proxy (TG Links)"));
-        addInfo(card, t("自动抓取、测速、自动添加并切换到最快代理。来源不会硬编码某个第三方：填一个你信任的代理列表页地址（页面里含 t.me/proxy 链接即可），或在下面直接粘贴链接；模块按刷新间隔自动抓取，测速后把最快的设为当前代理。公开代理的运营者能看到你的 IP 和 Telegram 连接时间信息，但 MTProto 内容本身是加密的。", "Auto-fetch, test, auto-add and switch to the fastest proxy. No third-party source is hardcoded: fill a trusted proxy list page URL (containing t.me/proxy links) or paste links below; the module fetches on the refresh interval, tests, and sets the fastest as current. A proxy operator can see your IP and Telegram connection timing, but MTProto content stays encrypted."));
+        addInfo(card, t("自动抓取、测速、自动添加并切换到最快代理：模块按刷新间隔扫描下面这个文件夹里的聊天（消息里含 t.me/proxy 链接即算），测速后把最快的设为当前代理，不再从外部来源地址或粘贴链接抓取。公开代理的运营者能看到你的 IP 和 Telegram 连接时间信息，但 MTProto 内容本身是加密的。", "Auto-fetch, test, auto-add and switch to the fastest proxy: on the refresh interval the module scans chats in the folder below (messages containing t.me/proxy links count), tests them, and sets the fastest as current. No external source URL or pasted links are fetched anymore. A proxy operator can see your IP and Telegram connection timing, but MTProto content stays encrypted."));
         boolean firstOpen = !baseConfig.proxyConfigured;
         proxyAutoAddSwitch = addSwitch(card, t("自动添加新代理", "Auto-add new proxies"));
         proxyAutoAddSwitch.setChecked(firstOpen || baseConfig.proxyAutoAdd);
         proxyAutoSwitchSwitch = addSwitch(card, t("自动切换到最快代理", "Auto-switch to the fastest proxy"));
         proxyAutoSwitchSwitch.setChecked(firstOpen || baseConfig.proxyAutoSwitch);
-        proxySourceInput = addInput(card, t("代理来源地址（可空，页面需含 t.me/proxy 链接）", "Proxy source URL (optional, page must contain t.me/proxy links)"), baseConfig.proxySourceUrl == null ? "" : baseConfig.proxySourceUrl);
+        int refreshMinutes = firstOpen ? 360
+                : (baseConfig.proxyRefreshMinutes >= 0 ? baseConfig.proxyRefreshMinutes
+                : Math.max(1, baseConfig.proxyRefreshHours) * 60);
         EditText[] proxyIntervalInputs = addInputPair(card,
-                t("刷新间隔（小时，默认 6）", "Refresh interval (hours, default 6)"), Integer.toString(firstOpen ? 6 : baseConfig.proxyRefreshHours),
+                t("刷新间隔（分钟，默认 360）", "Refresh interval (minutes, default 360)"), Integer.toString(refreshMinutes),
                 t("失效时间（小时，默认 24）", "Expiry time (hours, default 24)"), Integer.toString(firstOpen ? 24 : baseConfig.proxyExpiryHours));
         proxyRefreshInput = proxyIntervalInputs[0];
         proxyExpiryInput = proxyIntervalInputs[1];
-        proxyPastedInput = addInput(card, t("直接粘贴代理链接（每行一个 t.me/proxy 或 tg://proxy 链接）", "Paste proxy links directly (one t.me/proxy or tg://proxy link per line)"), baseConfig.proxyPastedLinks == null ? "" : baseConfig.proxyPastedLinks);
         // Build #46: HTML v2 folder row: label + [field + link].
         TextView proxyFolderLabel = new TextView(context);
         proxyFolderLabel.setTag("gramsieve_row_label");
@@ -695,7 +717,7 @@ final class HostConfigPanel {
         proxyFolderRow.addView(proxyFolderPickButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(card, proxyFolderRow, 0);
-        addInfo(card, t("自动维护：只要 Conso 在运行，“自动添加”开着时，每到刷新间隔就会自动跑一轮：扫描上面这些来源、测速、切到最快、把测通的同步进 Conso 代理列表，并把本轮测死的（且是模块同步进去的）从客户端列表里剔除；Conso 被彻底关掉后，下次打开聊天列表时会补跑一次。", "Auto-maintenance: while Conso is running and auto-add is on, every refresh interval runs a full round: scan these sources, test, switch to fastest, sync tested-good entries into Conso's proxy list, and prune entries this round tested dead (and synced by the module) from the client list. If Conso was fully closed, the next chat-list open catches up once."));
+        addInfo(card, t("自动维护：只要 Conso 在运行，“自动添加”开着时，每到刷新间隔就会自动跑一轮：扫描代理文件夹、测速、切到最快、把测通的同步进 Conso 代理列表，并把本轮测死的（且是模块同步进去的）从客户端列表里剔除；Conso 被彻底关掉后，下次打开聊天列表时会补跑一次。", "Auto-maintenance: while Conso is running and auto-add is on, every refresh interval runs a full round: scan the proxy folder, test, switch to fastest, sync tested-good entries into Conso's proxy list, and prune entries this round tested dead (and synced by the module) from the client list. If Conso was fully closed, the next chat-list open catches up once."));
         // Build #28: folder picker instead of typing. Tapping the
         // field (or the button below) lists existing user folders and
         // fills the field with the picked one, so a typo or a renamed
@@ -1551,10 +1573,13 @@ final class HostConfigPanel {
         if (config == null) return;
         config.proxyAutoAdd = proxyAutoAddSwitch != null && proxyAutoAddSwitch.isChecked();
         config.proxyAutoSwitch = proxyAutoSwitchSwitch != null && proxyAutoSwitchSwitch.isChecked();
-        config.proxyRefreshHours = proxyInt(proxyRefreshInput, 6);
+        config.proxyRefreshMinutes = proxyInt(proxyRefreshInput, 360);
         config.proxyExpiryHours = proxyInt(proxyExpiryInput, 24);
-        if (proxySourceInput != null) config.proxySourceUrl = valueOf(proxySourceInput).trim();
-        if (proxyPastedInput != null) config.proxyPastedLinks = valueOf(proxyPastedInput);
+        // Source URL and pasted links were removed from the panel:
+        // saving clears any value an old config still carries, so
+        // the old sources stop being fetched.
+        config.proxySourceUrl = "";
+        config.proxyPastedLinks = "";
         if (proxyFolderInput != null) {
             config.proxyFolderName = valueOf(proxyFolderInput).trim();
             config.proxyFolderScan = !config.proxyFolderName.isEmpty();
@@ -1585,7 +1610,7 @@ final class HostConfigPanel {
             }
         }
         String text = total == 0
-                ? t("未保存代理：先填来源或粘贴链接，再点“立即刷新”。", "No proxies saved: fill a source or paste links, then tap Refresh now.")
+                ? t("未保存代理：先在代理文件夹里放含代理链接的聊天，再点“立即刷新”。", "No proxies saved: put chats with proxy links in the proxy folder, then tap Refresh now.")
                 : t("已保存 " + total + " 个代理，可用 " + available + " 个" + (fastest != null ? "，最快 " + fastest.display() + "（" + fastest.pingMs + " ms）" : ""), "Saved " + total + " proxies, " + available + " available" + (fastest != null ? ", fastest " + fastest.display() + " (" + fastest.pingMs + " ms)" : ""));
         // Build #29: the folder-scan diag lives in the summary, not
         // only in a toast that gets truncated.
@@ -1682,6 +1707,78 @@ final class HostConfigPanel {
         }
     }
 
+    // One place for the four manage-dialog row states, so a test
+    // run can refresh the same text the list was built with.
+    // Build #40: untested entries are not dead, they just never got
+    // a test slot (max 20 per refresh), and must read as 未测.
+    private String proxyStatusText(FilterConfig.ProxyEntry entry, FilterConfig refConfig) {
+        if (entry == null) {
+            return t("未测", "untested");
+        }
+        boolean expired = TgProxyManager.isExpired(entry, refConfig);
+        if (entry.available && !expired) {
+            return entry.pingMs + " ms";
+        } else if (entry.available) {
+            return t("已过期", "expired");
+        } else if (entry.lastTestedMs > 0L) {
+            return t("测不通", "unreachable");
+        } else {
+            return t("未测", "untested");
+        }
+    }
+
+    // Test only the ticked proxies, on a background thread, then
+    // refresh the row texts in place and persist the results. The
+    // same test gives both speed (pingMs) and connectivity
+    // (available): the two buttons differ only in what they report.
+    private void testCheckedProxies(android.app.Activity activity,
+            java.util.List<FilterConfig.ProxyEntry> entries,
+            java.util.List<android.widget.CheckBox> boxes,
+            FilterConfig refConfig, boolean showConnectivitySummary) {
+        java.util.List<Integer> selected = new java.util.ArrayList<>();
+        for (int i = 0; i < entries.size() && i < boxes.size(); i++) {
+            if (boxes.get(i).isChecked()) {
+                selected.add(i);
+            }
+        }
+        if (selected.isEmpty()) {
+            Toast.makeText(context, t("先勾选要测的代理", "Tick the proxies to test first"), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new Thread(() -> {
+            int ok = 0;
+            int fail = 0;
+            for (int index : selected) {
+                FilterConfig.ProxyEntry entry = entries.get(index);
+                long ping = TgProxyManager.testProxy(context, entry);
+                entry.pingMs = ping;
+                entry.available = ping >= 0;
+                entry.lastTestedMs = System.currentTimeMillis();
+                if (ping >= 0) ok++; else fail++;
+            }
+            int okCount = ok;
+            int failCount = fail;
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing()) {
+                    return;
+                }
+                for (int i = 0; i < entries.size() && i < boxes.size(); i++) {
+                    boxes.get(i).setText(entries.get(i).display()
+                            + "（" + proxyStatusText(entries.get(i), refConfig) + "）");
+                }
+                saveProxyEntries(entries);
+                if (showConnectivitySummary) {
+                    Toast.makeText(context,
+                            t("联通 " + okCount + " 个，不通 " + failCount + " 个",
+                                    "Reachable " + okCount + ", unreachable " + failCount),
+                            Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(context, t("测速完成", "Speed test done"), Toast.LENGTH_SHORT).show();
+                }
+            });
+        }, "gramsieve-proxy-test").start();
+    }
+
     private void showProxyManageDialog() {
         try {
             android.app.Activity activity = activityFromContext(context);
@@ -1704,7 +1801,7 @@ final class HostConfigPanel {
             dialogView.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView hint = new TextView(context);
-            hint.setText(t("勾选后点“删除所选”；每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。“删除失效”只删测不通和已过期的，不删未测的。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick and tap Delete selected; Delete expired removes all expired or unreachable proxies (expired per the custom expiry time above). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+            hint.setText(t("勾选后点下面的按钮：测速 / 检查联通会实测勾选的代理并更新每条后面的状态；添加到软件把勾选的代理加进 Conso 自己的代理列表（只加进列表，不切换当前代理）；删除所选删勾选的；删除失效只删测不通和已过期的，不删未测的。每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below: Test speed / Check connectivity actually tests the ticked proxies and updates each row's status; Add to app adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy); Delete selected deletes the ticked ones; Delete expired removes only unreachable and expired ones, not untested ones. Row status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             try { hint.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
@@ -1761,21 +1858,8 @@ final class HostConfigPanel {
             applyProxyUiToConfig(refConfig);
             for (FilterConfig.ProxyEntry entry : entries) {
                 android.widget.CheckBox box = new android.widget.CheckBox(context);
-                // Build #40: stop labelling every non-good entry "失效".
-                // Untested entries are not dead, they just never got a
-                // test slot (max 20 per refresh), and must read as 未测.
-                boolean expired = TgProxyManager.isExpired(entry, refConfig);
-                String proxyStatus;
-                if (entry.available && !expired) {
-                    proxyStatus = entry.pingMs + " ms";
-                } else if (entry.available) {
-                    proxyStatus = t("已过期", "expired");
-                } else if (entry.lastTestedMs > 0L) {
-                    proxyStatus = t("测不通", "unreachable");
-                } else {
-                    proxyStatus = t("未测", "untested");
-                }
-                box.setText(entry.display() + "（" + proxyStatus + "）");
+                box.setMinHeight(dp(44));
+                box.setText(entry.display() + "（" + proxyStatusText(entry, refConfig) + "）");
                 box.setTextColor(primaryTextColor);
                 box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
                 box.setTag(entry);
@@ -1801,11 +1885,41 @@ final class HostConfigPanel {
             android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
                     .setView(dialogView)
                     .create();
+            // Buttons in two rows instead of one long row, so the
+            // manage dialog does not overflow on a narrow screen.
             LinearLayout buttonRow = new LinearLayout(context);
             buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout buttonRow2 = new LinearLayout(context);
+            buttonRow2.setOrientation(LinearLayout.HORIZONTAL);
             Button selectAll = toolbarButton(t("全选", "Select all"));
             selectAll.setOnClickListener(v -> { for (android.widget.CheckBox b : boxes) b.setChecked(true); });
             buttonRow.addView(selectAll);
+            Button testSpeed = toolbarButton(t("测速", "Test speed"));
+            testSpeed.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, false));
+            buttonRow.addView(testSpeed);
+            Button checkConnectivity = toolbarButton(t("检查联通", "Check connectivity"));
+            checkConnectivity.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, true));
+            buttonRow.addView(checkConnectivity);
+            Button addToHost = toolbarButton(t("添加到软件", "Add to app"));
+            addToHost.setOnClickListener(v -> {
+                java.util.List<FilterConfig.ProxyEntry> selected = new java.util.ArrayList<>();
+                for (int i = 0; i < entries.size() && i < boxes.size(); i++) {
+                    if (boxes.get(i).isChecked()) {
+                        selected.add(entries.get(i));
+                    }
+                }
+                if (selected.isEmpty()) {
+                    Toast.makeText(context, t("先勾选要添加的代理", "Tick the proxies to add first"), Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                int added = TgProxyManager.syncAvailableToHost(context, selected);
+                Toast.makeText(context,
+                        added > 0
+                                ? t("已添加 " + added + " 个到 Conso 代理列表", "Added " + added + " to Conso's proxy list")
+                                : t("勾选的代理已在 Conso 代理列表里", "Ticked proxies are already in Conso's proxy list"),
+                        Toast.LENGTH_SHORT).show();
+            });
+            buttonRow.addView(addToHost);
             Button deleteSelected = toolbarButton(t("删除所选", "Delete selected"));
             deleteSelected.setOnClickListener(v -> {
                 java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
@@ -1818,7 +1932,7 @@ final class HostConfigPanel {
                 Toast.makeText(context, t("已删除 " + deleted + " 个", "Deleted " + deleted), Toast.LENGTH_SHORT).show();
                 dialog.dismiss();
             });
-            buttonRow.addView(deleteSelected);
+            buttonRow2.addView(deleteSelected);
             Button deleteExpired = toolbarButton(t("删除失效", "Delete expired"));
             deleteExpired.setOnClickListener(v -> {
                 java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
@@ -1836,11 +1950,13 @@ final class HostConfigPanel {
                 Toast.makeText(context, t("已删除失效 " + deleted + " 个", "Deleted expired " + deleted), Toast.LENGTH_SHORT).show();
                 dialog.dismiss();
             });
-            buttonRow.addView(deleteExpired);
+            buttonRow2.addView(deleteExpired);
             Button close = toolbarButton(t("关闭", "Close"));
             close.setOnClickListener(v -> dialog.dismiss());
-            buttonRow.addView(close);
+            buttonRow2.addView(close);
             dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialogView.addView(buttonRow2, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
@@ -1887,18 +2003,16 @@ final class HostConfigPanel {
     }
 
     private void buildRulesCard(LinearLayout container) {
-        // Simplified 2026-10-25: the old card showed 4 inputs for EVERY
-        // target (text / caption / buttons / sender / chat / any = up to
-        // 24 boxes), which is why users called it cluttered. Now only
-        // the two boxes most people actually use are visible by default:
-        // message-text filter keywords and message-text keep keywords.
-        // Everything else (regex, and all other targets) lives in one
-        // collapsible "高级规则" section, still created and still saved
-        // when hidden, so existing rules are never lost by collapsing.
+        // Rules are message-text keywords only. The old "高级规则"
+        // section (message-text regex, plus caption / buttons /
+        // sender / chat / any-field keywords and regex) was removed
+        // outright: it is no longer built, and because collectMatrix
+        // only reads the inputs built here, saving from this panel
+        // drops any advanced rules an old config still carries.
         LinearLayout card = addGroup(container, t("规则内容", "Rules"));
         addInfo(card, chatMode
-                ? t("这里只影响当前聊天。关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "This editor only affects the current chat. Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed.")
-                : t("关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。常用只需填下面两个框；按目标、按正则的细规则在“高级规则”里，收起时也会照常保存。", "Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves. Usually the two boxes below are enough; fine-grained rules by target/regex live under Advanced rules and are still saved when collapsed."));
+                ? t("这里只影响当前聊天。关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。", "This editor only affects the current chat. Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves.")
+                : t("关键词用“、”分隔，不用一行一条；点“编辑”进关键词编辑界面，外部只显示个数，不直接显示关键词内容。", "Keywords are separated by 、, not one per line; tap Edit to open the keyword editor, which shows only the count outside, not the keywords themselves."));
 
         FilterConfig.ChatRuleSet chatRuleSet = chatMode
                 ? baseConfig.getOrCreateChatRuleSet(dialogId).deepCopy().sanitize()
@@ -1906,67 +2020,12 @@ final class HostConfigPanel {
         RuleDraftMatrix matchMatrix = RuleDraftMatrix.fromRules(chatMode ? chatRuleSet.rules : baseConfig.globalRules);
         RuleDraftMatrix exclusionMatrix = RuleDraftMatrix.fromRules(chatMode ? chatRuleSet.exclusions : baseConfig.globalExclusions);
 
-        LinearLayout advancedContainer = new LinearLayout(context);
-        advancedContainer.setOrientation(LinearLayout.VERTICAL);
-        advancedContainer.setVisibility(View.GONE);
-
-        for (FilterConfig.RuleTarget target : editorTargets(chatMode)) {
-            RuleInputs inputs = new RuleInputs();
-            if (target == FilterConfig.RuleTarget.TEXT) {
-                // Visible by default: only the two keyword boxes.
-                addSectionLabel(card, t("消息文字", "Message text"));
-                addInfo(card, t("只检查消息正文，绝大多数规则填这里就够了。", "Only checks message text; most rules belong here."));
-                inputs.matchKeywords = addKeywordEditorRow(card, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-                inputs.keepKeywords = addKeywordEditorRow(card, t("保留关键词（白名单）", "Keep keywords (allowlist)"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-                // Regex for text goes to Advanced, same RuleInputs object.
-                addSectionLabel(advancedContainer, t("消息文字 · 正则", "Message text · Regex"));
-                inputs.matchRegex = addInput(advancedContainer, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
-                inputs.keepRegex = addInput(advancedContainer, t("保留正则", "Keep regex"), exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX));
-            } else {
-                addDivider(advancedContainer);
-                addSectionLabel(advancedContainer, targetLabel(target));
-                addInfo(advancedContainer, targetScope(target));
-                inputs.matchKeywords = addKeywordEditorRow(advancedContainer, t("过滤关键词", "Filter keywords"), matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-                inputs.matchRegex = addInput(advancedContainer, t("过滤正则", "Filter regex"), matchMatrix.get(target, FilterConfig.RuleMode.REGEX));
-                inputs.keepKeywords = addKeywordEditorRow(advancedContainer, t("保留关键词", "Keep keywords"), exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD));
-                inputs.keepRegex = addInput(advancedContainer, t("保留正则", "Keep regex"), exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX));
-            }
-            ruleInputs.put(target, inputs);
-        }
-
-        addDivider(card);
-        IosSwitchView advancedSwitch = addSwitch(card, t("显示高级规则", "Show advanced rules"));
-        // UI sync (Build #15): advanced rules must not look lost on reopen.
-        // If any advanced rule exists (any non-TEXT target, or TEXT regex),
-        // open the panel with Advanced already expanded.
-        boolean hasAdvanced = false;
-        for (FilterConfig.RuleTarget target : editorTargets(chatMode)) {
-            boolean isText = target == FilterConfig.RuleTarget.TEXT;
-            if (!isText) {
-                if (!matchMatrix.get(target, FilterConfig.RuleMode.KEYWORD).isBlank()
-                        || !matchMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()
-                        || !exclusionMatrix.get(target, FilterConfig.RuleMode.KEYWORD).isBlank()
-                        || !exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()) {
-                    hasAdvanced = true;
-                }
-            } else {
-                if (!matchMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()
-                        || !exclusionMatrix.get(target, FilterConfig.RuleMode.REGEX).isBlank()) {
-                    hasAdvanced = true;
-                }
-            }
-        }
-        advancedSwitch.setChecked(hasAdvanced);
-        advancedContainer.setVisibility(hasAdvanced ? View.VISIBLE : View.GONE);
-        advancedSwitch.setOnCheckedChangeListener((button, isChecked) ->
-                advancedContainer.setVisibility(isChecked ? View.VISIBLE : View.GONE));
-        // Build #46: the listener above only fires on later taps,
-        // so sync the initial state here (previously a reopen with
-        // advanced rules still showed the section collapsed).
-        advancedContainer.setVisibility(advancedSwitch.isChecked() ? View.VISIBLE : View.GONE);
-        addInfo(card, t("高级规则包括：消息文字的正则，以及媒体说明、按钮、发送者、聊天、全字段的关键词与正则。", "Advanced rules include: message-text regex, plus keywords and regex for caption, buttons, sender, chat, and any field."));
-        card.addView(advancedContainer, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        RuleInputs inputs = new RuleInputs();
+        addSectionLabel(card, t("消息文字", "Message text"));
+        addInfo(card, t("只检查消息正文。", "Only checks message text."));
+        inputs.matchKeywords = addKeywordEditorRow(card, t("过滤关键词", "Filter keywords"), matchMatrix.get(FilterConfig.RuleTarget.TEXT, FilterConfig.RuleMode.KEYWORD));
+        inputs.keepKeywords = addKeywordEditorRow(card, t("保留关键词（白名单）", "Keep keywords (allowlist)"), exclusionMatrix.get(FilterConfig.RuleTarget.TEXT, FilterConfig.RuleMode.KEYWORD));
+        ruleInputs.put(FilterConfig.RuleTarget.TEXT, inputs);
     }
 
     private void save() {
@@ -2012,10 +2071,10 @@ final class HostConfigPanel {
                 if (aiKeyInput != null) updated.aiApiKey = valueOf(aiKeyInput).trim();
                 updated.proxyAutoAdd = proxyAutoAddSwitch != null && proxyAutoAddSwitch.isChecked();
                 updated.proxyAutoSwitch = proxyAutoSwitchSwitch != null && proxyAutoSwitchSwitch.isChecked();
-                updated.proxyRefreshHours = proxyInt(proxyRefreshInput, 6);
+                updated.proxyRefreshMinutes = proxyInt(proxyRefreshInput, 360);
                 updated.proxyExpiryHours = proxyInt(proxyExpiryInput, 24);
-                if (proxySourceInput != null) updated.proxySourceUrl = valueOf(proxySourceInput).trim();
-                if (proxyPastedInput != null) updated.proxyPastedLinks = valueOf(proxyPastedInput);
+                updated.proxySourceUrl = "";
+                updated.proxyPastedLinks = "";
                 if (proxyFolderInput != null) {
                     updated.proxyFolderName = valueOf(proxyFolderInput).trim();
                     updated.proxyFolderScan = !updated.proxyFolderName.isEmpty();
@@ -3157,6 +3216,52 @@ final class HostConfigPanel {
         return button;
     }
 
+    // Dropdown selector: a real Spinner, with item text coloured
+    // from the panel theme so it reads in both light and dark mode.
+    // `values` must parallel `labels`; the current value selects
+    // the initial position, falling back to the first item.
+    private android.widget.Spinner addDropdown(LinearLayout parent, String[] labels, Object[] values, Object current) {
+        android.widget.Spinner spinner = new android.widget.Spinner(context);
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(
+                context, android.R.layout.simple_spinner_item, labels) {
+            @Override
+            public android.view.View getView(int position, android.view.View convertView, android.view.ViewGroup parentView) {
+                android.view.View view = super.getView(position, convertView, parentView);
+                styleDropdownItem(view);
+                return view;
+            }
+
+            @Override
+            public android.view.View getDropDownView(int position, android.view.View convertView, android.view.ViewGroup parentView) {
+                android.view.View view = super.getDropDownView(position, convertView, parentView);
+                styleDropdownItem(view);
+                return view;
+            }
+
+            private void styleDropdownItem(android.view.View view) {
+                if (view instanceof android.widget.TextView) {
+                    android.widget.TextView text = (android.widget.TextView) view;
+                    text.setTextColor(primaryTextColor);
+                    text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+                }
+            }
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        int selected = 0;
+        if (values != null) {
+            for (int i = 0; i < values.length; i++) {
+                if (current == null ? values[i] == null : current.equals(values[i])) {
+                    selected = i;
+                    break;
+                }
+            }
+        }
+        spinner.setSelection(selected);
+        addView(parent, spinner, 0);
+        return spinner;
+    }
+
     // Build #45: single-choice groups are radios again, per the
     // HTML reference (user 2026-10-26: radios in a 2-column grid).
     // Exclusion lives on the buttons themselves, not on a
@@ -3267,13 +3372,25 @@ final class HostConfigPanel {
     }
 
     private String selectedLanguageTag() {
-        Object tag = selectedChoiceTag(languageGroup);
-        return tag instanceof String ? (String) tag : FilterConfig.APP_LANGUAGE_SYSTEM;
+        if (languageSpinner != null && languageValues != null) {
+            int position = languageSpinner.getSelectedItemPosition();
+            if (position >= 0 && position < languageValues.length
+                    && languageValues[position] instanceof String) {
+                return (String) languageValues[position];
+            }
+        }
+        return FilterConfig.APP_LANGUAGE_SYSTEM;
     }
 
     private FilterConfig.Action selectedAction() {
-        Object tag = selectedChoiceTag(actionGroup);
-        return tag instanceof FilterConfig.Action ? (FilterConfig.Action) tag : FilterConfig.Action.HIDE;
+        if (actionSpinner != null && actionValues != null) {
+            int position = actionSpinner.getSelectedItemPosition();
+            if (position >= 0 && position < actionValues.length
+                    && actionValues[position] instanceof FilterConfig.Action) {
+                return (FilterConfig.Action) actionValues[position];
+            }
+        }
+        return FilterConfig.Action.HIDE;
     }
 
     private Object selectedChoiceTag(LinearLayout group) {

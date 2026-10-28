@@ -61,6 +61,10 @@ public final class FilterConfig {
     public boolean proxyAutoAdd = false;
     public boolean proxyAutoSwitch = false;
     public int proxyRefreshHours = 6;
+    // Refresh interval in minutes. -1 means "never set": sanitize()
+    // migrates the old hours value (hours * 60) once, so an existing
+    // user's interval does not silently change when the unit changes.
+    public int proxyRefreshMinutes = -1;
     public int proxyExpiryHours = 24;
     public String proxySourceUrl = "";
     public String proxyPastedLinks = "";
@@ -145,6 +149,11 @@ public final class FilterConfig {
         chatRules = sanitizedChats;
         if (proxyRefreshHours < 1) proxyRefreshHours = 1;
         if (proxyRefreshHours > 72) proxyRefreshHours = 72;
+        if (proxyRefreshMinutes < 0) {
+            proxyRefreshMinutes = proxyRefreshHours * 60;
+        }
+        if (proxyRefreshMinutes < 1) proxyRefreshMinutes = 1;
+        if (proxyRefreshMinutes > 4320) proxyRefreshMinutes = 4320;
         if (proxyExpiryHours < 1) proxyExpiryHours = 1;
         if (proxyExpiryHours > 168) proxyExpiryHours = 168;
         if (proxySourceUrl == null) proxySourceUrl = "";
@@ -249,6 +258,7 @@ public final class FilterConfig {
         copy.proxyAutoAdd = proxyAutoAdd;
         copy.proxyAutoSwitch = proxyAutoSwitch;
         copy.proxyRefreshHours = proxyRefreshHours;
+        copy.proxyRefreshMinutes = proxyRefreshMinutes;
         copy.proxyExpiryHours = proxyExpiryHours;
         copy.proxySourceUrl = proxySourceUrl;
         copy.proxyPastedLinks = proxyPastedLinks;

@@ -606,11 +606,26 @@ final class TgProxyManager {
         return out;
     }
 
+    /** Refresh interval in minutes, migrating an old hours value.
+     * Configs are normally sanitized before use, so the fallback only
+     * covers a raw, unsanitized config. */
+    static int proxyRefreshMinutesOf(FilterConfig config) {
+        if (config == null) {
+            return 360;
+        }
+        if (config.proxyRefreshMinutes >= 0) {
+            return Math.max(1, config.proxyRefreshMinutes);
+        }
+        return Math.max(1, config.proxyRefreshHours) * 60;
+    }
+
     /** Synchronous refresh. Caller must run this off the UI thread.
-     * Fetches the configured source + pasted links, merges with existing
-     * entries, tests (max 20, fastest first by previous ping), sorts by
-     * ping, and if auto-switch is on, applies the fastest available
-     * proxy to the host. Returns the updated config to save. */
+     * Fetches the proxy folder scan (the source-URL and pasted-links
+     * inputs were removed from the panel, so they are no longer
+     * fetched even if an old config still carries them), merges with
+     * existing entries, tests (max 20, fastest first by previous ping),
+     * sorts by ping, and if auto-switch is on, applies the fastest
+     * available proxy to the host. Returns the updated config to save. */
     static Result refresh(Context context, FilterConfig config) {
         Result result = new Result();
         FilterConfig updated = config == null ? FilterConfig.createDefault() : config.deepCopy().sanitize();
@@ -676,17 +691,10 @@ final class TgProxyManager {
             } catch (Throwable ignored) {
             }
         }
-        if (updated.proxySourceUrl != null && !updated.proxySourceUrl.isBlank()) {
-            try {
-                String text = fetchText(updated.proxySourceUrl.trim());
-                fresh.addAll(parseLinks(text, updated.proxySourceUrl.trim()));
-            } catch (Throwable throwable) {
-                result.error = throwable.getClass().getSimpleName();
-            }
-        }
-        if (updated.proxyPastedLinks != null && !updated.proxyPastedLinks.isBlank()) {
-            fresh.addAll(parseLinks(updated.proxyPastedLinks, "pasted"));
-        }
+        // Source URL and pasted links are removed: a saved value
+        // from an old config is deliberately not fetched here.
+        // New proxies come only from the folder scan above and from
+        // Conso's own proxy list merged in at the start of refresh.
         result.fetched = fresh.size();
         // Build #39: keys scanned this round that were not already in
         // the list (and not already in Conso itself) are new imports.
@@ -1018,7 +1026,7 @@ final class TgProxyManager {
             if (config == null || !config.proxyAutoAdd) {
                 return;
             }
-            long intervalMs = Math.max(1, config.proxyRefreshHours) * 3600_000L;
+            long intervalMs = Math.max(1, proxyRefreshMinutesOf(config)) * 60_000L;
             long now = System.currentTimeMillis();
             if (now - config.proxyLastRefreshMs < intervalMs) {
                 return;
