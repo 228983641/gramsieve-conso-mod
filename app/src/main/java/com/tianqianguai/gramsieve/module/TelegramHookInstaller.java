@@ -5129,10 +5129,12 @@ final class TelegramHookInstaller {
             styleSystemDialog(smartDialog, context);
         } catch (Throwable throwable) {
             error("Smart-block dialog failed, adding all candidates directly", throwable);
+            // sortedCandidates is a try-local, so the catch falls back
+            // to the original parameter (same rules, unsorted order).
             if (smartDialogId != 0L) {
-                addSmartBlockChatRules(context, messageView, sortedCandidates, smartDialogId);
+                addSmartBlockChatRules(context, messageView, candidates, smartDialogId);
             } else {
-                addSmartBlockGlobalRules(context, messageView, sortedCandidates);
+                addSmartBlockGlobalRules(context, messageView, candidates);
             }
         }
     }
