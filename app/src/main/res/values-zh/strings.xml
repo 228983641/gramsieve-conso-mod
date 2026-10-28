@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">GramSieve</string>
-    <string name="module_description">用于 LSPosed 的 Telegram 本地垃圾消息过滤器</string>
-    <string name="dialog_title_global">GramSieve 全局过滤设置</string>
-    <string name="dialog_title_chat">GramSieve 当前聊天过滤设置</string>
+    <string name="app_name">GramSieve Conso</string>
+    <string name="module_description">GramSieve Conso - Conso 适配版（global.xfinite.conso），用于 LSPosed 的 Telegram 本地垃圾消息过滤器</string>
+    <string name="dialog_title_global">GramSieve Conso 全局过滤设置</string>
+    <string name="dialog_title_chat">GramSieve Conso 当前聊天过滤设置</string>
     <string name="dialog_save">保存</string>
     <string name="dialog_cancel">取消</string>
     <string name="dialog_enabled">启用过滤</string>
@@ -77,8 +77,8 @@
     <string name="dialog_rule_effect_exclusion_sender">命中后，这个发送者发的消息都会强制保留。</string>
     <string name="dialog_rule_effect_exclusion_chat">命中后，这个聊天里的每条消息都会强制保留。</string>
     <string name="dialog_rule_chat_scope_warning">当前窗口已经限定在单个聊天内；如果聊天名也命中，这里几乎等于整个聊天都会命中。</string>
-    <string name="hook_menu_label_global">GramSieve 过滤规则</string>
-    <string name="hook_menu_label_chat">GramSieve 聊天过滤规则</string>
+    <string name="hook_menu_label_global">GramSieve Conso 过滤规则</string>
+    <string name="hook_menu_label_chat">GramSieve Conso 聊天过滤规则</string>
     <string name="hook_menu_label_block_message">屏蔽此消息</string>
     <string name="hook_menu_label_mark_message">标记此消息</string>
     <string name="hook_menu_label_jump_to_mark">跳转到标记位置</string>
@@ -86,9 +86,9 @@
     <string name="hook_mark_no_position_toast">没有标记位置</string>
     <string name="hook_block_saved_toast">已把这条消息加入屏蔽规则</string>
     <string name="hook_block_no_text_toast">这条消息没有可提取的文字</string>
-    <string name="dialog_saved_toast">GramSieve 规则已保存</string>
+    <string name="dialog_saved_toast">GramSieve Conso 规则已保存</string>
     <string name="dialog_view_logs">查看日志</string>
-    <string name="log_viewer_title">GramSieve 日志</string>
+    <string name="log_viewer_title">GramSieve Conso 日志</string>
     <string name="log_viewer_empty">暂无日志记录。</string>
     <string name="log_viewer_export">导出</string>
     <string name="log_viewer_clear">清空</string>
@@ -98,11 +98,11 @@
     <string name="anti_recall_enabled">启用主动加载与防撤回防修改</string>
     <string name="anti_recall_load_interval">加载间隔（秒）</string>
     <string name="conflict_detection_title">模块冲突检测</string>
-    <string name="conflict_detection_intro">GramSieve 会先申请 root 权限，以只读模式读取 LSPosed 私有数据库，确认模块开关和 Telegram 作用域；读取失败时才退回安装包检测。数据库绝不会被修改。</string>
+    <string name="conflict_detection_intro">GramSieve Conso 会先申请 root 权限，以只读模式读取 LSPosed 私有数据库，确认模块开关和 Telegram 作用域；读取失败时才退回安装包检测。数据库绝不会被修改。</string>
     <string name="conflict_detection_disclaimer">检测只能确认模块应用包已安装，不能确认它已在 LSPosed 中启用、已选择 Telegram 作用域，也不能确认模块内部的对应功能已打开。</string>
     <string name="conflict_detection_db_disclaimer">已通过只读数据库确认 LSPosed 开关和 Telegram 作用域；仍不能确认各模块内部的对应功能开关。</string>
     <string name="conflict_detection_db_reading">正在以只读模式读取 LSPosed 模块状态…</string>
-    <string name="conflict_detection_db_success">LSPosed 数据库只读读取成功。GramSieve：%1$s。冲突只统计已启用且已勾选 Telegram 的模块。</string>
+    <string name="conflict_detection_db_success">LSPosed 数据库只读读取成功。GramSieve Conso：%1$s。冲突只统计已启用且已勾选 Telegram 的模块。</string>
     <string name="conflict_detection_db_root_unavailable">无法获得只读 root 权限，已退回安装包检测。</string>
     <string name="conflict_detection_db_unavailable">未找到 LSPosed 私有数据库，已退回安装包检测。</string>
     <string name="conflict_detection_db_timeout">LSPosed 只读查询超时，已退回安装包检测。</string>
@@ -135,7 +135,7 @@
     <string name="conflict_title_stories">Stories 界面冲突</string>
     <string name="conflict_title_privacy">隐私请求拦截冲突</string>
     <string name="conflict_title_ui">Telegram 菜单与消息界面冲突</string>
-    <string name="conflict_advice_anti_recall">多个模块可能移除同一删除更新或提前阻断 Telegram 存储。请只选择一个防撤回负责人，否则 GramSieve 可能漏记撤回，本机删除也可能被拦截。</string>
+    <string name="conflict_advice_anti_recall">多个模块可能移除同一删除更新或提前阻断 Telegram 存储。请只选择一个防撤回负责人，否则 GramSieve Conso 可能漏记撤回，本机删除也可能被拦截。</string>
     <string name="conflict_advice_edit_history">两个模块都可能在 Telegram 写入编辑前捕获旧消息，可能产生重复版本和重复菜单入口。</string>
     <string name="conflict_advice_download">这些模块写入同一组 FileLoadOperation 字段，参数不会叠加，最后执行的回调覆盖前者。请只保留一个下载加速模块。</string>
     <string name="conflict_advice_secret_media">Telegami 和 TeleVip 都可能替换 SecretMediaViewer 行为。Secret Media 功能只应在其中一个模块启用。</string>

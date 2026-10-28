@@ -371,3 +371,8 @@ Untested on a real device. Known risks:
 - 跟着包名一起改的硬编码：ContentProvider authority、保存配置的广播动作、冲突检测里的自包名、挂钩侧模块包名；挂钩侧启动模块内 Activity/Receiver 的 ComponentName 类名改写成字面量（Java 类仍在原包下，用新包名拼接会指向不存在的类）。
 - 显示名统一：App 名本来就是 GramSieve Conso；面板标题与底部改为 GramSieve Conso 设置 / GramSieve Conso · 本地过滤与增强工具；开源卡片说明里残留的“上游发布页”改回“上游开源地址”。
 - 迁移注意：规则存在模块存储里（按包名区分），换包后旧规则不会自动带过去；旧版先在数据备份里导出完整备份（存下载目录或复制文本），卸载旧版、装新版、在 LSPosed 里重新给 Conso 启用新模块、强制停止 Conso 重开，再导入完整备份。
+
+## 2026-10-28 应用名统一改为 GramSieve Conso（待构建）
+- 原因：v1.0.3 只改了包名和默认语言的应用名，但中文语言包 values-zh 里 app_name 仍是裸 GramSieve，中文手机上装完看到的还是上游的名字；Conso 设置列表里的入口行标题也是写死的 GramSieve。
+- 改动：中文语言包应用名、模块说明、对话框标题、菜单、保存提示、日志标题、冲突检测文案全部改为 GramSieve Conso；英文语言包同类文案同步改；Conso 设置入口行标题改为 GramSieve Conso（匹配逻辑同时认新旧两名，避免入口行认不出）；分享/剪贴板标题改为 GramSieve Conso；日志文件夹名、日志 TAG、线程名等内部标识不动。
+- 结果：应用名、显示名、包名统一为 GramSieve Conso / com.tianqianguai.gramsieve.conso；v1.0.3 发布说明里“显示名统一”的说法对中文语言并不成立，已在 v1.0.3 说明里加更正并指向 v1.0.4。

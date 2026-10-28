@@ -1,8 +1,8 @@
 <resources>
     <string name="app_name">GramSieve Conso</string>
     <string name="module_description">GramSieve Conso - Conso adaptation (global.xfinite.conso), local Telegram spam filter for LSPosed</string>
-    <string name="dialog_title_global">GramSieve Global Filter Settings</string>
-    <string name="dialog_title_chat">GramSieve Current Chat Filter Settings</string>
+    <string name="dialog_title_global">GramSieve Conso Global Filter Settings</string>
+    <string name="dialog_title_chat">GramSieve Conso Current Chat Filter Settings</string>
     <string name="dialog_save">Save</string>
     <string name="dialog_cancel">Cancel</string>
     <string name="dialog_enabled">Enable filtering</string>
@@ -77,8 +77,8 @@ If you fill the "Chat" section with something that matches the current chat name
     <string name="dialog_rule_effect_exclusion_sender">When this matches, messages from that sender are always kept visible.</string>
     <string name="dialog_rule_effect_exclusion_chat">When this matches, every message in that chat is always kept visible.</string>
     <string name="dialog_rule_chat_scope_warning">This window is already scoped to a single chat, so if the chat name matches, this is close to matching the entire chat.</string>
-    <string name="hook_menu_label_global">GramSieve filters</string>
-    <string name="hook_menu_label_chat">GramSieve chat filters</string>
+    <string name="hook_menu_label_global">GramSieve Conso filters</string>
+    <string name="hook_menu_label_chat">GramSieve Conso chat filters</string>
     <string name="hook_menu_label_block_message">Block this message</string>
     <string name="hook_menu_label_mark_message">Mark this message</string>
     <string name="hook_menu_label_jump_to_mark">Jump to marked position</string>
@@ -86,9 +86,9 @@ If you fill the "Chat" section with something that matches the current chat name
     <string name="hook_mark_no_position_toast">No marked position</string>
     <string name="hook_block_saved_toast">Added a rule for this message</string>
     <string name="hook_block_no_text_toast">This message has no text to extract</string>
-    <string name="dialog_saved_toast">GramSieve rules saved</string>
+    <string name="dialog_saved_toast">GramSieve Conso rules saved</string>
     <string name="dialog_view_logs">View Logs</string>
-    <string name="log_viewer_title">GramSieve Logs</string>
+    <string name="log_viewer_title">GramSieve Conso Logs</string>
     <string name="log_viewer_empty">No log entries yet.</string>
     <string name="log_viewer_export">Export</string>
     <string name="log_viewer_clear">Clear</string>
@@ -98,11 +98,11 @@ If you fill the "Chat" section with something that matches the current chat name
     <string name="anti_recall_enabled">Enable anti-recall and edit detection</string>
     <string name="anti_recall_load_interval">Load interval (seconds)</string>
     <string name="conflict_detection_title">Module conflict detection</string>
-    <string name="conflict_detection_intro">GramSieve first requests root access to read the LSPosed private database in read-only mode and confirm module enablement and Telegram scope. If that fails, it falls back to installed-package detection. The database is never modified.</string>
+    <string name="conflict_detection_intro">GramSieve Conso first requests root access to read the LSPosed private database in read-only mode and confirm module enablement and Telegram scope. If that fails, it falls back to installed-package detection. The database is never modified.</string>
     <string name="conflict_detection_disclaimer">Detection only confirms that an app package is installed. It cannot confirm that the module is enabled in LSPosed, scoped to Telegram, or that a related feature is turned on.</string>
     <string name="conflict_detection_db_disclaimer">LSPosed enablement and Telegram scope were confirmed from the database in read-only mode. Module-specific feature switches still cannot be confirmed.</string>
     <string name="conflict_detection_db_reading">Reading LSPosed module state in read-only mode…</string>
-    <string name="conflict_detection_db_success">LSPosed database read-only access succeeded. GramSieve: %1$s. Conflicts now include only modules that are enabled and scoped to Telegram.</string>
+    <string name="conflict_detection_db_success">LSPosed database read-only access succeeded. GramSieve Conso: %1$s. Conflicts now include only modules that are enabled and scoped to Telegram.</string>
     <string name="conflict_detection_db_root_unavailable">Read-only root access was unavailable. Falling back to installed-package detection.</string>
     <string name="conflict_detection_db_unavailable">The LSPosed private database was not found. Falling back to installed-package detection.</string>
     <string name="conflict_detection_db_timeout">The read-only LSPosed query timed out. Falling back to installed-package detection.</string>
@@ -135,7 +135,7 @@ If you fill the "Chat" section with something that matches the current chat name
     <string name="conflict_title_stories">Stories UI collision</string>
     <string name="conflict_title_privacy">Privacy request interception collision</string>
     <string name="conflict_title_ui">Telegram menu and cell UI collision</string>
-    <string name="conflict_advice_anti_recall">Multiple modules can remove the same delete update or short-circuit Telegram storage. Choose one anti-recall owner; otherwise GramSieve may miss recall events or local deletion may be blocked.</string>
+    <string name="conflict_advice_anti_recall">Multiple modules can remove the same delete update or short-circuit Telegram storage. Choose one anti-recall owner; otherwise GramSieve Conso may miss recall events or local deletion may be blocked.</string>
     <string name="conflict_advice_edit_history">Both modules can capture the old message before Telegram writes an edit. Duplicate versions and duplicate menu entries are possible.</string>
     <string name="conflict_advice_download">These modules write the same FileLoadOperation fields. Values do not stack; the last callback wins. Keep only one download accelerator.</string>
     <string name="conflict_advice_secret_media">Telegami and TeleVip can both replace SecretMediaViewer behavior. Keep Secret Media handling enabled in only one of them.</string>

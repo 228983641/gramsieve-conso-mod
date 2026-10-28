@@ -7281,7 +7281,7 @@ final class TelegramHookInstaller {
             return true;
         }
         String text = settingsItemText(item, "text");
-        return "GramSieve".contentEquals(text);
+        return "GramSieve Conso".contentEquals(text) || "GramSieve".contentEquals(text);
     }
 
     private int settingsRowInsertIndex(List<?> items) {
@@ -7563,7 +7563,7 @@ final class TelegramHookInstaller {
     }
 
     private CharSequence localizedSettingsRowLabel(Context context) {
-        return "GramSieve";
+        return "GramSieve Conso";
     }
 
     private CharSequence localizedSettingsRowSubtitle(Context context) {

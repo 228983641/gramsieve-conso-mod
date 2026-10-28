@@ -936,7 +936,7 @@ final class HostConfigPanel {
                 try {
                     ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null) {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("GramSieve rules", json));
+                        clipboard.setPrimaryClip(ClipData.newPlainText("GramSieve Conso rules", json));
                         Toast.makeText(context, t("已复制，请粘贴到笔记或文件里保存", "Copied, paste it into notes or a file to keep it"), Toast.LENGTH_SHORT).show();
                     }
                 } catch (Throwable ignored) {}
@@ -1253,7 +1253,7 @@ final class HostConfigPanel {
         showCopyShareDialogInternal(
                 t("导出完整备份", "Export full backup"),
                 t("下面是全部设置的完整备份，点“复制”后粘贴到你自己的笔记或文件里保存；也可以点“导出为文件”存到下载目录，或点“分享”发给自己。注意：里面有你的大模型 Key 和代理信息，不要发给别人，导出为文件也一样。", "Below is the full backup of all settings. Tap Copy, then paste it into your own notes or a file to keep it; or tap Export as file to save it to Download, or Share to send it to yourself. Note: it contains your LLM key and proxy info, do not send it to anyone, including as a file."),
-                json, "GramSieve full backup", t("分享完整备份", "Share full backup"),
+                json, "GramSieve Conso full backup", t("分享完整备份", "Share full backup"),
                 timestampedFileName("gramsieve-backup-", ".json"), json, "backup");
     }
 
@@ -1563,7 +1563,7 @@ final class HostConfigPanel {
         showCopyShareDialogInternal(
                 t("导出日志", "Export log"),
                 t("下面是最近的日志，点“导出为文件”会保存到下载目录，成功后弹框里会写明文件名和位置；也可以点“复制”或“分享”发文字版。日志里不含大模型 Key。", "Below is the recent log. Tap Export as file to save it as a .log file in Download; a dialog will then confirm the file name and location. Or tap Copy or Share for the text version. The log does not contain the LLM key."),
-                log, "GramSieve log", t("分享日志", "Share log"), fileName, log, "log");
+                log, "GramSieve Conso log", t("分享日志", "Share log"), fileName, log, "log");
     }
 
     private void applyProxyUiToConfig(FilterConfig config) {

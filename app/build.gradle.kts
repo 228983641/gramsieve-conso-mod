@@ -86,8 +86,8 @@ android {
         // not carry over automatically (they live in module prefs keyed
         // by package): export a full backup from the old build first,
         // then import it in the new build.
-        versionCode = 1003
-        versionName = "1.0.3-conso"
+        versionCode = 1004
+        versionName = "1.0.4-conso"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
