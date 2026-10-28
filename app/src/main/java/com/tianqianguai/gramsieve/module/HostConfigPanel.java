@@ -1723,6 +1723,69 @@ final class HostConfigPanel {
         }
     }
 
+    // Sort for the manage dialog: tested-good first by latency
+    // ascending, then tested-dead, then untested last (the same
+    // convention as TgProxyManager's refresh ordering, where an
+    // untested ping counts as slowest).
+    private void sortProxyEntriesByLatency(java.util.List<FilterConfig.ProxyEntry> entries) {
+        entries.sort((a, b) -> {
+            int rankA = a.pingMs >= 0 ? 0 : (a.lastTestedMs > 0L ? 1 : 2);
+            int rankB = b.pingMs >= 0 ? 0 : (b.lastTestedMs > 0L ? 1 : 2);
+            if (rankA != rankB) {
+                return Integer.compare(rankA, rankB);
+            }
+            if (rankA == 0 && a.pingMs != b.pingMs) {
+                return Long.compare(a.pingMs, b.pingMs);
+            }
+            String addressA = a.address == null ? "" : a.address;
+            String addressB = b.address == null ? "" : b.address;
+            int byAddress = addressA.compareToIgnoreCase(addressB);
+            return byAddress != 0 ? byAddress : Integer.compare(a.port, b.port);
+        });
+    }
+
+    // Rebuild the manage-dialog rows from the current entry order,
+    // preserving each row's tick by entry key. Used by the initial
+    // build and by the latency sort, so a sort never loses ticks.
+    private void rebuildProxyRows(LinearLayout container,
+            java.util.List<FilterConfig.ProxyEntry> entries,
+            java.util.List<android.widget.CheckBox> boxes,
+            FilterConfig refConfig) {
+        java.util.Set<String> checkedKeys = new java.util.HashSet<>();
+        for (android.widget.CheckBox box : boxes) {
+            if (box.isChecked() && box.getTag() instanceof FilterConfig.ProxyEntry) {
+                checkedKeys.add(((FilterConfig.ProxyEntry) box.getTag()).key());
+            }
+        }
+        container.removeAllViews();
+        boxes.clear();
+        for (FilterConfig.ProxyEntry entry : entries) {
+            android.widget.CheckBox box = new android.widget.CheckBox(context);
+            box.setMinHeight(dp(52));
+            box.setText(entry.display() + "（" + proxyStatusText(entry, refConfig) + "）");
+            box.setTextColor(primaryTextColor);
+            box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            box.setTag(entry);
+            box.setChecked(checkedKeys.contains(entry.key()));
+            if (!boxes.isEmpty()) {
+                // Build #43: a 1px inset divider between proxy
+                // rows, so 300+ rows read as a list, not a wall.
+                View divider = new View(context);
+                divider.setBackgroundColor(strokeColor);
+                LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+                dividerParams.leftMargin = dp(16);
+                container.addView(divider, dividerParams);
+            }
+            boxes.add(box);
+            LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            boxParams.topMargin = dp(8);
+            boxParams.bottomMargin = dp(8);
+            container.addView(box, boxParams);
+        }
+    }
+
     // Test only the ticked proxies, on a background thread, then
     // refresh the row texts in place and persist the results. The
     // same test gives both speed (pingMs) and connectivity
@@ -1730,7 +1793,9 @@ final class HostConfigPanel {
     private void testCheckedProxies(android.app.Activity activity,
             java.util.List<FilterConfig.ProxyEntry> entries,
             java.util.List<android.widget.CheckBox> boxes,
-            FilterConfig refConfig, boolean showConnectivitySummary) {
+            FilterConfig refConfig, boolean showConnectivitySummary,
+            TextView progressText, android.widget.ProgressBar progressBar,
+            java.util.List<Button> controls) {
         java.util.List<Integer> selected = new java.util.ArrayList<>();
         for (int i = 0; i < entries.size() && i < boxes.size(); i++) {
             if (boxes.get(i).isChecked()) {
@@ -1741,16 +1806,63 @@ final class HostConfigPanel {
             Toast.makeText(context, t("先勾选要测的代理", "Tick the proxies to test first"), Toast.LENGTH_SHORT).show();
             return;
         }
+        // Progress display, on the UI thread before the worker
+        // starts: every ticked row reads 测试中…, the header shows
+        // the running count, and the test/sort buttons are disabled
+        // so a second tap or a sort cannot move rows under the test.
+        // Without this the dialog looked dead until the whole batch
+        // finished, because rows only refreshed at the end.
+        int total = selected.size();
+        if (progressText != null) {
+            progressText.setVisibility(View.VISIBLE);
+            progressText.setText(t("测试中 0/" + total, "Testing 0/" + total));
+        }
+        if (progressBar != null) {
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setMax(total);
+            progressBar.setProgress(0);
+        }
+        if (controls != null) {
+            for (Button button : controls) {
+                button.setEnabled(false);
+            }
+        }
+        for (int index : selected) {
+            if (index < boxes.size()) {
+                boxes.get(index).setText(entries.get(index).display() + "（" + t("测试中…", "Testing…") + "）");
+            }
+        }
         new Thread(() -> {
             int ok = 0;
             int fail = 0;
-            for (int index : selected) {
+            for (int done = 0; done < selected.size(); done++) {
+                int index = selected.get(done);
                 FilterConfig.ProxyEntry entry = entries.get(index);
                 long ping = TgProxyManager.testProxy(context, entry);
                 entry.pingMs = ping;
                 entry.available = ping >= 0;
                 entry.lastTestedMs = System.currentTimeMillis();
                 if (ping >= 0) ok++; else fail++;
+                int doneCount = done + 1;
+                int rowIndex = index;
+                FilterConfig.ProxyEntry doneEntry = entry;
+                String result = ping >= 0 ? ping + " ms" : t("测不通", "unreachable");
+                activity.runOnUiThread(() -> {
+                    if (activity.isFinishing()) {
+                        return;
+                    }
+                    if (rowIndex < boxes.size()) {
+                        boxes.get(rowIndex).setText(doneEntry.display()
+                                + "（" + proxyStatusText(doneEntry, refConfig) + "）");
+                    }
+                    if (progressBar != null) {
+                        progressBar.setProgress(doneCount);
+                    }
+                    if (progressText != null) {
+                        progressText.setText(t("测试中 " + doneCount + "/" + total + "：" + doneEntry.display() + "（" + result + "）",
+                                "Testing " + doneCount + "/" + total + ": " + doneEntry.display() + " (" + result + ")"));
+                    }
+                });
             }
             int okCount = ok;
             int failCount = fail;
@@ -1761,6 +1873,17 @@ final class HostConfigPanel {
                 for (int i = 0; i < entries.size() && i < boxes.size(); i++) {
                     boxes.get(i).setText(entries.get(i).display()
                             + "（" + proxyStatusText(entries.get(i), refConfig) + "）");
+                }
+                if (progressText != null) {
+                    progressText.setVisibility(View.GONE);
+                }
+                if (progressBar != null) {
+                    progressBar.setVisibility(View.GONE);
+                }
+                if (controls != null) {
+                    for (Button button : controls) {
+                        button.setEnabled(true);
+                    }
                 }
                 saveProxyEntries(entries);
                 if (showConnectivitySummary) {
@@ -1783,7 +1906,7 @@ final class HostConfigPanel {
         }
         android.widget.ScrollView scroll = new android.widget.ScrollView(context);
         TextView hint = new TextView(context);
-        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。测试时每条后面会显示“测试中…”，顶部有进度和当前测的代理，测速、检查联通、按延迟排序在测试结束前不可点。\n按延迟排序：把测通的按延迟从低到高排前面，测不通的其次，未测的最后；勾选状态排完不变。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status. While testing, each row reads Testing…, the header shows progress and the proxy being tested, and test/sort buttons are disabled until it finishes.\nSort by latency: tested-good first by latency ascending, then unreachable, then untested last; ticks survive the sort.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
         hint.setTextColor(primaryTextColor);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try { hint.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
@@ -1916,32 +2039,52 @@ final class HostConfigPanel {
             }
             FilterConfig refConfig = baseConfig.deepCopy().sanitize();
             applyProxyUiToConfig(refConfig);
-            for (FilterConfig.ProxyEntry entry : entries) {
-                android.widget.CheckBox box = new android.widget.CheckBox(context);
-                box.setMinHeight(dp(52));
-                box.setText(entry.display() + "（" + proxyStatusText(entry, refConfig) + "）");
-                box.setTextColor(primaryTextColor);
-                box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-                box.setTag(entry);
-                if (!boxes.isEmpty()) {
-                    // Build #43: a 1px inset divider between proxy
-                    // rows, so 300+ rows read as a list, not a wall.
-                    View divider = new View(context);
-                    divider.setBackgroundColor(strokeColor);
-                    LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
-                    dividerParams.leftMargin = dp(16);
-                    proxyListContainer.addView(divider, dividerParams);
-                }
-                boxes.add(box);
-                LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                boxParams.topMargin = dp(8);
-                boxParams.bottomMargin = dp(8);
-                proxyListContainer.addView(box, boxParams);
+            if (!entries.isEmpty()) {
+                rebuildProxyRows(proxyListContainer, entries, boxes, refConfig);
             }
             dialogView.addView(proxyScroll, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            // Sort row + test progress, between the list and the
+            // action buttons. The progress views stay GONE until a
+            // test starts; the sort button joins the test buttons in
+            // the disabled-while-testing set, so a sort cannot move
+            // rows under a running test (row indices are the test's
+            // only link to entries).
+            LinearLayout sortRow = new LinearLayout(context);
+            sortRow.setOrientation(LinearLayout.HORIZONTAL);
+            sortRow.setGravity(Gravity.END);
+            Button sortButton = toolbarButton(t("按延迟排序", "Sort by latency"));
+            sortButton.setOnClickListener(v -> {
+                sortProxyEntriesByLatency(entries);
+                rebuildProxyRows(proxyListContainer, entries, boxes, refConfig);
+            });
+            sortRow.addView(sortButton, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams sortRowParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            sortRowParams.topMargin = dp(8);
+            dialogView.addView(sortRow, sortRowParams);
+            TextView progressText = new TextView(context);
+            progressText.setTextColor(secondaryTextColor);
+            progressText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            progressText.setVisibility(View.GONE);
+            LinearLayout.LayoutParams progressTextParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            progressTextParams.topMargin = dp(8);
+            dialogView.addView(progressText, progressTextParams);
+            android.widget.ProgressBar progressBar = new android.widget.ProgressBar(
+                    context, null, android.R.attr.progressBarStyleHorizontal);
+            progressBar.setVisibility(View.GONE);
+            try {
+                progressBar.setProgressTintList(new android.content.res.ColorStateList(
+                        new int[][]{{}}, new int[]{accentColor}));
+            } catch (Throwable ignored) {}
+            LinearLayout.LayoutParams progressBarParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            progressBarParams.topMargin = dp(4);
+            dialogView.addView(progressBar, progressBarParams);
+            java.util.List<Button> testControls = new java.util.ArrayList<>();
+            testControls.add(sortButton);
             android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
                     .setView(dialogView)
                     .create();
@@ -1955,10 +2098,12 @@ final class HostConfigPanel {
             selectAll.setOnClickListener(v -> { for (android.widget.CheckBox b : boxes) b.setChecked(true); });
             addManageButton(buttonRow, selectAll);
             Button testSpeed = manageActionButton(t("测速", "Test speed"), false);
-            testSpeed.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, false));
+            testControls.add(testSpeed);
+            testSpeed.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, false, progressText, progressBar, testControls));
             addManageButton(buttonRow, testSpeed);
             Button checkConnectivity = manageActionButton(t("检查联通", "Check connectivity"), false);
-            checkConnectivity.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, true));
+            testControls.add(checkConnectivity);
+            checkConnectivity.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, true, progressText, progressBar, testControls));
             addManageButton(buttonRow, checkConnectivity);
             Button addToHost = manageActionButton(t("添加到软件", "Add to app"), true);
             addToHost.setOnClickListener(v -> {
