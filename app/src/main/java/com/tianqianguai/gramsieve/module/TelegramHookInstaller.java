@@ -106,8 +106,6 @@ final class TelegramHookInstaller {
     // Dialog list features (Build #14): last DialogsActivity, held weakly
     // only so the classify bar can trigger a list refresh on filter change.
     private java.lang.ref.WeakReference<Object> lastDialogsActivityRef;
-    private volatile long lastClassifyBarSyncMs = 0L;
-    private volatile long lastClassifyBarInstallAttemptMs = 0L;
     private final FilterEngine filterEngine = new FilterEngine();
     private final DecisionCache decisionCache = new DecisionCache();
     private final AtomicInteger bindingProbeBudget = new AtomicInteger(12);
@@ -3833,7 +3831,6 @@ final class TelegramHookInstaller {
             }
             applyDecisionToBoundViews(itemView);
             if (dialogRow) {
-                applyDialogClassification((View) itemView);
             }
         } catch (Throwable throwable) {
             error("RecyclerView binding filter failed", throwable);
@@ -3857,7 +3854,6 @@ final class TelegramHookInstaller {
             }
             applyDecisionToBoundViews(itemView);
             if (dialogRow) {
-                applyDialogClassification((View) itemView);
             }
         } catch (Throwable throwable) {
             error("RecyclerView attachment filter failed", throwable);
@@ -6830,6 +6826,49 @@ final class TelegramHookInstaller {
         return null;
     }
 
+    // Build #36: Conso 2.0.0 stores folder membership in
+    // TL_dialogFilter.alwaysShow (minus neverShow), not in dialogs:
+    // the 2026-10-26 08:20 log shows the 节点 filter with dialogs=0
+    // but alwaysShow=38. Reading dialogs alone made proxy scan and
+    // archive sync see zero folder chats forever. Fall back to
+    // dialogs only when alwaysShow is absent, for older hosts.
+    private List<Long> folderMemberDialogIds(Object filter) {
+        List<Long> ids = new ArrayList<>();
+        try {
+            Object neverShow = Reflect.field(filter, "neverShow");
+            java.util.Set<Long> excluded = new java.util.HashSet<>();
+            if (neverShow instanceof List) {
+                for (Object o : (List<?>) neverShow) {
+                    long id = Reflect.asLong(o, 0L);
+                    if (id != 0L) {
+                        excluded.add(id);
+                    }
+                }
+            }
+            Object alwaysShow = Reflect.field(filter, "alwaysShow");
+            if (alwaysShow instanceof List) {
+                for (Object o : (List<?>) alwaysShow) {
+                    long id = Reflect.asLong(o, 0L);
+                    if (id != 0L && !excluded.contains(id)) {
+                        ids.add(id);
+                    }
+                }
+                return ids;
+            }
+            Object dialogs = Reflect.field(filter, "dialogs");
+            if (dialogs instanceof List) {
+                for (Object o : (List<?>) dialogs) {
+                    long id = Reflect.asLong(o, 0L);
+                    if (id != 0L && !excluded.contains(id)) {
+                        ids.add(id);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return ids;
+    }
+
     private boolean folderHasDialog(Object controller, int filterId, long dialogId) {
         try {
             Object fresh = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
@@ -7733,7 +7772,6 @@ final class TelegramHookInstaller {
                         // UI sync (Build #15): pinned highlight / classify bar
                         // switches must take effect without reopening the list.
                         try { refreshDialogsUi(host); } catch (Throwable ignored) {}
-                        try { syncClassifyBarWithConfig(host); } catch (Throwable ignored) {}
                         // Build #26: if the panel was opened from Conso
                         // Settings, host is SettingsActivity, not the chat
                         // list, so also sync to the last DialogsActivity
@@ -7745,14 +7783,7 @@ final class TelegramHookInstaller {
                             Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
                             if (dialogsHost != null && dialogsHost != host) {
                                 try { refreshDialogsUi(dialogsHost); } catch (Throwable ignored) {}
-                                try { syncClassifyBarWithConfig(dialogsHost); } catch (Throwable ignored) {}
-                            }
-                            if (dialogsHost != null) {
-                                Object dialogsController = messagesControllerForChat(dialogsHost);
-                                if (dialogsController != null) {
-                                    syncFolderArchive(dialogsController);
-                                }
-                            }
+                                    }
                         } catch (Throwable ignored) {}
                     }
                 }
@@ -7875,31 +7906,18 @@ final class TelegramHookInstaller {
         hookBoostDownloadSpeed(classLoader);
         hookLocalPremium(classLoader);
         hookTranslationEntryPoints(classLoader);
-        hookFolderArchiveSync(classLoader);
         hookDialogListFeatures(classLoader);
     }
 
     // Dialog list features (Build #14, user-selected low-risk route):
-    // 1) Pinned highlight: after DialogCell.onDraw, if the cell is pinned
-    //    (DialogCell.getIsPinned) and the switch is on, draw a light
-    //    accent tint over the cell plus a solid accent bar at the left
-    //    edge. Drawing after the host's own onDraw means the host's
-    //    background cannot paint over it; the bar sits at x=0..4dp, left
-    //    of the avatar, so it does not cover text or the avatar.
-    // 2) Auto-classify bar: after DialogsActivity.createView, insert a
-    //    horizontal bar below the folder tabs (FilterTabsView) with
-    //    All / Personal / Groups / Channels. Tapping a button saves
-    //    classifyFilter to config and refreshes the dialog list; the
-    //    the RecyclerView binding hook applies the filter after Telegram
-    //    binds the row, with an onDraw fallback for builds that bypass the
-    //    generic adapter path. Recycled rows restore their baseline before
-    //    each bind, so switching back to All does not leave stale rows hidden.
-    //    Classification uses DialogObject.isUserDialog / isChatDialog and
-    //    MessagesController.getUserOrChat: User -> Personal (bots included),
-    //    TL_chat or megagroup channel -> Groups, broadcast channel -> Channels.
-    //    Unknown / unloaded peers are never hidden, to avoid losing chats
-    //    on a classification miss. When the bar switch is off, the filter
-    //    is ignored entirely, even if a filter value was saved before.
+    // Pinned highlight only: after DialogCell.onDraw, if the cell is
+    // pinned (DialogCell.getIsPinned) and the switch is on, draw a
+    // light accent tint over the cell plus a solid accent bar at the
+    // left edge. Drawing after the host's own onDraw means the host's
+    // background cannot paint over it; the bar sits at x=0..4dp, left
+    // of the avatar, so it does not cover text or the avatar.
+    // The auto-classify bar and folder auto-archive were removed
+    // (user 2026-10-28): their switches, hooks and methods are gone.
     private void hookDialogListLayout(ClassLoader classLoader) {
         try {
             Class<?> listClass = classLoader.loadClass("org.telegram.ui.DialogsActivity$DialogsRecyclerView");
@@ -7978,7 +7996,7 @@ final class TelegramHookInstaller {
                     ? findViewWithTag((ViewGroup) root, "gramsieve_classify_bar") : null;
             FilterConfig config = currentEnhancementConfig();
             int extra = 0;
-            if (config.showClassifyBar && bar != null && bar.getVisibility() == View.VISIBLE) {
+            if (bar != null && bar.getVisibility() == View.VISIBLE) {
                 extra = Math.max(0, bar.getMeasuredHeight());
                 if (extra == 0) {
                     extra = Math.max(0, bar.getHeight());
@@ -8027,7 +8045,6 @@ final class TelegramHookInstaller {
                             // The generic RecyclerView adapter hook is the
                             // primary path. onDraw is a safe fallback for
                             // Telegram builds that bind DialogCell directly.
-                            applyDialogClassification((View) chain.getThisObject());
                         }
                         if (!currentEnhancementConfig().highlightPinnedDialogs) {
                             return result;
@@ -8092,49 +8109,6 @@ final class TelegramHookInstaller {
                         try {
                             FilterConfig cfg = currentEnhancementConfig();
                             Object cell = chain.getThisObject();
-                            // Build #25: if the bar is missing entirely
-                            // (tabs/list were not ready when createView ran,
-                            // so the first install silently returned), retry
-                            // installing it from the first bound cell, at
-                            // most once per 2s, as long as the switch is on.
-                            // This runs before the early return below, so it
-                            // also works when the current filter is All (0).
-                            try {
-                                if (cfg.showClassifyBar && cell instanceof View) {
-                                    long nowInstallMs = System.currentTimeMillis();
-                                    if (nowInstallMs - lastClassifyBarInstallAttemptMs > 2000L) {
-                                        View cellView = (View) cell;
-                                        View rootView = cellView.getRootView();
-                                        if (rootView instanceof ViewGroup
-                                                && findViewWithTag((ViewGroup) rootView, "gramsieve_classify_bar") == null) {
-                                            lastClassifyBarInstallAttemptMs = nowInstallMs;
-                                            Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
-                                            installClassifyBar(dialogsHost, rootView);
-                                        }
-                                    }
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                long nowMs = System.currentTimeMillis();
-                                if (nowMs - lastClassifyBarSyncMs > 300L) {
-                                    lastClassifyBarSyncMs = nowMs;
-                                    View cellView = (View) cell;
-                                    cellView.post(() -> {
-                                        try {
-                                            View rootView = cellView.getRootView();
-                                            if (rootView instanceof ViewGroup) {
-                                                View bar = findViewWithTag((ViewGroup) rootView, "gramsieve_classify_bar");
-                                                if (bar instanceof ViewGroup) {
-                                                    updateClassifyBarButtons((ViewGroup) bar);
-                                                }
-                                            }
-                                        } catch (Throwable ignored) {
-                                        }
-                                    });
-                                }
-                            } catch (Throwable ignored) {
-                            }
                         } catch (Throwable ignored) {
                         }
                         return result;
@@ -8156,22 +8130,11 @@ final class TelegramHookInstaller {
                     lastDialogsActivityRef = new java.lang.ref.WeakReference<>(host);
                     if (result instanceof View) {
                         ((View) result).post(() -> {
-                            try {
-                                syncClassifyBarWithConfig(host, (View) result);
-                            } catch (Throwable ignored) {
-                            }
                             // TG proxy auto-refresh (Build #20): only when
                             // auto-add is on and the interval has passed;
                             // TgProxyManager guards against spamming.
                             try {
                                 maybeAutoRefreshProxies(chain.getThisObject());
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                Object dialogsController = messagesControllerForChat(chain.getThisObject());
-                                if (dialogsController != null) {
-                                    syncFolderArchive(dialogsController);
-                                }
                             } catch (Throwable ignored) {
                             }
                         });
@@ -8201,19 +8164,6 @@ final class TelegramHookInstaller {
                     View fragmentView = resolveHostFragmentView(host);
                     if (fragmentView != null) {
                         fragmentView.post(() -> {
-                            try {
-                                // Always sync so turning the switch off also
-                                // removes a bar that was installed earlier.
-                                syncClassifyBarWithConfig(host);
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                Object dialogsController = messagesControllerForChat(host);
-                                if (dialogsController != null) {
-                                    syncFolderArchive(dialogsController);
-                                }
-                            } catch (Throwable ignored) {
-                            }
                         });
                     }
                 } catch (Throwable ignored) {
@@ -8225,39 +8175,6 @@ final class TelegramHookInstaller {
         }
     }
 
-    private volatile Map<Long, Set<Integer>> lastFolderMembership = null;
-
-    private void hookFolderArchiveSync(ClassLoader classLoader) {
-        try {
-            Class<?> mcClass = classLoader.loadClass("org.telegram.messenger.MessagesController");
-            String[] methodNames = new String[]{"addDialogToFolder", "updateFilterDialogs", "onFilterUpdate", "addFilter", "removeFilter"};
-            for (Method candidate : mcClass.getDeclaredMethods()) {
-                boolean match = false;
-                for (String name : methodNames) {
-                    if (name.equals(candidate.getName())) {
-                        match = true;
-                        break;
-                    }
-                }
-                if (!match) {
-                    continue;
-                }
-                candidate.setAccessible(true);
-                Method method = candidate;
-                hook(method, chain -> {
-                    Object result = chain.proceed();
-                    try {
-                        syncFolderArchive(chain.getThisObject());
-                    } catch (Throwable ignored) {
-                    }
-                    return result;
-                });
-            }
-            info("Enhancement: hooked MessagesController folder methods for archive sync");
-        } catch (Throwable throwable) {
-            error("Enhancement: failed to hook folder archive sync", throwable);
-        }
-    }
 
     // Build #36: Conso 2.0.0 stores folder membership in
     // TL_dialogFilter.alwaysShow (minus neverShow), not in dialogs:
@@ -8265,228 +8182,6 @@ final class TelegramHookInstaller {
     // but alwaysShow=38. Reading dialogs alone made proxy scan and
     // archive sync see zero folder chats forever. Fall back to
     // dialogs only when alwaysShow is absent, for older hosts.
-    private List<Long> folderMemberDialogIds(Object filter) {
-        List<Long> ids = new ArrayList<>();
-        try {
-            Object neverShow = Reflect.field(filter, "neverShow");
-            java.util.Set<Long> excluded = new java.util.HashSet<>();
-            if (neverShow instanceof List) {
-                for (Object o : (List<?>) neverShow) {
-                    long id = Reflect.asLong(o, 0L);
-                    if (id != 0L) {
-                        excluded.add(id);
-                    }
-                }
-            }
-            Object alwaysShow = Reflect.field(filter, "alwaysShow");
-            if (alwaysShow instanceof List) {
-                for (Object o : (List<?>) alwaysShow) {
-                    long id = Reflect.asLong(o, 0L);
-                    if (id != 0L && !excluded.contains(id)) {
-                        ids.add(id);
-                    }
-                }
-                return ids;
-            }
-            Object dialogs = Reflect.field(filter, "dialogs");
-            if (dialogs instanceof List) {
-                for (Object o : (List<?>) dialogs) {
-                    long id = Reflect.asLong(o, 0L);
-                    if (id != 0L && !excluded.contains(id)) {
-                        ids.add(id);
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return ids;
-    }
-
-    private void syncFolderArchive(Object controller) {
-        if (controller == null || configProvider == null) {
-            return;
-        }
-        try {
-            FilterConfig config = currentEnhancementConfig();
-            if (!config.autoArchiveFolderChats) {
-                lastFolderMembership = null;
-                info("FolderArchive: auto-archive off, tracking cleared");
-                return;
-            }
-            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
-            if (!(filtersObj instanceof List)) {
-                info("FolderArchive: no filter list, sync skipped");
-                return;
-            }
-            // Build #40: when the list is (re)created, filters may
-            // briefly be empty; treating that as "everything left its
-            // folder" unarchives chats and then re-archives them on the
-            // next scan (seen 2026-10-26 09:41: folders=0, unarchive=1,
-            // then 141 re-archived). Skip without touching the baseline.
-            boolean anyUserFilter = false;
-            for (Object filter : (List<?>) filtersObj) {
-                String filterName0 = Reflect.asString(Reflect.field(filter, "name"));
-                if (filterName0 == null || !"ALL_CHATS".equalsIgnoreCase(filterName0.trim())) {
-                    anyUserFilter = true;
-                    break;
-                }
-            }
-            if (!anyUserFilter) {
-                info("FolderArchive: no user filters yet, sync skipped");
-                return;
-            }
-            Map<Long, Set<Integer>> current = new HashMap<>();
-            int userFilterCount = 0;
-            for (Object filter : (List<?>) filtersObj) {
-                // Build #25: ALL_CHATS is Telegram's built-in "All Chats"
-                // pseudo-filter, not a user folder. Treating it as a folder
-                // would archive every chat in the app, not just folder
-                // chats, and could create a second Archive entry.
-                String filterName = Reflect.asString(Reflect.field(filter, "name"));
-                if (filterName != null && "ALL_CHATS".equalsIgnoreCase(filterName.trim())) {
-                    continue;
-                }
-                userFilterCount++;
-                int filterId = Reflect.asInt(Reflect.field(filter, "id"), -1);
-                for (long dialogId : folderMemberDialogIds(filter)) {
-                    Set<Integer> set = current.get(dialogId);
-                    if (set == null) {
-                        set = new HashSet<>();
-                        current.put(dialogId, set);
-                    }
-                    set.add(filterId);
-                }
-            }
-            Set<Long> autoArchived = new HashSet<>();
-            if (config.autoArchivedDialogIds != null) {
-                autoArchived.addAll(config.autoArchivedDialogIds);
-            }
-            Set<Long> optOut = new HashSet<>();
-            if (config.folderArchiveOptOutDialogIds != null) {
-                optOut.addAll(config.folderArchiveOptOutDialogIds);
-            }
-            Map<Long, Boolean> changes = new HashMap<>();
-            Map<Long, Set<Integer>> previous = lastFolderMembership;
-            if (previous == null) {
-                for (Map.Entry<Long, Set<Integer>> entry : current.entrySet()) {
-                    long dialogId = entry.getKey();
-                    if (optOut.contains(dialogId)) {
-                        continue;
-                    }
-                    int folderId = currentFolderId(controller, dialogId);
-                    if (folderId == 1) {
-                        continue;
-                    }
-                    if (autoArchived.contains(dialogId)) {
-                        autoArchived.remove(dialogId);
-                        optOut.add(dialogId);
-                    } else {
-                        changes.put(dialogId, true);
-                    }
-                }
-                for (Long dialogId : new ArrayList<>(autoArchived)) {
-                    if (!current.containsKey(dialogId)) {
-                        changes.put(dialogId, false);
-                    }
-                }
-                for (Long dialogId : new ArrayList<>(optOut)) {
-                    if (!current.containsKey(dialogId)) {
-                        optOut.remove(dialogId);
-                    }
-                }
-            } else {
-                for (Map.Entry<Long, Set<Integer>> entry : current.entrySet()) {
-                    long dialogId = entry.getKey();
-                    if (previous.containsKey(dialogId)) {
-                        continue;
-                    }
-                    if (optOut.contains(dialogId)) {
-                        continue;
-                    }
-                    if (currentFolderId(controller, dialogId) != 1 && !autoArchived.contains(dialogId)) {
-                        changes.put(dialogId, true);
-                    }
-                }
-                for (Long dialogId : previous.keySet()) {
-                    if (current.containsKey(dialogId)) {
-                        continue;
-                    }
-                    if (autoArchived.contains(dialogId)) {
-                        changes.put(dialogId, false);
-                    }
-                    if (optOut.contains(dialogId)) {
-                        optOut.remove(dialogId);
-                    }
-                }
-            }
-            // Build #31: one scan line per sync, counts only, so the
-            // next log file shows whether the sync is stable or keeps
-            // re-archiving (the duplicate-archive-rows question) and
-            // how many folder chats it sees, without any dialog ids.
-            int archiveCount = 0;
-            int unarchiveCount = 0;
-            for (Boolean value : changes.values()) {
-                if (value) {
-                    archiveCount++;
-                } else {
-                    unarchiveCount++;
-                }
-            }
-            info("FolderArchive: scan mode=" + (previous == null ? "first" : "delta")
-                    + " folders=" + userFilterCount + " chatsInFolders=" + current.size()
-                    + " changes=" + changes.size() + " archive=" + archiveCount + " unarchive=" + unarchiveCount);
-            lastFolderMembership = current;
-            boolean changed = false;
-            if (!changes.isEmpty() && applyArchiveChanges(controller, changes)) {
-                for (Map.Entry<Long, Boolean> entry : changes.entrySet()) {
-                    if (entry.getValue()) {
-                        autoArchived.add(entry.getKey());
-                    } else {
-                        autoArchived.remove(entry.getKey());
-                    }
-                }
-                changed = true;
-            }
-            if (!optOut.equals(config.folderArchiveOptOutDialogIds == null
-                    ? new HashSet<Long>() : new HashSet<>(config.folderArchiveOptOutDialogIds))) {
-                changed = true;
-            }
-            if (!autoArchived.equals(config.autoArchivedDialogIds == null
-                    ? new HashSet<Long>() : new HashSet<>(config.autoArchivedDialogIds))) {
-                changed = true;
-            }
-            if (changed) {
-                try {
-                    Context appContext = resolveHostApplication();
-                    if (appContext != null) {
-                        FilterConfig updated = config.deepCopy().sanitize();
-                        updated.autoArchivedDialogIds = new ArrayList<>(autoArchived);
-                        updated.folderArchiveOptOutDialogIds = new ArrayList<>(optOut);
-                        updated.updatedAtEpochMs = System.currentTimeMillis();
-                        saveUpdatedConfig(appContext, updated);
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-        } catch (Throwable throwable) {
-            error("Folder-archive sync failed", throwable);
-        }
-    }
-
-    private int currentFolderId(Object controller, long dialogId) {
-        try {
-            Object dialog = Reflect.invokeIfExists(controller, "getDialog", new Class<?>[]{long.class}, dialogId);
-            if (dialog != null) {
-                Object folderId = Reflect.field(dialog, "folder_id");
-                if (folderId instanceof Number) {
-                    return ((Number) folderId).intValue();
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return -1;
-    }
-
     // Archive through the host's own folder method, which is what
     // the long-press selection path ends in. Verified against
     // upstream Telegram (DialogsActivity.performSelectedDialogsAction,
@@ -8512,134 +8207,6 @@ final class TelegramHookInstaller {
     // dialog is simply not marked as auto-archived, and the sync's
     // delta logic will not re-offer it until it leaves and re-enters
     // a folder.
-    private Boolean applyArchiveChangesViaHost(Object controller, Map<Long, Boolean> changes) {
-        boolean anyApplied = false;
-        for (Map.Entry<Long, Boolean> entry : changes.entrySet()) {
-            if (entry.getKey() == null) {
-                continue;
-            }
-            Object result = Reflect.invokeIfExists(controller, "addDialogToFolder",
-                    new Class<?>[]{long.class, int.class, int.class, long.class},
-                    entry.getKey(), entry.getValue() ? 1 : 0, -1, 0L);
-            if (result == null) {
-                info("FolderArchive: host addDialogToFolder unavailable, server fallback");
-                return null;
-            }
-            if (result instanceof Number && ((Number) result).intValue() > 0) {
-                anyApplied = true;
-            } else {
-                info("FolderArchive: host skipped a dialog, not forcing it");
-            }
-        }
-        if (anyApplied) {
-            info("FolderArchive: applied via host addDialogToFolder");
-        }
-        return anyApplied;
-    }
-
-    private boolean applyArchiveChanges(Object controller, Map<Long, Boolean> changes) {
-        // Archive and unarchive both go through the host method
-        // first; only if it is unavailable does the old direct TL
-        // path below run, so the same dialog is never written twice.
-        if (changes != null && !changes.isEmpty()) {
-            try {
-                Boolean hostResult = applyArchiveChangesViaHost(controller, changes);
-                if (hostResult != null) {
-                    return hostResult;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-        try {
-            int account = savedClassLoader != null ? resolveSelectedTelegramAccount(savedClassLoader) : 0;
-            if (account < 0) {
-                account = 0;
-            }
-            ClassLoader cl = savedClassLoader != null ? savedClassLoader : controller.getClass().getClassLoader();
-            Class<?> folderPeerClass = cl.loadClass("org.telegram.tgnet.TLRPC$TL_folderPeer");
-            Class<?> editClass = cl.loadClass("org.telegram.tgnet.TLRPC$TL_folders_editPeerFolders");
-            Object request = editClass.getDeclaredConstructor().newInstance();
-            ArrayList<Object> peers = new ArrayList<>();
-            for (Map.Entry<Long, Boolean> entry : changes.entrySet()) {
-                Object peer = Reflect.invokeIfExists(controller, "getPeer", new Class<?>[]{long.class}, entry.getKey());
-                if (peer == null) {
-                    continue;
-                }
-                Object folderPeer = folderPeerClass.getDeclaredConstructor().newInstance();
-                Reflect.setField(folderPeer, "folder_id", entry.getValue() ? 1 : 0);
-                Reflect.setField(folderPeer, "peer", peer);
-                peers.add(folderPeer);
-            }
-            if (peers.isEmpty()) {
-                return false;
-            }
-            Reflect.setField(request, "folder_peers", peers);
-            Class<?> cmClass = cl.loadClass("org.telegram.tgnet.ConnectionsManager");
-            Object cm = Reflect.invokeStatic(cmClass, "getInstance", new Class<?>[]{int.class}, account);
-            if (cm == null) {
-                return false;
-            }
-            Class<?> delegateClass = cl.loadClass("org.telegram.tgnet.RequestDelegate");
-            final int finalAccount = account;
-            final Map<Long, Boolean> finalChanges = new HashMap<>(changes);
-            final Object finalController = controller;
-            final ClassLoader finalCl = cl;
-            Object delegate = java.lang.reflect.Proxy.newProxyInstance(cl, new Class<?>[]{delegateClass},
-                    (java.lang.reflect.InvocationHandler) (proxy, method, args) -> {
-                        if ("run".equals(method.getName())) {
-                            try {
-                                Object error = args != null && args.length > 1 ? args[1] : null;
-                                if (error != null) {
-                                    info("FolderArchive: server rejected archive request");
-                                }
-                                if (error == null) {
-                                    info("FolderArchive: server applied archive changes=" + finalChanges.size());
-                                    for (Map.Entry<Long, Boolean> entry : finalChanges.entrySet()) {
-                                        try {
-                                            Object dialog = Reflect.invokeIfExists(finalController, "getDialog",
-                                                    new Class<?>[]{long.class}, entry.getKey());
-                                            if (dialog != null) {
-                                                Reflect.setField(dialog, "folder_id", entry.getValue() ? 1 : 0);
-                                            }
-                                        } catch (Throwable ignored) {
-                                        }
-                                    }
-                                    try {
-                                        Class<?> ncClass = finalCl.loadClass("org.telegram.messenger.NotificationCenter");
-                                        Object nc = Reflect.invokeStatic(ncClass, "getInstance", new Class<?>[]{int.class}, finalAccount);
-                                        Object reloadId = Reflect.staticField(ncClass, "dialogsNeedReload");
-                                        if (nc != null && reloadId instanceof Number) {
-                                            Reflect.invokeIfExists(nc, "postNotificationName",
-                                                    new Class<?>[]{int.class, Object[].class},
-                                                    ((Number) reloadId).intValue(), new Object[0]);
-                                        }
-                                    } catch (Throwable ignored) {
-                                    }
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                            return null;
-                        }
-                        if ("toString".equals(method.getName())) {
-                            return "FolderArchiveDelegate";
-                        }
-                        if ("hashCode".equals(method.getName())) {
-                            return System.identityHashCode(proxy);
-                        }
-                        if ("equals".equals(method.getName())) {
-                            return proxy == (args != null && args.length > 0 ? args[0] : null);
-                        }
-                        return null;
-                    });
-            Object reqId = Reflect.invokeIfExists(cm, "sendRequest",
-                    new Class<?>[]{cl.loadClass("org.telegram.tgnet.TLObject"), delegateClass}, request, delegate);
-            return reqId != null;
-        } catch (Throwable throwable) {
-            error("Folder-archive apply failed", throwable);
-            return false;
-        }
-    }
-
     private volatile boolean proxyLoopStarted = false;
 
     // Build #42: the auto-maintenance loop. List-open refresh alone
@@ -8715,131 +8282,6 @@ final class TelegramHookInstaller {
         }
     }
 
-    private int classifyDialogType(Object cell, long dialogId) {
-        try {
-            ClassLoader cl = cell.getClass().getClassLoader();
-            Class<?> dialogObjectClass = null;
-            try {
-                dialogObjectClass = cl.loadClass("org.telegram.messenger.DialogObject");
-                Boolean isUser = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isUserDialog",
-                        new Class<?>[]{long.class}, dialogId);
-                if (Boolean.TRUE.equals(isUser)) {
-                    return 1;
-                }
-            } catch (Throwable ignored) {
-                // Some Conso builds do not expose DialogObject helpers. The
-                // peer-class path below is independent of those helpers.
-            }
-
-            int account = -1;
-            try {
-                Object acc = Reflect.field(cell, "currentAccount");
-                if (acc instanceof Number) {
-                    account = ((Number) acc).intValue();
-                }
-            } catch (Throwable ignored) {
-            }
-            if (account < 0) {
-                Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
-                account = Reflect.asInt(Reflect.field(dialogsHost, "currentAccount"), -1);
-            }
-            if (account < 0 && savedClassLoader != null) {
-                account = resolveSelectedTelegramAccount(savedClassLoader);
-            }
-            if (account < 0) {
-                account = 0;
-            }
-            Class<?> messagesControllerClass = cl.loadClass("org.telegram.messenger.MessagesController");
-            Object controller = Reflect.invokeStatic(messagesControllerClass, "getInstance",
-                    new Class<?>[]{int.class}, account);
-            Object peer = controller == null ? null : Reflect.invokeIfExists(controller, "getUserOrChat",
-                    new Class<?>[]{long.class}, dialogId);
-            if (peer != null) {
-                String peerClassLower = peer.getClass().getName().toLowerCase(Locale.ROOT);
-                if (peerClassLower.contains("user")) {
-                    return 1;
-                }
-                if (peerClassLower.contains("channel")) {
-                    Object megagroup = Reflect.field(peer, "megagroup");
-                    boolean isMegagroup = Boolean.TRUE.equals(megagroup)
-                            || (megagroup instanceof Number && ((Number) megagroup).intValue() != 0);
-                    return isMegagroup ? 2 : 3;
-                }
-                if (peerClassLower.contains("chat")) {
-                    return 2;
-                }
-            }
-            // Fallback: chat dialogs that are not users are groups. This is
-            // only consulted after the peer lookup, so a missing DialogObject
-            // helper cannot make a loaded TL_user/TL_channel unclassifiable.
-            if (dialogObjectClass != null) {
-                Boolean isChat = (Boolean) Reflect.invokeStatic(dialogObjectClass, "isChatDialog",
-                        new Class<?>[]{long.class}, dialogId);
-                return Boolean.TRUE.equals(isChat) ? 2 : 0;
-            }
-        } catch (Throwable ignored) {
-        }
-        return 0;
-    }
-
-    private void syncClassifyBarWithConfig(Object host) {
-        syncClassifyBarWithConfig(host, null);
-    }
-
-    private void syncClassifyBarWithConfig(Object host, View fallbackRoot) {
-        try {
-            View rootView = resolveHostFragmentView(host);
-            if (!(rootView instanceof ViewGroup) && fallbackRoot != null) {
-                rootView = fallbackRoot;
-            }
-            // Build #26: the global panel can be opened from Conso
-            // Settings, whose host is NOT DialogsActivity, so resolving
-            // the host's fragment view fails and the bar is never
-            // installed on the real chat list. Fall back to the last
-            // DialogsActivity instance in that case.
-            if (!(rootView instanceof ViewGroup)) {
-                Object dialogsHost = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
-                if (dialogsHost != null && dialogsHost != host) {
-                    rootView = resolveHostFragmentView(dialogsHost);
-                }
-            }
-            if (!(rootView instanceof ViewGroup)) {
-                // Build #30: log instead of silently returning, so the
-                // next exported log file shows exactly why the bar is
-                // missing (no root view is the prime suspect after
-                // #26/#27/#28 all ran without a bar appearing).
-                info("ClassifyBar: no root view, host=" + (host == null ? "null" : host.getClass().getSimpleName())
-                        + " show=" + currentEnhancementConfig().showClassifyBar);
-                return;
-            }
-            ViewGroup root = (ViewGroup) rootView;
-            FilterConfig config = currentEnhancementConfig();
-            View existing = findViewWithTag(root, "gramsieve_classify_bar");
-            if (!config.showClassifyBar) {
-                if (existing != null && existing.getParent() instanceof ViewGroup) {
-                    ((ViewGroup) existing.getParent()).removeView(existing);
-                }
-                applyClassifyListInsetsTree(root);
-                info("ClassifyBar: disabled, removedExisting=" + (existing != null));
-                return;
-            }
-            if (existing instanceof ViewGroup) {
-                View tabs = findFilterTabsView(root);
-                if (tabs != null) {
-                    repositionClassifyBar(existing, tabs, true);
-                }
-                updateClassifyBarButtons((ViewGroup) existing);
-                applyClassifyListInsetsTree(root);
-                info("ClassifyBar: already installed, refreshed");
-                return;
-            }
-            installClassifyBar(host, root);
-            applyClassifyListInsetsTree(root);
-        } catch (Throwable throwable) {
-            error("ClassifyBar: sync failed", throwable);
-        }
-    }
-
     private View findViewWithTag(ViewGroup group, String tag) {
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
@@ -8856,160 +8298,6 @@ final class TelegramHookInstaller {
         return null;
     }
 
-    private void installClassifyBar(Object host, View root) {
-        try {
-            if (!(root instanceof ViewGroup)) {
-                info("ClassifyBar: install aborted, root not a ViewGroup");
-                return;
-            }
-            View tabsView = findFilterTabsView((ViewGroup) root);
-            View anchorView = tabsView;
-            boolean placeBelowAnchor = tabsView != null;
-            ViewGroup parent;
-            int insertIndex;
-            if (tabsView != null && tabsView.getParent() instanceof ViewGroup) {
-                parent = (ViewGroup) tabsView.getParent();
-                insertIndex = parent.indexOfChild(tabsView) + 1;
-                info("ClassifyBar: tabs found, parent=" + parent.getClass().getSimpleName());
-            } else {
-                // Fallback: insert above the first dialog list view found.
-                View listView = findFirstRecyclerListView((ViewGroup) root);
-                if (listView == null || !(listView.getParent() instanceof ViewGroup)) {
-                    info("ClassifyBar: install aborted, tabs=null and no list view found, rootTree="
-                            + describeViewTree((ViewGroup) root, 0));
-                    return;
-                }
-                anchorView = listView;
-                placeBelowAnchor = false;
-                parent = (ViewGroup) listView.getParent();
-                insertIndex = parent.indexOfChild(listView);
-                info("ClassifyBar: tabs not found, falling back to list view, parent=" + parent.getClass().getSimpleName());
-            }
-            // Idempotent: do not install twice in the same parent.
-            for (int i = 0; i < parent.getChildCount(); i++) {
-                View child = parent.getChildAt(i);
-                if (child != null && "gramsieve_classify_bar".equals(child.getTag())) {
-                    repositionClassifyBar(child, anchorView, placeBelowAnchor);
-                    updateClassifyBarButtons((ViewGroup) child);
-                    return;
-                }
-            }
-            Context context = root.getContext();
-            LinearLayout bar = new LinearLayout(context);
-            bar.setTag("gramsieve_classify_bar");
-            bar.setOrientation(LinearLayout.HORIZONTAL);
-            bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            bar.setPadding(dp(context, 12f), dp(context, 6f), dp(context, 12f), dp(context, 6f));
-            bar.setBackgroundColor(dialogBackgroundColor(context));
-            try {
-                bar.setElevation(dp(context, 1f));
-            } catch (Throwable ignored) {
-            }
-            String[] labels = new String[]{"全部", "个人", "群聊", "频道"};
-            for (int i = 0; i < labels.length; i++) {
-                final int filter = i;
-                TextView button = new TextView(context);
-                button.setText(labels[i]);
-                button.setTextSize(14f);
-                button.setGravity(android.view.Gravity.CENTER);
-                button.setMinHeight(dp(context, 36f));
-                button.setPadding(dp(context, 12f), dp(context, 5f), dp(context, 12f), dp(context, 5f));
-                button.setTag(filter);
-                button.setContentDescription(labels[i]);
-                button.setOnClickListener(v -> {
-                    try {
-                        FilterConfig updated = currentEnhancementConfig().deepCopy();
-                        String category = currentClassifyCategory();
-                        if (updated.classifyFiltersByCategory == null) {
-                            updated.classifyFiltersByCategory = new java.util.LinkedHashMap<>();
-                        }
-                        updated.classifyFiltersByCategory.put(category, filter);
-                        updated.classifyFilter = filter;
-                        updated.updatedAtEpochMs = System.currentTimeMillis();
-                        saveUpdatedConfig(context, updated);
-                        updateClassifyBarButtons(bar);
-                        Object dialogsActivity = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
-                        if (dialogsActivity != null) {
-                            refreshDialogsUi(dialogsActivity);
-                        } else {
-                            bar.requestLayout();
-                            bar.invalidate();
-                        }
-                    } catch (Throwable ignored) {
-                    }
-                });
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                params.leftMargin = dp(context, 4f);
-                params.rightMargin = dp(context, 4f);
-                bar.addView(button, params);
-            }
-            updateClassifyBarButtons(bar);
-            final View classifyAnchorView = anchorView;
-            final boolean classifyPlaceBelowAnchor = placeBelowAnchor;
-            ViewGroup.LayoutParams barParams = createClassifyBarLayoutParams(
-                    parent, classifyAnchorView, classifyPlaceBelowAnchor);
-            if (insertIndex < 0 || insertIndex > parent.getChildCount()) {
-                parent.addView(bar, barParams);
-            } else {
-                parent.addView(bar, insertIndex, barParams);
-            }
-            repositionClassifyBar(bar, classifyAnchorView, classifyPlaceBelowAnchor);
-            bar.post(() -> {
-                try {
-                    repositionClassifyBar(bar, classifyAnchorView, classifyPlaceBelowAnchor);
-                    View rootView = bar.getRootView();
-                    applyClassifyListInsetsTree(rootView);
-                } catch (Throwable ignored) {
-                }
-            });
-            info("ClassifyBar: installed, parent=" + parent.getClass().getSimpleName() + " index=" + insertIndex);
-        } catch (Throwable t) {
-            error("Dialog list: install classify bar failed", t);
-        }
-    }
-
-    private ViewGroup.LayoutParams createClassifyBarLayoutParams(ViewGroup parent, View anchor, boolean placeBelowAnchor) {
-        if (parent instanceof android.widget.FrameLayout) {
-            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
-            if (anchor != null && anchor.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams) {
-                android.widget.FrameLayout.LayoutParams anchorParams =
-                        (android.widget.FrameLayout.LayoutParams) anchor.getLayoutParams();
-                params.leftMargin = anchorParams.leftMargin;
-                params.rightMargin = anchorParams.rightMargin;
-            }
-            if (anchor != null) {
-                params.topMargin = placeBelowAnchor ? Math.max(0, anchor.getBottom()) : Math.max(0, anchor.getTop());
-            }
-            return params;
-        }
-        if (parent instanceof android.widget.LinearLayout) {
-            return new android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
-        return new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    }
-
-    private void repositionClassifyBar(View bar, View anchor, boolean placeBelowAnchor) {
-        if (bar == null || anchor == null || !(bar.getParent() instanceof ViewGroup)) {
-            return;
-        }
-        ViewGroup parent = (ViewGroup) bar.getParent();
-        if (!(parent instanceof android.widget.FrameLayout)
-                || !(bar.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams)) {
-            return;
-        }
-        android.widget.FrameLayout.LayoutParams params =
-                (android.widget.FrameLayout.LayoutParams) bar.getLayoutParams();
-        int top = placeBelowAnchor ? anchor.getBottom() : anchor.getTop();
-        if (top >= 0 && params.topMargin != top) {
-            params.topMargin = top;
-            bar.setLayoutParams(params);
-        }
-    }
-
     // Classify per category (Build #23): the bar must work under All,
     // Archive and each user folder separately. Category is the folder
     // name as the user sees it ("所有" for the main list, "归档" for
@@ -9017,54 +8305,6 @@ final class TelegramHookInstaller {
     // FilterTabsView by its outlier text colour, falling back to the
     // global filter when detection is impossible, so a detection miss
     // never breaks filtering, it only falls back to the old behaviour.
-    private String currentClassifyCategory() {
-        try {
-            Object host = lastDialogsActivityRef == null ? null : lastDialogsActivityRef.get();
-            if (host != null) {
-                Object folderId = Reflect.field(host, "folderId");
-                if (folderId instanceof Number && ((Number) folderId).intValue() == 1) {
-                    return "归档";
-                }
-                // Prefer the host's actual folder id when available. It
-                // avoids relying on pager timing during a tab switch. If a
-                // build does not expose matching filter ids, the pager and
-                // tab-colour fallbacks below still work.
-                String byFolderId = classifyCategoryByFolderId(host);
-                if (byFolderId != null && !byFolderId.isBlank()) {
-                    return byFolderId.trim();
-                }
-                String bySelectedType = classifyCategoryBySelectedType(host);
-                if (bySelectedType != null && !bySelectedType.isBlank()) {
-                    return bySelectedType.trim();
-                }
-                // Build #24: prefer ViewPager page index over tab colour.
-                // Colour detection (Build #23) failed on hosts whose tabs
-                // do not differentiate selection by text colour, leaving
-                // every category mapped to "所有" (i.e. a global filter).
-                // Page 0 is All, page i+1 is the i-th user folder in
-                // getDialogFilters order (ALL_CHATS excluded, as it is not
-                // a tab). If no ViewPager is found, fall back to colour,
-                // then to "所有".
-                String byPage = classifyCategoryByViewPager(host);
-                if (byPage != null && !byPage.isBlank()) {
-                    return byPage.trim();
-                }
-                View rootView = resolveHostFragmentView(host);
-                if (rootView instanceof ViewGroup) {
-                    View tabsView = findFilterTabsView((ViewGroup) rootView);
-                    if (tabsView instanceof ViewGroup) {
-                        String selected = selectedFilterTabText((ViewGroup) tabsView);
-                        if (selected != null && !selected.isBlank()) {
-                            return selected.trim();
-                        }
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return "所有";
-    }
-
     private View findViewPager(ViewGroup group) {
         if (group == null) {
             return null;
@@ -9089,120 +8329,6 @@ final class TelegramHookInstaller {
             }
         }
         return null;
-    }
-
-    private String classifyCategoryByFolderId(Object host) {
-        try {
-            Object folderIdValue = Reflect.field(host, "folderId");
-            if (!(folderIdValue instanceof Number)) {
-                return null;
-            }
-            int folderId = ((Number) folderIdValue).intValue();
-            if (folderId <= 1) {
-                return null;
-            }
-            Object controller = messagesControllerForChat(host);
-            if (controller == null) {
-                return null;
-            }
-            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
-            if (!(filtersObj instanceof List<?>)) {
-                return null;
-            }
-            for (Object filter : (List<?>) filtersObj) {
-                int id = Reflect.asInt(Reflect.field(filter, "id"), -1);
-                String name = Reflect.asString(Reflect.field(filter, "name"));
-                if (id == folderId && name != null && !name.isBlank()
-                        && !"ALL_CHATS".equalsIgnoreCase(name.trim())) {
-                    return name.trim();
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
-    }
-
-    private String classifyCategoryBySelectedType(Object host) {
-        try {
-            Object viewPages = Reflect.field(host, "viewPages");
-            Object firstPage = null;
-            if (viewPages instanceof Object[] && ((Object[]) viewPages).length > 0) {
-                firstPage = ((Object[]) viewPages)[0];
-            } else if (viewPages instanceof Iterable<?>) {
-                java.util.Iterator<?> iterator = ((Iterable<?>) viewPages).iterator();
-                if (iterator.hasNext()) {
-                    firstPage = iterator.next();
-                }
-            }
-            int selectedType = Reflect.asInt(Reflect.field(firstPage, "selectedType"), -1);
-            if (selectedType <= 0) {
-                return selectedType == 0 ? "所有" : null;
-            }
-            Object controller = messagesControllerForChat(host);
-            if (controller == null) {
-                return null;
-            }
-            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
-            if (!(filtersObj instanceof List<?>)) {
-                return null;
-            }
-            List<?> filters = (List<?>) filtersObj;
-            if (selectedType < 0 || selectedType >= filters.size()) {
-                return null;
-            }
-            Object filter = filters.get(selectedType);
-            String name = Reflect.asString(Reflect.field(filter, "name"));
-            if (name == null || name.isBlank() || "ALL_CHATS".equalsIgnoreCase(name.trim())) {
-                return "所有";
-            }
-            return name.trim();
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private String classifyCategoryByViewPager(Object host) {
-        try {
-            View rootView = resolveHostFragmentView(host);
-            if (!(rootView instanceof ViewGroup)) {
-                return null;
-            }
-            View pager = findViewPager((ViewGroup) rootView);
-            if (pager == null) {
-                return null;
-            }
-            Object currentItem = Reflect.invokeIfExists(pager, "getCurrentItem", new Class<?>[0]);
-            if (!(currentItem instanceof Number)) {
-                return null;
-            }
-            int pageIndex = ((Number) currentItem).intValue();
-            if (pageIndex <= 0) {
-                return "所有";
-            }
-            Object controller = messagesControllerForChat(host);
-            if (controller == null) {
-                return null;
-            }
-            Object filtersObj = Reflect.invokeIfExists(controller, "getDialogFilters", new Class<?>[0]);
-            if (!(filtersObj instanceof List)) {
-                return null;
-            }
-            java.util.List<String> folderNames = new java.util.ArrayList<>();
-            for (Object filter : (List<?>) filtersObj) {
-                String name = Reflect.asString(Reflect.field(filter, "name"));
-                if (name == null || name.isBlank() || "ALL_CHATS".equalsIgnoreCase(name.trim())) {
-                    continue;
-                }
-                folderNames.add(name.trim());
-            }
-            int folderIndex = pageIndex - 1;
-            if (folderIndex >= 0 && folderIndex < folderNames.size()) {
-                return folderNames.get(folderIndex);
-            }
-            return null;
-        } catch (Throwable ignored) {
-            return null;
-        }
     }
 
     private String selectedFilterTabText(ViewGroup tabsView) {
@@ -9330,99 +8456,6 @@ final class TelegramHookInstaller {
         } finally {
             view.setTag(R.id.gramsieve_dialog_classify_state, null);
             view.requestLayout();
-        }
-    }
-
-    private void applyDialogClassification(View view) {
-        if (view == null || (!isDialogListCellClass(view.getClass().getName())
-                && !(view instanceof ViewGroup && containsDialogListCell(view)))) {
-            return;
-        }
-        FilterConfig cfg = currentEnhancementConfig();
-        if (!cfg.showClassifyBar) {
-            clearDialogClassifyState(view);
-            return;
-        }
-        String category = currentClassifyCategory();
-        int selected = classifyFilterForCategory(category, cfg);
-        if (selected == 0) {
-            clearDialogClassifyState(view);
-            return;
-        }
-        long dialogId = resolveDialogIdFromView(view);
-        if (dialogId == 0L) {
-            clearDialogClassifyState(view);
-            return;
-        }
-        int type = classifyDialogType(view, dialogId);
-        if (type == 0 || type == selected) {
-            clearDialogClassifyState(view);
-            return;
-        }
-        if (!(view.getTag(R.id.gramsieve_dialog_classify_state) instanceof DialogClassifyState)) {
-            view.setTag(R.id.gramsieve_dialog_classify_state, new DialogClassifyState(view));
-        }
-        try {
-            ViewGroup.LayoutParams params = view.getLayoutParams();
-            if (params != null) {
-                params.height = 0;
-                if (params instanceof ViewGroup.MarginLayoutParams) {
-                    ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
-                    margins.topMargin = 0;
-                    margins.bottomMargin = 0;
-                }
-                view.setLayoutParams(params);
-            }
-            view.setMinimumHeight(0);
-            view.setAlpha(0f);
-            view.setVisibility(View.GONE);
-            view.requestLayout();
-            ViewParent parent = view.getParent();
-            if (parent instanceof View) {
-                ((View) parent).requestLayout();
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private int classifyFilterForCategory(String category, FilterConfig cfg) {
-        if (cfg != null && cfg.classifyFiltersByCategory != null && category != null) {
-            Integer value = cfg.classifyFiltersByCategory.get(category);
-            if (value != null) {
-                if (value < 0) return 0;
-                if (value > 3) return 3;
-                return value;
-            }
-        }
-        return cfg == null ? 0 : cfg.classifyFilter;
-    }
-
-    private void updateClassifyBarButtons(ViewGroup bar) {
-        try {
-            int selected = classifyFilterForCategory(currentClassifyCategory(), currentEnhancementConfig());
-            for (int i = 0; i < bar.getChildCount(); i++) {
-                View child = bar.getChildAt(i);
-                if (!(child instanceof TextView)) {
-                    continue;
-                }
-                Object tag = child.getTag();
-                boolean isSelected = tag instanceof Number && ((Number) tag).intValue() == selected;
-                TextView button = (TextView) child;
-                int accent = dialogAccentColor(button.getContext());
-                int secondary = dialogSecondaryColor(button.getContext());
-                if (isSelected) {
-                    button.setTextColor(ensureDialogTextColor(0xFFFFFFFF, accent));
-                    android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-                    bg.setColor(accent);
-                    bg.setCornerRadius(dp(button.getContext(), 16f));
-                    button.setBackground(bg);
-                } else {
-                    button.setTextColor(secondary);
-                    button.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                }
-                button.setContentDescription(button.getText());
-            }
-        } catch (Throwable ignored) {
         }
     }
 

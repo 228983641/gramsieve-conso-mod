@@ -29,18 +29,9 @@ public final class FilterConfig {
     public boolean localPremium = false;
     public boolean autoTranslateToChinese = false;
     // Dialog list features (Build #14, user-selected low-risk route).
-    // All default OFF. classifyFilter: 0=全部, 1=个人, 2=群聊, 3=频道.
+    // Pinned highlight only; the auto-classify bar was removed
+    // (user 2026-10-28).
     public boolean highlightPinnedDialogs = false;
-    public boolean showClassifyBar = false;
-    public int classifyFilter = 0;
-    // Classify per category (Build #23, user requested 2026-10-25:
-    // the All/Personal/Groups/Channels bar must work under All, Archive
-    // and each user folder separately). Key is the category name as the
-    // user sees it ("所有" for the main list, "归档" for Archive, or a
-    // folder name such as "节点"); value is 0=全部, 1=个人, 2=群聊, 3=频道.
-    // classifyFilter above remains as the fallback for categories with
-    // no entry yet, so old configs keep working.
-    public Map<String, Integer> classifyFiltersByCategory = new LinkedHashMap<>();
     // Pluggable AI analysis backend (Build #19). Default is local only.
     // aiAnalysisMode: 0=local rules only, 1=LLM (user key) with local fallback.
     // aiApiKey is stored ONLY on device in module private config, never in
@@ -79,21 +70,6 @@ public final class FilterConfig {
     public long proxyLastRefreshMs = 0L;
     public boolean proxyConfigured = false;
     public List<ProxyEntry> proxyEntries = new ArrayList<>();
-    // Folder-archive sync (Build #22, user requested 2026-10-25:
-    // chats in a folder are auto-archived, chats removed from ALL folders
-    // are auto-unarchived). Default ON because the user asked for this
-    // behaviour; turn it off in the Chat List card to stop it.
-    // autoArchivedDialogIds records ONLY dialogs this module archived, so
-    // a chat the user archived manually is never unarchived by us, and a
-    // chat the user unarchived manually is not re-archived on restart
-    // (see FolderArchiveSync logic in TelegramHookInstaller).
-    public boolean autoArchiveFolderChats = true;
-    public List<Long> autoArchivedDialogIds = new ArrayList<>();
-    // Dialogs the user manually unarchived after we auto-archived them.
-    // They are never re-archived automatically (across restarts too);
-    // removing them from all folders clears the opt-out, so re-adding
-    // to a folder archives them again.
-    public List<Long> folderArchiveOptOutDialogIds = new ArrayList<>();
     public List<RuleSpec> globalRules = new ArrayList<>();
     public List<RuleSpec> globalExclusions = new ArrayList<>();
     public Map<String, ChatRuleSet> chatRules = new LinkedHashMap<>();
@@ -159,39 +135,6 @@ public final class FilterConfig {
         if (proxySourceUrl == null) proxySourceUrl = "";
         if (proxyPastedLinks == null) proxyPastedLinks = "";
         if (proxyFolderName == null) proxyFolderName = "节点";
-        if (classifyFiltersByCategory == null) {
-            classifyFiltersByCategory = new LinkedHashMap<>();
-        } else {
-            Map<String, Integer> cleanedClassify = new LinkedHashMap<>();
-            for (Map.Entry<String, Integer> entry : classifyFiltersByCategory.entrySet()) {
-                if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
-                    continue;
-                }
-                int v = entry.getValue();
-                if (v < 0) v = 0;
-                if (v > 3) v = 3;
-                cleanedClassify.put(entry.getKey(), v);
-            }
-            classifyFiltersByCategory = cleanedClassify;
-        }
-        if (autoArchivedDialogIds == null) {
-            autoArchivedDialogIds = new ArrayList<>();
-        } else {
-            List<Long> cleanedIds = new ArrayList<>();
-            for (Long id : autoArchivedDialogIds) {
-                if (id != null && !cleanedIds.contains(id)) cleanedIds.add(id);
-            }
-            autoArchivedDialogIds = cleanedIds;
-        }
-        if (folderArchiveOptOutDialogIds == null) {
-            folderArchiveOptOutDialogIds = new ArrayList<>();
-        } else {
-            List<Long> cleanedOptOut = new ArrayList<>();
-            for (Long id : folderArchiveOptOutDialogIds) {
-                if (id != null && !cleanedOptOut.contains(id)) cleanedOptOut.add(id);
-            }
-            folderArchiveOptOutDialogIds = cleanedOptOut;
-        }
         if (proxyEntries == null) {
             proxyEntries = new ArrayList<>();
         } else {
@@ -240,16 +183,6 @@ public final class FilterConfig {
         copy.localPremium = localPremium;
         copy.autoTranslateToChinese = autoTranslateToChinese;
         copy.highlightPinnedDialogs = highlightPinnedDialogs;
-        copy.showClassifyBar = showClassifyBar;
-        copy.classifyFilter = classifyFilter;
-        copy.classifyFiltersByCategory = new LinkedHashMap<>();
-        if (classifyFiltersByCategory != null) {
-            for (Map.Entry<String, Integer> entry : classifyFiltersByCategory.entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null) {
-                    copy.classifyFiltersByCategory.put(entry.getKey(), entry.getValue());
-                }
-            }
-        }
         copy.aiAnalysisMode = aiAnalysisMode;
         copy.aiApiBaseUrl = aiApiBaseUrl;
         copy.aiApiModel = aiApiModel;
@@ -266,19 +199,6 @@ public final class FilterConfig {
         copy.proxyFolderScan = proxyFolderScan;
         copy.proxyLastRefreshMs = proxyLastRefreshMs;
         copy.proxyConfigured = proxyConfigured;
-        copy.autoArchiveFolderChats = autoArchiveFolderChats;
-        copy.autoArchivedDialogIds = new ArrayList<>();
-        if (autoArchivedDialogIds != null) {
-            for (Long id : autoArchivedDialogIds) {
-                if (id != null && !copy.autoArchivedDialogIds.contains(id)) copy.autoArchivedDialogIds.add(id);
-            }
-        }
-        copy.folderArchiveOptOutDialogIds = new ArrayList<>();
-        if (folderArchiveOptOutDialogIds != null) {
-            for (Long id : folderArchiveOptOutDialogIds) {
-                if (id != null && !copy.folderArchiveOptOutDialogIds.contains(id)) copy.folderArchiveOptOutDialogIds.add(id);
-            }
-        }
         copy.proxyEntries = new ArrayList<>();
         if (proxyEntries != null) {
             for (ProxyEntry entry : proxyEntries) {

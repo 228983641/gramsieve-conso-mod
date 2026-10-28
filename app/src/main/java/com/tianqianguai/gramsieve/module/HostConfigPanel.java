@@ -111,8 +111,6 @@ final class HostConfigPanel {
     private IosSwitchView localPremiumSwitch;
     private IosSwitchView autoTranslateSwitch;
     private IosSwitchView pinnedHighlightSwitch;
-    private IosSwitchView classifyBarSwitch;
-    private IosSwitchView autoArchiveFolderSwitch;
     private IosSwitchView aiLlmSwitch;
     private IosSwitchView aiFallbackSwitch;
     private IosSwitchView proxyAutoAddSwitch;
@@ -573,14 +571,6 @@ final class HostConfigPanel {
         pinnedHighlightSwitch = addSwitch(card, t("置顶聊天区分显示（左侧色条 + 浅色背景）", "Highlight pinned chats (left colour bar + light background)"));
         pinnedHighlightSwitch.setChecked(baseConfig.highlightPinnedDialogs);
         setRowDesc(pinnedHighlightSwitch, t("色条 + 浅色背景", "Color bar + light background"));
-        classifyBarSwitch = addSwitch(card, t("显示自动分类栏", "Show automatic chat category bar"));
-        classifyBarSwitch.setChecked(baseConfig.showClassifyBar);
-        setRowDesc(classifyBarSwitch, t("文件夹下方：全部 / 个人 / 群聊 / 频道", "Below folders: All / Personal / Groups / Channels"));
-        addInfo(card, t("分类栏与文件夹独立：个人包含私聊和机器人，群聊包含普通群与超级群，频道只包含广播频道。关闭后不再筛选聊天列表。", "The category bar is independent from folders: Personal includes private chats and bots, Groups includes basic groups and megagroups, and Channels includes broadcast channels only. Turning it off disables the filter."));
-        autoArchiveFolderSwitch = addSwitch(card, t("文件夹聊天自动归档", "Auto-archive chats in folders"));
-        autoArchiveFolderSwitch.setChecked(baseConfig.autoArchiveFolderChats);
-        setRowDesc(autoArchiveFolderSwitch, t("仅影响列表外观", "Only affects the list appearance"));
-        addInfo(card, t("进文件夹的聊天自动归档（主列表不再出现，只在文件夹和归档里看）；从所有文件夹移出后自动取消归档回到主列表。只动模块自己归档的聊天：你手动归档的聊天不会被自动取消归档，你手动取消归档的文件夹聊天也不会被重新归档（除非把它移出文件夹再加回来）。", "Chats in a folder are auto-archived (hidden from the main list, visible in the folder and in Archive); removed from all folders, they auto-unarchive back to the main list. Only chats this module archived are touched: a chat you archived manually is never auto-unarchived, and a folder chat you unarchived manually is not re-archived (unless you remove it from the folder and add it back)."));
     }
 
     private void buildAiCard(LinearLayout container) {
@@ -662,7 +652,7 @@ final class HostConfigPanel {
                 AlertDialog picker = new AlertDialog.Builder(activity)
                         .setTitle(t("选择模型", "Choose model"))
                         .setSingleChoiceItems(
-                                result.modelIds.toArray(new String[0]),
+                                singleChoiceAdapter(result.modelIds.toArray(new String[0])),
                                 selected[0],
                                 (dialog, which) -> selected[0] = which
                         )
@@ -1785,6 +1775,66 @@ final class HostConfigPanel {
         }, "gramsieve-proxy-test").start();
     }
 
+    // Floating hint for the manage-proxies dialog: a scrollable
+    // dialog, not an inline paragraph above the list.
+    private void showProxyManageHint(android.app.Activity activity) {
+        if (activity == null || activity.isFinishing()) {
+            return;
+        }
+        android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+        TextView hint = new TextView(context);
+        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+        hint.setTextColor(primaryTextColor);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try { hint.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
+        scroll.addView(hint, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(16), dp(16), dp(16));
+        content.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        android.app.AlertDialog hintDialog = new android.app.AlertDialog.Builder(activity)
+                .setTitle(t("管理代理说明", "Manage proxies help"))
+                .setView(content)
+                .setNegativeButton(t("关闭", "Close"), null)
+                .create();
+        hintDialog.show();
+        DialogTheme.styleAlertDialog(hintDialog, context);
+    }
+
+    // Manage-dialog action button: equal-width rounded buttons,
+    // filled for the primary action, outlined for the rest, so the
+    // two button rows read as a grid instead of a run of text links.
+    private Button manageActionButton(String text, boolean filled) {
+        Button button = new Button(context);
+        button.setAllCaps(false);
+        button.setText(text);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        button.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        button.setMinHeight(dp(48));
+        button.setPadding(dp(8), dp(10), dp(8), dp(10));
+        button.setGravity(Gravity.CENTER);
+        try {
+            if (filled) {
+                button.setTextColor(android.graphics.Color.WHITE);
+                button.setBackground(rounded(accentColor, dp(10), accentColor));
+            } else {
+                button.setTextColor(accentColor);
+                button.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(10), strokeColor));
+            }
+        } catch (Throwable ignored) {}
+        return button;
+    }
+
+    private void addManageButton(LinearLayout row, Button button) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        params.leftMargin = dp(4);
+        params.rightMargin = dp(4);
+        row.addView(button, params);
+    }
+
     private void showProxyManageDialog() {
         try {
             android.app.Activity activity = activityFromContext(context);
@@ -1799,20 +1849,23 @@ final class HostConfigPanel {
             // the dialog window background set by styleAlertDialog after show(),
             // so there is exactly one card edge, not two stacked ones.
             dialogView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            // The long hint no longer sits above the list: the title
+            // row carries a "说明" button, and the hint only shows as
+            // a floating dialog when the user taps it.
+            LinearLayout titleRow = new LinearLayout(context);
+            titleRow.setOrientation(LinearLayout.HORIZONTAL);
+            titleRow.setGravity(Gravity.CENTER_VERTICAL);
             TextView title = new TextView(context);
             title.setText(t("管理代理", "Manage proxies"));
             title.setTextColor(primaryTextColor);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
             title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-            dialogView.addView(title, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            TextView hint = new TextView(context);
-            hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
-            hint.setTextColor(secondaryTextColor);
-            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-            try { hint.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
-            hint.setPadding(0, 0, 0, dp(12));
-            dialogView.addView(hint, new LinearLayout.LayoutParams(
+            titleRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            Button hintButton = toolbarButton(t("说明", "About"));
+            hintButton.setOnClickListener(v -> showProxyManageHint(activity));
+            titleRow.addView(hintButton, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            dialogView.addView(titleRow, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             // Build #24: import Conso's own proxies when the dialog
             // opens, not only on refresh, so a proxy added in Conso
@@ -1898,16 +1951,16 @@ final class HostConfigPanel {
             buttonRow.setOrientation(LinearLayout.HORIZONTAL);
             LinearLayout buttonRow2 = new LinearLayout(context);
             buttonRow2.setOrientation(LinearLayout.HORIZONTAL);
-            Button selectAll = toolbarButton(t("全选", "Select all"));
+            Button selectAll = manageActionButton(t("全选", "Select all"), false);
             selectAll.setOnClickListener(v -> { for (android.widget.CheckBox b : boxes) b.setChecked(true); });
-            buttonRow.addView(selectAll);
-            Button testSpeed = toolbarButton(t("测速", "Test speed"));
+            addManageButton(buttonRow, selectAll);
+            Button testSpeed = manageActionButton(t("测速", "Test speed"), false);
             testSpeed.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, false));
-            buttonRow.addView(testSpeed);
-            Button checkConnectivity = toolbarButton(t("检查联通", "Check connectivity"));
+            addManageButton(buttonRow, testSpeed);
+            Button checkConnectivity = manageActionButton(t("检查联通", "Check connectivity"), false);
             checkConnectivity.setOnClickListener(v -> testCheckedProxies(activity, entries, boxes, refConfig, true));
-            buttonRow.addView(checkConnectivity);
-            Button addToHost = toolbarButton(t("添加到软件", "Add to app"));
+            addManageButton(buttonRow, checkConnectivity);
+            Button addToHost = manageActionButton(t("添加到软件", "Add to app"), true);
             addToHost.setOnClickListener(v -> {
                 java.util.List<FilterConfig.ProxyEntry> selected = new java.util.ArrayList<>();
                 for (int i = 0; i < entries.size() && i < boxes.size(); i++) {
@@ -1926,8 +1979,8 @@ final class HostConfigPanel {
                                 : t("勾选的代理已在 Conso 代理列表里", "Ticked proxies are already in Conso's proxy list"),
                         Toast.LENGTH_SHORT).show();
             });
-            buttonRow.addView(addToHost);
-            Button deleteSelected = toolbarButton(t("删除所选", "Delete selected"));
+            addManageButton(buttonRow, addToHost);
+            Button deleteSelected = manageActionButton(t("删除所选", "Delete selected"), false);
             deleteSelected.setOnClickListener(v -> {
                 java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
                 int deleted = 0;
@@ -1939,8 +1992,8 @@ final class HostConfigPanel {
                 Toast.makeText(context, t("已删除 " + deleted + " 个", "Deleted " + deleted), Toast.LENGTH_SHORT).show();
                 dialog.dismiss();
             });
-            buttonRow2.addView(deleteSelected);
-            Button deleteExpired = toolbarButton(t("删除失效", "Delete expired"));
+            addManageButton(buttonRow2, deleteSelected);
+            Button deleteExpired = manageActionButton(t("删除失效", "Delete expired"), false);
             deleteExpired.setOnClickListener(v -> {
                 java.util.List<FilterConfig.ProxyEntry> remaining = new java.util.ArrayList<>();
                 int deleted = 0;
@@ -1957,17 +2010,17 @@ final class HostConfigPanel {
                 Toast.makeText(context, t("已删除失效 " + deleted + " 个", "Deleted expired " + deleted), Toast.LENGTH_SHORT).show();
                 dialog.dismiss();
             });
-            buttonRow2.addView(deleteExpired);
-            Button close = toolbarButton(t("关闭", "Close"));
+            addManageButton(buttonRow2, deleteExpired);
+            Button close = manageActionButton(t("关闭", "Close"), false);
             close.setOnClickListener(v -> dialog.dismiss());
-            buttonRow2.addView(close);
+            addManageButton(buttonRow2, close);
             LinearLayout.LayoutParams buttonRowParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             buttonRowParams.topMargin = dp(12);
             dialogView.addView(buttonRow, buttonRowParams);
             LinearLayout.LayoutParams buttonRow2Params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            buttonRow2Params.topMargin = dp(6);
+            buttonRow2Params.topMargin = dp(8);
             dialogView.addView(buttonRow2, buttonRow2Params);
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
@@ -2073,8 +2126,6 @@ final class HostConfigPanel {
                 updated.localPremium = localPremiumSwitch != null && localPremiumSwitch.isChecked();
                 updated.autoTranslateToChinese = autoTranslateSwitch != null && autoTranslateSwitch.isChecked();
                 updated.highlightPinnedDialogs = pinnedHighlightSwitch != null && pinnedHighlightSwitch.isChecked();
-                updated.showClassifyBar = classifyBarSwitch != null && classifyBarSwitch.isChecked();
-                updated.autoArchiveFolderChats = autoArchiveFolderSwitch != null && autoArchiveFolderSwitch.isChecked();
                 updated.aiAnalysisMode = aiLlmSwitch != null && aiLlmSwitch.isChecked() ? 1 : 0;
                 updated.aiFallbackToLocal = aiFallbackSwitch == null || aiFallbackSwitch.isChecked();
                 if (aiBaseUrlInput != null) updated.aiApiBaseUrl = valueOf(aiBaseUrlInput).trim();
@@ -3231,6 +3282,25 @@ final class HostConfigPanel {
         return button;
     }
 
+    // Single-choice items coloured with the panel text colour
+    // explicitly: the dialog window is styled dark by DialogTheme,
+    // while the default item text comes from the host theme and
+    // reads dark-on-dark.
+    private android.widget.ArrayAdapter<String> singleChoiceAdapter(String[] labels) {
+        return new android.widget.ArrayAdapter<String>(
+                context, android.R.layout.select_dialog_singlechoice, labels) {
+            @Override
+            public android.view.View getView(int position, android.view.View convertView, android.view.ViewGroup parentView) {
+                android.view.View view = super.getView(position, convertView, parentView);
+                if (view instanceof android.widget.TextView) {
+                    ((android.widget.TextView) view).setTextColor(primaryTextColor);
+                    ((android.widget.TextView) view).setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+                }
+                return view;
+            }
+        };
+    }
+
     // Dropdown selector, without a native Spinner popup. The
     // Spinner version failed on device: its popup window kept the
     // host's light background while the item text was coloured with
@@ -3290,8 +3360,9 @@ final class HostConfigPanel {
                 return;
             }
             int[] picked = new int[]{selectedIndex[0]};
+            android.widget.ArrayAdapter<String> choiceAdapter = singleChoiceAdapter(labels);
             android.app.AlertDialog picker = new android.app.AlertDialog.Builder(activity)
-                    .setSingleChoiceItems(labels, selectedIndex[0],
+                    .setSingleChoiceItems(choiceAdapter, selectedIndex[0],
                             (dialog, which) -> picked[0] = which)
                     .setNegativeButton(t("取消", "Cancel"), null)
                     .setPositiveButton(t("确定", "OK"), (dialog, which) -> {
