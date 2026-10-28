@@ -66,7 +66,7 @@ import io.github.libxposed.api.XposedModule;
 
 final class TelegramHookInstaller {
     private static final String TAG = "GramSieve";
-    private static final String MODULE_PACKAGE = "com.tianqianguai.gramsieve";
+    private static final String MODULE_PACKAGE = "com.tianqianguai.gramsieve.conso";
     private static final String CONFIG_MODE_GLOBAL = "global";
     private static final String CONFIG_MODE_CHAT = "chat";
     private static final int MENU_ID_CHAT = 0x47530011;
@@ -6049,7 +6049,7 @@ final class TelegramHookInstaller {
             }
             String encodedConfig = encodedConfig(updated);
             Intent activityIntent = new Intent();
-            activityIntent.setComponent(new ComponentName(MODULE_PACKAGE, MODULE_PACKAGE + ".config.ConfigPersistActivity"));
+            activityIntent.setComponent(new ComponentName(MODULE_PACKAGE, "com.tianqianguai.gramsieve.config.ConfigPersistActivity"));
             activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activityIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
             activityIntent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
@@ -6058,7 +6058,7 @@ final class TelegramHookInstaller {
             info("Requested module-local config persistence activity updatedAt=" + updated.updatedAtEpochMs);
 
             Intent intent = new Intent(ConfigUpdateReceiver.ACTION_SAVE_CONFIG);
-            intent.setComponent(new ComponentName(MODULE_PACKAGE, MODULE_PACKAGE + ".config.ConfigUpdateReceiver"));
+            intent.setComponent(new ComponentName(MODULE_PACKAGE, "com.tianqianguai.gramsieve.config.ConfigUpdateReceiver"));
             intent.putExtra(ConfigUpdateReceiver.EXTRA_CONFIG_JSON_BASE64, encodedConfig);
             hostContext.sendBroadcast(intent);
             info("Requested module-local config persistence broadcast updatedAt=" + updated.updatedAtEpochMs);

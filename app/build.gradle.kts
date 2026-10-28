@@ -71,18 +71,23 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tianqianguai.gramsieve"
+        applicationId = "com.tianqianguai.gramsieve.conso"
         minSdk = 33
         targetSdk = 36
-        // Conso adaptation version scheme (Build #15): versionCode 1002
+        // Conso adaptation version scheme (Build #15): versionCode 1003
         // is deliberately above upstream GramSieve 2.6.10-beta (349), so
         // the upstream package is never offered as an 'update' for this
-        // build. applicationId is intentionally UNCHANGED, so this build
-        // still upgrades over Build #13/#14 with the same Secret key and
-        // keeps rules and LSPosed activation. Changing applicationId
-        // would force an uninstall + re-enable + rule loss.
-        versionCode = 1002
-        versionName = "1.0.2-conso"
+        // build. applicationId is now com.tianqianguai.gramsieve.conso,
+        // distinct from upstream com.tianqianguai.gramsieve, so the two
+        // can coexist and neither is offered as an update for the other.
+        // The Java package (namespace) stays com.tianqianguai.gramsieve;
+        // only the installed package changes. Upgrading from the old
+        // package needs an uninstall + LSPosed re-enable, and rules do
+        // not carry over automatically (they live in module prefs keyed
+        // by package): export a full backup from the old build first,
+        // then import it in the new build.
+        versionCode = 1003
+        versionName = "1.0.3-conso"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

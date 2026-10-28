@@ -412,7 +412,7 @@ final class HostConfigPanel {
         }
 
         TextView footerNote = new TextView(context);
-        footerNote.setText("GramSieve · 本地过滤与增强工具");
+        footerNote.setText("GramSieve Conso · 本地过滤与增强工具");
         footerNote.setTextColor(secondaryTextColor);
         footerNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         footerNote.setGravity(Gravity.CENTER);
@@ -445,7 +445,7 @@ final class HostConfigPanel {
         toolbar.addView(backButton, new LinearLayout.LayoutParams(dp(72), dp(44)));
 
         TextView title = new TextView(context);
-        title.setText(chatMode ? t("GramSieve 聊天设置", "GramSieve Chat Settings") : t("GramSieve 设置", "GramSieve Settings"));
+        title.setText(chatMode ? t("GramSieve Conso 聊天设置", "GramSieve Conso Chat Settings") : t("GramSieve Conso 设置", "GramSieve Conso Settings"));
         title.setTextColor(toolbarTextColor);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -2018,7 +2018,7 @@ final class HostConfigPanel {
         card.addView(title, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView desc = new TextView(context);
-        desc.setText(t("本项目基于上游 GramSieve（GPL-3.0）改编，适配 Conso 客户端；过滤本身在本地执行，不上传你的消息。下面是本项目的开源地址、上游发布页和作者的 Telegram 频道，点开即用浏览器或 Telegram 打开；新版本安装包与更新说明也会发在频道里。", "This project is adapted from upstream GramSieve (GPL-3.0) for the Conso client; filtering itself runs locally and does not upload your messages. Below are this project's open-source address, the upstream release page, and the author's Telegram channel; tapping opens them in the browser or Telegram. New releases and update notes are also posted in the channel."));
+        desc.setText(t("本项目基于上游 GramSieve（GPL-3.0）改编，适配 Conso 客户端；过滤本身在本地执行，不上传你的消息。下面是本项目的开源地址、上游开源地址和作者的 Telegram 频道，点开即用浏览器或 Telegram 打开；新版本安装包与更新说明也会发在频道里。", "This project is adapted from upstream GramSieve (GPL-3.0) for the Conso client; filtering itself runs locally and does not upload your messages. Below are this project's open-source address, the upstream release page, and the author's Telegram channel; tapping opens them in the browser or Telegram. New releases and update notes are also posted in the channel."));
         desc.setTextColor(secondaryTextColor);
         desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         try { desc.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}

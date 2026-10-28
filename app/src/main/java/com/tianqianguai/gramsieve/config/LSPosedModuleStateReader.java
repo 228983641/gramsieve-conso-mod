@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Reads LSPosed module enablement and scope from its private database without modifying it. */
 public final class LSPosedModuleStateReader {
-    public static final String GRAMSIEVE_PACKAGE = "com.tianqianguai.gramsieve";
+    public static final String GRAMSIEVE_PACKAGE = "com.tianqianguai.gramsieve.conso";
     public static final String TELEGRAM_PACKAGE = "org.telegram.messenger";
     private static final String DATABASE_PATH = "/data/adb/lspd/config/modules_config.db";
     private static final String PROTOCOL_HEADER = "GRAMSIEVE_LSPOSED_DB_V1";

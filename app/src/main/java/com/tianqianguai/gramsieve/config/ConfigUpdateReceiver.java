@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 
 public final class ConfigUpdateReceiver extends BroadcastReceiver {
     private static final String TAG = "GramSieve";
-    public static final String ACTION_SAVE_CONFIG = "com.tianqianguai.gramsieve.action.SAVE_CONFIG";
+    public static final String ACTION_SAVE_CONFIG = "com.tianqianguai.gramsieve.conso.action.SAVE_CONFIG";
     public static final String EXTRA_CONFIG_JSON = "config_json";
     public static final String EXTRA_CONFIG_JSON_BASE64 = "config_json_base64";
 

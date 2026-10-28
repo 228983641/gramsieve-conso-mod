@@ -12,7 +12,7 @@ import androidx.annotation.Nullable;
 import com.tianqianguai.gramsieve.core.FilterConfig;
 
 public final class ConfigContentProvider extends ContentProvider {
-    public static final String AUTHORITY = "com.tianqianguai.gramsieve.config";
+    public static final String AUTHORITY = "com.tianqianguai.gramsieve.conso.config";
     public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY);
     public static final String METHOD_GET_CONFIG = "getConfig";
     public static final String METHOD_SAVE_CONFIG = "saveConfig";

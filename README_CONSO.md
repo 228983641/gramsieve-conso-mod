@@ -365,3 +365,9 @@ Untested on a real device. Known risks:
 ## 2026-10-28 v1.0.2-conso 发布
 - 用户要求按仓库发版规矩发 v1.0.2：内部版本号从 1.0.1-conso 升到 1.0.2-conso（versionCode 1001 → 1002），代码与测试结束自动添加前 10 的提交一致，只改版本号；Release 标签 v1.0.2-conso，附件 GramSieve-conso-v1.0.2-conso.apk。
 - Release 正文按仓库规矩只写更新日志（中文 ## 更新日志在前、英文 ## Changelog 在后），用 UTF-8 notes 文件传，不内联 --notes；发后用 gh release list 与 gh release view --json 核对。
+
+## 2026-10-28 包名与上游彻底区分（待构建）
+- 新包名 com.tianqianguai.gramsieve.conso（原 com.tianqianguai.gramsieve，与上游同名）：两边可共存，互不顶掉、互不被当成对方的更新；Java 包（namespace）不变，只改安装包名。
+- 跟着包名一起改的硬编码：ContentProvider authority、保存配置的广播动作、冲突检测里的自包名、挂钩侧模块包名；挂钩侧启动模块内 Activity/Receiver 的 ComponentName 类名改写成字面量（Java 类仍在原包下，用新包名拼接会指向不存在的类）。
+- 显示名统一：App 名本来就是 GramSieve Conso；面板标题与底部改为 GramSieve Conso 设置 / GramSieve Conso · 本地过滤与增强工具；开源卡片说明里残留的“上游发布页”改回“上游开源地址”。
+- 迁移注意：规则存在模块存储里（按包名区分），换包后旧规则不会自动带过去；旧版先在数据备份里导出完整备份（存下载目录或复制文本），卸载旧版、装新版、在 LSPosed 里重新给 Conso 启用新模块、强制停止 Conso 重开，再导入完整备份。

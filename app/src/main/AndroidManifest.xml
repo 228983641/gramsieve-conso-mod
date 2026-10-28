@@ -35,7 +35,7 @@
 
         <provider
             android:name=".config.ConfigContentProvider"
-            android:authorities="com.tianqianguai.gramsieve.config"
+            android:authorities="com.tianqianguai.gramsieve.conso.config"
             android:exported="true" />
 
         <receiver
