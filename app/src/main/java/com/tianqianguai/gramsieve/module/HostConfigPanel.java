@@ -1787,6 +1787,41 @@ final class HostConfigPanel {
         }
     }
 
+    // One test at a time, across dialog instances: a test started
+    // from the manage dialog keeps running after the dialog is
+    // closed, so a second dialog must not start a competing test
+    // over the same entries.
+    private static final java.util.concurrent.atomic.AtomicBoolean proxyTestRunning =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // Background-safe result persistence for a running test: same
+    // file write as saveProxyEntries, but without touching panel
+    // views (updateProxySummary must only run on the UI thread)
+    // and without replacing the panel's baseConfig snapshot, which
+    // the UI thread owns. The file is the source of truth: a
+    // reopened dialog reads fresh results from it.
+    private void saveProxyTestResultsInBackground(java.util.List<FilterConfig.ProxyEntry> entries) {
+        try {
+            FilterConfig updated = baseConfig.deepCopy().sanitize();
+            applyProxyUiToConfig(updated);
+            java.util.List<FilterConfig.ProxyEntry> saved = new java.util.ArrayList<>();
+            for (FilterConfig.ProxyEntry entry : entries) {
+                if (entry != null) {
+                    saved.add(entry.deepCopy());
+                }
+            }
+            updated.proxyEntries = saved;
+            updated.updatedAtEpochMs = System.currentTimeMillis();
+            saver.save(updated);
+            java.util.List<FilterConfig.ProxyEntry> working = new java.util.ArrayList<>();
+            for (FilterConfig.ProxyEntry entry : saved) {
+                working.add(entry.deepCopy());
+            }
+            proxyWorkingEntries = working;
+        } catch (Throwable ignored) {
+        }
+    }
+
     // Test only the ticked proxies, on a background thread, then
     // refresh the row texts in place and persist the results. The
     // same test gives both speed (pingMs) and connectivity
@@ -1805,6 +1840,10 @@ final class HostConfigPanel {
         }
         if (selected.isEmpty()) {
             Toast.makeText(context, t("先勾选要测的代理", "Tick the proxies to test first"), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!proxyTestRunning.compareAndSet(false, true)) {
+            Toast.makeText(context, t("测试正在后台进行，完成后结果会自动保存", "A test is already running in the background; results will be saved when it finishes"), Toast.LENGTH_SHORT).show();
             return;
         }
         // Progress display, on the UI thread before the worker
@@ -1836,6 +1875,7 @@ final class HostConfigPanel {
         new Thread(() -> {
             int ok = 0;
             int fail = 0;
+            try {
             for (int done = 0; done < selected.size(); done++) {
                 int index = selected.get(done);
                 FilterConfig.ProxyEntry entry = entries.get(index);
@@ -1844,6 +1884,13 @@ final class HostConfigPanel {
                 entry.available = ping >= 0;
                 entry.lastTestedMs = System.currentTimeMillis();
                 if (ping >= 0) ok++; else fail++;
+                // Background running: persist after every proxy, not
+                // only at the end, and never gated on the dialog or
+                // activity still being alive. Closing the dialog or
+                // leaving Conso no longer loses the test: the worker
+                // thread keeps going, the file already holds each
+                // finished result, and a reopened dialog reads it.
+                saveProxyTestResultsInBackground(entries);
                 int doneCount = done + 1;
                 int rowIndex = index;
                 FilterConfig.ProxyEntry doneEntry = entry;
@@ -1865,8 +1912,16 @@ final class HostConfigPanel {
                     }
                 });
             }
+            } finally {
+                proxyTestRunning.set(false);
+            }
             int okCount = ok;
             int failCount = fail;
+            // Final persistence on the worker thread, unconditionally.
+            // The old code saved inside the UI runnable behind an
+            // isFinishing check, so closing the dialog discarded the
+            // whole batch even though the tests had already run.
+            saveProxyTestResultsInBackground(entries);
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing()) {
                     return;
@@ -1979,7 +2034,7 @@ final class HostConfigPanel {
         }
         android.widget.ScrollView scroll = new android.widget.ScrollView(context);
         TextView hint = new TextView(context);
-        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。测试时每条后面会显示“测试中…”，顶部有进度和当前测的代理，测速、检查联通、按延迟排序在测试结束前不可点。\n按延迟排序：把测通的按延迟从低到高排前面，测不通的其次，未测的最后；勾选状态排完不变。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status. While testing, each row reads Testing…, the header shows progress and the proxy being tested, and test/sort buttons are disabled until it finishes.\nSort by latency: tested-good first by latency ascending, then unreachable, then untested last; ticks survive the sort.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。测试时每条后面会显示“测试中…”，顶部有进度和当前测的代理，测速、检查联通、按延迟排序在测试结束前不可点。测试在后台线程跑，关掉弹窗或切出 Conso 也会继续，每测完一条就保存一次，重新打开管理代理就能看到结果，不用一直守在前台。\n按延迟排序：把测通的按延迟从低到高排前面，测不通的其次，未测的最后；勾选状态排完不变。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status. While testing, each row reads Testing…, the header shows progress and the proxy being tested, and test/sort buttons are disabled until it finishes. Testing runs on a background thread: closing the dialog or leaving Conso does not stop it, each finished result is saved immediately, and reopening the dialog shows the results, so there is no need to stay in the foreground.\nSort by latency: tested-good first by latency ascending, then unreachable, then untested last; ticks survive the sort.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
         hint.setTextColor(primaryTextColor);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try { hint.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
@@ -2141,6 +2196,14 @@ final class HostConfigPanel {
             progressText.setTextColor(secondaryTextColor);
             progressText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             progressText.setVisibility(View.GONE);
+            // A test started from an earlier dialog keeps running
+            // after that dialog closed; say so on reopen instead of
+            // showing a dead list, and let the running flag block a
+            // second test until it finishes and its results are saved.
+            if (proxyTestRunning.get()) {
+                progressText.setVisibility(View.VISIBLE);
+                progressText.setText(t("后台测试进行中，完成后结果会自动保存，重新打开即可看到", "A test is running in the background; results will be saved when it finishes, reopen to see them"));
+            }
             LinearLayout.LayoutParams progressTextParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             progressTextParams.topMargin = dp(8);
