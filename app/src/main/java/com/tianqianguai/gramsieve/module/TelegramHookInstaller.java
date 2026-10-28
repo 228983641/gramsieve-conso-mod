@@ -4940,7 +4940,7 @@ final class TelegramHookInstaller {
             summaryView.setText(summary);
             summaryView.setTextColor(smartPrimaryColor);
             summaryView.setTextSize(14f);
-            try { summaryView.setLineSpacing(dp(context, 2f), 1.15f); } catch (Throwable ignored) {}
+            try { summaryView.setLineSpacing(dp(context, 3f), 1.35f); } catch (Throwable ignored) {}
             dialogView.addView(summaryView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             List<android.widget.CheckBox> checkBoxes = new ArrayList<>();
@@ -5025,6 +5025,8 @@ final class TelegramHookInstaller {
                 itemText.setTextSize(15f);
                 chip.addView(itemText, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                chip.setPadding(0, dp(context, 4f), 0, dp(context, 4f));
+                chip.setMinimumHeight(dp(context, 44f));
                 chip.setOnClickListener(v -> box.setChecked(!box.isChecked()));
                 flow.addView(chip);
             }
@@ -5046,8 +5048,8 @@ final class TelegramHookInstaller {
             targetLabel.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
             LinearLayout.LayoutParams targetLabelParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            targetLabelParams.topMargin = dp(context, 12f);
-            targetLabelParams.bottomMargin = dp(context, 4f);
+            targetLabelParams.topMargin = dp(context, 20f);
+            targetLabelParams.bottomMargin = dp(context, 8f);
             dialogView.addView(targetLabel, targetLabelParams);
             // Build #43: all choices are checkboxes now (user
             // 2026-10-26). These two stay mutually exclusive and at
@@ -5087,9 +5089,10 @@ final class TelegramHookInstaller {
             footer.setText("默认不勾选，请自行勾选要加入的项；@用户名和网站链接已排在最前面。默认只加入当前聊天规则，不影响其他聊天。");
             footer.setTextColor(smartSecondaryColor);
             footer.setTextSize(13f);
+            try { footer.setLineSpacing(dp(context, 3f), 1.35f); } catch (Throwable ignored) {}
             LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            footerParams.topMargin = dp(context, 12f);
+            footerParams.topMargin = dp(context, 20f);
             dialogView.addView(footer, footerParams);
             // Build #32: smart dialog rows use the same grouped
             // system as the settings panel: uniform row padding and

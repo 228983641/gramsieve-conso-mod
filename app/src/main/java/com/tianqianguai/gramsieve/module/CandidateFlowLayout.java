@@ -19,8 +19,8 @@ public class CandidateFlowLayout extends ViewGroup {
 
     public CandidateFlowLayout(Context context) {
         super(context);
-        horizontalSpacing = DialogTheme.dp(context, 12f);
-        verticalSpacing = DialogTheme.dp(context, 6f);
+        horizontalSpacing = DialogTheme.dp(context, 16f);
+        verticalSpacing = DialogTheme.dp(context, 12f);
     }
 
     @Override

@@ -126,10 +126,12 @@ final class HostConfigPanel {
     private EditText aiBaseUrlInput;
     private EditText aiModelInput;
     private EditText aiKeyInput;
-    private android.widget.Spinner languageSpinner;
-    private android.widget.Spinner actionSpinner;
+    private android.widget.TextView languageSelector;
+    private android.widget.TextView actionSelector;
     private Object[] languageValues;
     private Object[] actionValues;
+    private Object languageSelected;
+    private Object actionSelected;
 
     private HostConfigPanel(
             Context context,
@@ -357,7 +359,7 @@ final class HostConfigPanel {
         // Keep the grouped background visible around solid cards so
         // the page has a clear rhythm without adding another surface.
         container.setBackgroundColor(cardColor);
-        container.setPadding(dp(16), dp(12), dp(16), dp(24));
+        container.setPadding(dp(16), dp(16), dp(16), dp(32));
         scrollView.addView(container, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -500,10 +502,10 @@ final class HostConfigPanel {
         actionCol.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams langColParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        langColParams.rightMargin = dp(4);
+        langColParams.rightMargin = dp(8);
         LinearLayout.LayoutParams actionColParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        actionColParams.leftMargin = dp(4);
+        actionColParams.leftMargin = dp(8);
         sideRow.addView(langCol, langColParams);
         sideRow.addView(actionCol, actionColParams);
         container.addView(sideRow, new LinearLayout.LayoutParams(
@@ -514,20 +516,24 @@ final class HostConfigPanel {
                 FilterConfig.APP_LANGUAGE_SYSTEM,
                 FilterConfig.APP_LANGUAGE_ENGLISH,
                 FilterConfig.APP_LANGUAGE_SIMPLIFIED_CHINESE};
-        languageSpinner = addDropdown(langCard,
+        languageSelected = FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag);
+        languageSelector = addDropdown(langCard,
                 new String[]{t("跟随系统", "Follow system"), "English", t("简体中文", "Simplified Chinese")},
                 languageValues,
-                FilterConfig.normalizeAppLanguageTag(baseConfig.appLanguageTag));
+                languageSelected,
+                value -> languageSelected = value);
 
         LinearLayout actionCard = addGroup(actionCol, t("匹配后的动作", "Match action"));
         actionValues = new Object[]{
                 FilterConfig.Action.HIDE,
                 FilterConfig.Action.COLLAPSE,
                 FilterConfig.Action.DEBUG_MARK};
-        actionSpinner = addDropdown(actionCard,
+        actionSelected = baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action;
+        actionSelector = addDropdown(actionCard,
                 new String[]{t("仅本地隐藏", "Hide locally"), t("仅本地折叠", "Collapse locally"), t("调试标记", "Debug mark")},
                 actionValues,
-                baseConfig.action == null ? FilterConfig.Action.HIDE : baseConfig.action);
+                actionSelected,
+                value -> actionSelected = value);
     }
 
     private void buildEnhancementCard(LinearLayout container) {
@@ -1801,10 +1807,11 @@ final class HostConfigPanel {
             dialogView.addView(title, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             TextView hint = new TextView(context);
-            hint.setText(t("勾选后点下面的按钮：测速 / 检查联通会实测勾选的代理并更新每条后面的状态；添加到软件把勾选的代理加进 Conso 自己的代理列表（只加进列表，不切换当前代理）；删除所选删勾选的；删除失效只删测不通和已过期的，不删未测的。每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below: Test speed / Check connectivity actually tests the ticked proxies and updates each row's status; Add to app adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy); Delete selected deletes the ticked ones; Delete expired removes only unreachable and expired ones, not untested ones. Row status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh). Deleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+            hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
             hint.setTextColor(secondaryTextColor);
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-            try { hint.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
+            try { hint.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
+            hint.setPadding(0, 0, 0, dp(12));
             dialogView.addView(hint, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             // Build #24: import Conso's own proxies when the dialog
@@ -1858,7 +1865,7 @@ final class HostConfigPanel {
             applyProxyUiToConfig(refConfig);
             for (FilterConfig.ProxyEntry entry : entries) {
                 android.widget.CheckBox box = new android.widget.CheckBox(context);
-                box.setMinHeight(dp(44));
+                box.setMinHeight(dp(52));
                 box.setText(entry.display() + "（" + proxyStatusText(entry, refConfig) + "）");
                 box.setTextColor(primaryTextColor);
                 box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
@@ -1876,8 +1883,8 @@ final class HostConfigPanel {
                 boxes.add(box);
                 LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                boxParams.topMargin = dp(4); // Build #41: row breathing room
-                boxParams.bottomMargin = dp(4);
+                boxParams.topMargin = dp(8);
+                boxParams.bottomMargin = dp(8);
                 proxyListContainer.addView(box, boxParams);
             }
             dialogView.addView(proxyScroll, new LinearLayout.LayoutParams(
@@ -1954,10 +1961,14 @@ final class HostConfigPanel {
             Button close = toolbarButton(t("关闭", "Close"));
             close.setOnClickListener(v -> dialog.dismiss());
             buttonRow2.addView(close);
-            dialogView.addView(buttonRow, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            dialogView.addView(buttonRow2, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams buttonRowParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            buttonRowParams.topMargin = dp(12);
+            dialogView.addView(buttonRow, buttonRowParams);
+            LinearLayout.LayoutParams buttonRow2Params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            buttonRow2Params.topMargin = dp(6);
+            dialogView.addView(buttonRow2, buttonRow2Params);
             dialog.show();
             DialogTheme.styleAlertDialog(dialog, context);
             DialogTheme.ensureCardWindow(dialog, DialogTheme.resolve(context));
@@ -2221,7 +2232,7 @@ final class HostConfigPanel {
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(dp(4), dp(14), dp(4), dp(6));
+        headerRow.setPadding(dp(4), dp(22), dp(4), dp(10));
         View marker = new View(context);
         marker.setBackground(rounded(adjustAlpha(accentColor, 0.9f), dp(2), adjustAlpha(accentColor, 0.9f)));
         LinearLayout.LayoutParams markerParams = new LinearLayout.LayoutParams(dp(3), dp(18));
@@ -2230,7 +2241,7 @@ final class HostConfigPanel {
         TextView titleView = new TextView(context);
         titleView.setText(title);
         titleView.setTextColor(primaryTextColor);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         titleView.setMaxLines(1);
         titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -2257,7 +2268,7 @@ final class HostConfigPanel {
         try { card.setElevation(dp(1)); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.bottomMargin = dp(14);
+        cardParams.bottomMargin = dp(22);
         parent.addView(card, cardParams);
         LinearLayout body = new LinearLayout(context);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -2339,12 +2350,13 @@ final class HostConfigPanel {
         label.setText(text);
         label.setTextColor(secondaryTextColor);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try { label.setLineSpacing(dp(2), 1.25f); } catch (Throwable ignored) {}
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.topMargin = 0;
-        params.bottomMargin = dp(4);
+        params.topMargin = dp(10);
+        params.bottomMargin = dp(10);
         parent.addView(label, params);
         return label;
     }
@@ -2362,8 +2374,8 @@ final class HostConfigPanel {
         info.setText(text);
         info.setTextColor(secondaryTextColor);
         info.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        try { info.setLineSpacing(dp(2), 1.15f); } catch (Throwable ignored) {}
-        info.setPadding(dp(16), dp(6), dp(16), dp(6));
+        try { info.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
+        info.setPadding(dp(16), dp(12), dp(16), dp(12));
         info.setVisibility(View.GONE);
         // Build #44: a card's first explanation is its general
         // introduction, so it belongs on the header "?" (next to
@@ -2558,8 +2570,8 @@ final class HostConfigPanel {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setTag("gramsieve_row");
-        row.setPadding(dp(12), dp(8), dp(12), dp(8));
-        row.setMinimumHeight(dp(44));
+        row.setPadding(dp(16), dp(14), dp(16), dp(14));
+        row.setMinimumHeight(dp(56));
         LinearLayout labelBox = new LinearLayout(context);
         labelBox.setOrientation(LinearLayout.VERTICAL);
         labelBox.setTag("gramsieve_row_labelbox");
@@ -2567,6 +2579,7 @@ final class HostConfigPanel {
         label.setText(text);
         label.setTextColor(primaryTextColor);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        try { label.setLineSpacing(dp(2), 1.25f); } catch (Throwable ignored) {}
         label.setMaxLines(2);
         label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         labelBox.addView(label, new LinearLayout.LayoutParams(
@@ -2598,6 +2611,8 @@ final class HostConfigPanel {
                     d.setText(desc);
                     d.setTextColor(secondaryTextColor);
                     d.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+                    try { d.setLineSpacing(dp(2), 1.25f); } catch (Throwable ignored) {}
+                    d.setPadding(0, dp(3), 0, 0);
                     d.setMaxLines(2);
                     d.setEllipsize(android.text.TextUtils.TruncateAt.END);
                     ((LinearLayout) child).addView(d, new LinearLayout.LayoutParams(
@@ -2755,7 +2770,7 @@ final class HostConfigPanel {
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
-            input.setPadding(dp(12), dp(8), dp(12), dp(8));
+            input.setPadding(dp(12), dp(12), dp(12), dp(12));
         } catch (Throwable ignored) {}
         input.setMinLines(3);
         input.setMaxLines(6);
@@ -2954,7 +2969,7 @@ final class HostConfigPanel {
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try {
             input.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
-            input.setPadding(dp(12), dp(8), dp(12), dp(8));
+            input.setPadding(dp(12), dp(12), dp(12), dp(12));
         } catch (Throwable ignored) {}
         input.setMinLines(1);
         input.setMaxLines(4);
@@ -3048,7 +3063,7 @@ final class HostConfigPanel {
                     child.setLayoutParams(params);
                 }
                 boolean isLabel = "gramsieve_row_label".equals(child.getTag());
-                params.bottomMargin = isLabel ? dp(6) : 0;
+                params.bottomMargin = isLabel ? dp(10) : 0;
                 params.topMargin = 0;
                 if (i < visible.size() - 1 && !isLabel) {
                     View divider = new View(context);
@@ -3216,38 +3231,21 @@ final class HostConfigPanel {
         return button;
     }
 
-    // Dropdown selector: a real Spinner, with item text coloured
-    // from the panel theme so it reads in both light and dark mode.
-    // `values` must parallel `labels`; the current value selects
-    // the initial position, falling back to the first item.
-    private android.widget.Spinner addDropdown(LinearLayout parent, String[] labels, Object[] values, Object current) {
-        android.widget.Spinner spinner = new android.widget.Spinner(context);
-        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(
-                context, android.R.layout.simple_spinner_item, labels) {
-            @Override
-            public android.view.View getView(int position, android.view.View convertView, android.view.ViewGroup parentView) {
-                android.view.View view = super.getView(position, convertView, parentView);
-                styleDropdownItem(view);
-                return view;
-            }
+    // Dropdown selector, without a native Spinner popup. The
+    // Spinner version failed on device: its popup window kept the
+    // host's light background while the item text was coloured with
+    // the panel's (dark-mode) primary colour, so the open list read
+    // as white-on-white. This row shows the current value with a
+    // dropdown arrow, and tapping it opens a single-choice dialog
+    // styled by DialogTheme (the same pattern as the model picker),
+    // which reads in both themes. `values` must parallel `labels`;
+    // `onPicked` receives the newly picked value.
+    private interface DropdownPickListener {
+        void onPicked(Object value);
+    }
 
-            @Override
-            public android.view.View getDropDownView(int position, android.view.View convertView, android.view.ViewGroup parentView) {
-                android.view.View view = super.getDropDownView(position, convertView, parentView);
-                styleDropdownItem(view);
-                return view;
-            }
-
-            private void styleDropdownItem(android.view.View view) {
-                if (view instanceof android.widget.TextView) {
-                    android.widget.TextView text = (android.widget.TextView) view;
-                    text.setTextColor(primaryTextColor);
-                    text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-                }
-            }
-        };
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter);
+    private android.widget.TextView addDropdown(LinearLayout parent, String[] labels, Object[] values,
+            Object current, DropdownPickListener onPicked) {
         int selected = 0;
         if (values != null) {
             for (int i = 0; i < values.length; i++) {
@@ -3257,9 +3255,58 @@ final class HostConfigPanel {
                 }
             }
         }
-        spinner.setSelection(selected);
-        addView(parent, spinner, 0);
-        return spinner;
+        final int[] selectedIndex = new int[]{selected};
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        try {
+            row.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(8), strokeColor));
+        } catch (Throwable ignored) {}
+        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+        row.setMinimumHeight(dp(48));
+        android.widget.TextView valueView = new android.widget.TextView(context);
+        valueView.setText(labels.length > 0 ? labels[selectedIndex[0]] : "");
+        valueView.setTextColor(primaryTextColor);
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        row.addView(valueView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        android.widget.TextView arrow = new android.widget.TextView(context);
+        arrow.setText("▾");
+        arrow.setTextColor(secondaryTextColor);
+        arrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        row.addView(arrow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        row.setOnClickListener(v -> {
+            android.app.Activity activity = activityFromContext(context);
+            if (activity == null || activity.isFinishing()) {
+                // No activity to host a dialog: cycle to the next
+                // option, so the selector still works.
+                if (labels.length > 0 && values != null && values.length > 0) {
+                    selectedIndex[0] = (selectedIndex[0] + 1) % labels.length;
+                    valueView.setText(labels[selectedIndex[0]]);
+                    if (onPicked != null) {
+                        onPicked.onPicked(values[selectedIndex[0]]);
+                    }
+                }
+                return;
+            }
+            int[] picked = new int[]{selectedIndex[0]};
+            android.app.AlertDialog picker = new android.app.AlertDialog.Builder(activity)
+                    .setSingleChoiceItems(labels, selectedIndex[0],
+                            (dialog, which) -> picked[0] = which)
+                    .setNegativeButton(t("取消", "Cancel"), null)
+                    .setPositiveButton(t("确定", "OK"), (dialog, which) -> {
+                        selectedIndex[0] = picked[0];
+                        valueView.setText(labels[selectedIndex[0]]);
+                        if (onPicked != null && values != null && selectedIndex[0] < values.length) {
+                            onPicked.onPicked(values[selectedIndex[0]]);
+                        }
+                    })
+                    .create();
+            picker.show();
+            DialogTheme.styleAlertDialog(picker, context);
+        });
+        addView(parent, row, 0);
+        return valueView;
     }
 
     // Build #45: single-choice groups are radios again, per the
@@ -3372,25 +3419,13 @@ final class HostConfigPanel {
     }
 
     private String selectedLanguageTag() {
-        if (languageSpinner != null && languageValues != null) {
-            int position = languageSpinner.getSelectedItemPosition();
-            if (position >= 0 && position < languageValues.length
-                    && languageValues[position] instanceof String) {
-                return (String) languageValues[position];
-            }
-        }
-        return FilterConfig.APP_LANGUAGE_SYSTEM;
+        return languageSelected instanceof String
+                ? (String) languageSelected : FilterConfig.APP_LANGUAGE_SYSTEM;
     }
 
     private FilterConfig.Action selectedAction() {
-        if (actionSpinner != null && actionValues != null) {
-            int position = actionSpinner.getSelectedItemPosition();
-            if (position >= 0 && position < actionValues.length
-                    && actionValues[position] instanceof FilterConfig.Action) {
-                return (FilterConfig.Action) actionValues[position];
-            }
-        }
-        return FilterConfig.Action.HIDE;
+        return actionSelected instanceof FilterConfig.Action
+                ? (FilterConfig.Action) actionSelected : FilterConfig.Action.HIDE;
     }
 
     private Object selectedChoiceTag(LinearLayout group) {
