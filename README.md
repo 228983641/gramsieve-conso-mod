@@ -1,5 +1,22 @@
 # GramSieve for Conso（Conso 适配版）
 
+![GramSieve 设置界面](docs/screenshots/settings-global.jpg)
+
+> **本项目基于上游 GramSieve 改编，适配 Conso 客户端。**
+> 上游：https://github.com/Xposed-Modules-Repo/com.tianqianguai.gramsieve
+> 本项目：https://github.com/228983641/gramsieve-conso-mod
+> 作者 Telegram 频道：https://t.me/shenlinzhibiao
+
+## 相对上游新增的功能 / Added on top of upstream
+
+- **Conso 适配**：支持 Conso 客户端（`global.xfinite.conso`），同时兼容官方 Telegram（`org.telegram.messenger`）
+- **增强功能**：去赞助消息、去视频广告、允许转发和保存、允许保存动态、防止消息删除、提升下载速度、本地 Premium 解锁（仅客户端生效）
+- **智能分析并屏蔽**：长按消息分析正文/说明/按钮文字，提取关键词、域名、@用户名、IP 等，确认后加入规则；可接大模型作补充建议
+- **TG 代理管理**：扫描指定文件夹的代理链接，自动添加、自动切换到最快代理，测速与联通检查，按延迟排序
+- **自动翻译**：外文消息自动翻译为简体中文，走 Conso 自带翻译服务，不经过第三方翻译网站
+- **中文卡片式设置面板**：规则用“、”分隔，外部只显示关键词个数不直接显示内容；聊天列表置顶区分显示；数据备份（导出/导入规则与完整备份、导出日志）
+- **开源与社区**：设置面板最下方有本项目开源地址、上游地址和作者 Telegram 频道入口
+
 > **本项目是上游 GramSieve 的 Conso 适配分支，不是上游官方发布，也与 Telegram、Conso 官方无关。**
 > This is a Conso adaptation fork of upstream GramSieve, not an upstream release, and not affiliated with Telegram or Conso.
 
@@ -101,7 +118,7 @@ Filtering itself runs locally and does not upload your messages. Translation, pr
 
 | 界面 | 截图 |
 | --- | --- |
-| 设置 → GramSieve（全局配置、增强功能、翻译） | `docs/screenshots/settings-global.png`（待补充） |
+| 设置 → GramSieve（全局配置、增强功能、翻译） | `docs/screenshots/settings-global.jpg`（见本页顶部） |
 | 规则内容（简化后，默认只显示两个框） | `docs/screenshots/rules-simple.png`（待补充） |
 | 规则内容（展开高级规则） | `docs/screenshots/rules-advanced.png`（待补充） |
 | 长按消息 → 智能分析并屏蔽（顶部显示分析出的关键词） | `docs/screenshots/smart-block.png`（待补充） |

@@ -1913,12 +1913,9 @@ final class HostConfigPanel {
     }
 
     // Footer links card, below the footer note: this project's
-    // open-source address, the upstream release page, and the
-    // author's Telegram channel with a jump button. The upstream
-    // source repository address was not verifiable from public
-    // channels, so the upstream button points at the upstream
-    // release page recorded in the repo (SOURCE_URL), not at a
-    // guessed source URL.
+    // open-source address, the upstream address (confirmed by
+    // the author 2026-10-28), and the author's Telegram channel
+    // with a jump button.
     private void buildLinksFooter(LinearLayout container) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -1952,7 +1949,7 @@ final class HostConfigPanel {
         Button projectButton = manageActionButton(t("本项目开源地址", "Project source"), false);
         projectButton.setOnClickListener(v -> openExternalLink("https://github.com/228983641/gramsieve-conso-mod"));
         addManageButton(linkRow, projectButton);
-        Button upstreamButton = manageActionButton(t("上游发布页", "Upstream release"), false);
+        Button upstreamButton = manageActionButton(t("上游开源地址", "Upstream source"), false);
         upstreamButton.setOnClickListener(v -> openExternalLink("https://github.com/Xposed-Modules-Repo/com.tianqianguai.gramsieve"));
         addManageButton(linkRow, upstreamButton);
         card.addView(linkRow, new LinearLayout.LayoutParams(

@@ -341,3 +341,8 @@ Untested on a real device. Known risks:
 - 卡片里三个入口：本项目开源地址（https://github.com/228983641/gramsieve-conso-mod）、上游发布页（仓库里 SOURCE_URL 记录的 Xposed 模块仓库上游发布页）、进入社区频道（实心主按钮，点开跳转 https://t.me/shenlinzhibiao），频道地址也在按钮下方以文字显示；点不开时弹提示不闪退。
 - 注意：上游源码仓库地址未在公开渠道核实到，本次没有猜一个地址放上去；上游按钮先指向上游发布页，等作者确认源码地址后再换。
 - 其他逻辑不变；安装后必须强制停止 Conso 再重新打开，否则 LSPosed 仍加载旧代码。
+
+## 2026-10-28 自述顶部截图与上游确认（待构建）
+- 自述文件 README.md 最上方新增软件设置界面截图（docs/screenshots/settings-global.jpg），并写明本项目基于上游 GramSieve 改编、相对上游新增的功能（Conso 适配、增强功能、智能分析并屏蔽、TG 代理管理、自动翻译、中文卡片面板、数据备份、开源与社区入口）；原有自述内容未动，截图下方原有表格里的截图路径同步改成新图。
+- 上游确认：作者确认上游即 https://github.com/Xposed-Modules-Repo/com.tianqianguai.gramsieve；设置面板最下方的“上游发布页”按钮改名为“上游开源地址”，链接不变。
+- 注意：截图里 API Key 一栏是掩码圆点，不含真实 Key；但“代理”一栏里最快代理地址一行是明文，如介意公开请告诉我，我可以把截图里那一行打码后重发。
