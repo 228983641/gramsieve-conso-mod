@@ -395,7 +395,7 @@ final class HostConfigPanel {
             styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
         }
         buildRulesCard(container);
-        styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
+        styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2), false);
         if (!chatMode) {
             buildBackupCard(container);
             styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), 1);
@@ -2874,7 +2874,7 @@ final class HostConfigPanel {
         cell.setOrientation(LinearLayout.HORIZONTAL);
         cell.setGravity(Gravity.CENTER_VERTICAL);
         cell.setTag("gramsieve_rule_item");
-        cell.setPadding(dp(12), dp(10), dp(12), dp(10));
+        cell.setPadding(dp(16), dp(14), dp(16), dp(14));
         LinearLayout textBox = new LinearLayout(context);
         textBox.setOrientation(LinearLayout.VERTICAL);
         TextView title = new TextView(context);
@@ -3058,9 +3058,9 @@ final class HostConfigPanel {
     private static void updateKeywordSummary(TextView summary, String raw) {
         int count = countKeywords(raw);
         if (count == 0) {
-            summary.setText("未设置，点击编辑添加");
+            summary.setText("未设置");
         } else {
-            summary.setText("已设置 " + count + " 个关键词，点击编辑修改");
+            summary.setText("已设置 " + count + " 个关键词");
         }
     }
 
@@ -3225,6 +3225,17 @@ final class HostConfigPanel {
     // hairline dividers separate visible rows (never after the
     // last row, never after a label row hugging its input).
     private void styleIosCard(LinearLayout card, int switchCols) {
+        styleIosCard(card, switchCols, true);
+    }
+
+    // Same styling, but rule items stay full-width instead of
+    // being paired into two half-width cells. The Rules card's
+    // keyword rows have long titles ("保留关键词（白名单）")
+    // and count summaries that wrap mid-word in a half cell and
+    // sit 10dp from the card's rounded bottom edge, reading as
+    // text about to overflow the background. Full-width rows
+    // keep each title and summary on one line.
+    private void styleIosCard(LinearLayout card, int switchCols, boolean pairRules) {
         try {
             LinearLayout body = findCardBody(card);
             if (body == null) {
@@ -3232,7 +3243,9 @@ final class HostConfigPanel {
             }
             body.setPadding(0, 0, 0, 0);
             pairSwitchRows(body, switchCols);
-            pairRuleItems(body, gridCols(2));
+            if (pairRules) {
+                pairRuleItems(body, gridCols(2));
+            }
             styleBodyDividers(body);
         } catch (Throwable ignored) {
         }
