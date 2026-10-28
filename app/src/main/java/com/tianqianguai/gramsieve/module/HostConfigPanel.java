@@ -419,6 +419,7 @@ final class HostConfigPanel {
         footerNote.setPadding(0, dp(16), 0, 0);
         container.addView(footerNote, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        buildLinksFooter(container);
 
         root.addView(overlay, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1896,6 +1897,81 @@ final class HostConfigPanel {
                 }
             });
         }, "gramsieve-proxy-test").start();
+    }
+
+    // Open a link in the browser / Telegram. Used by the footer
+    // links card only; failure is a toast, never a crash.
+    private void openExternalLink(String url) {
+        try {
+            android.content.Intent intent = new android.content.Intent(
+                    android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        } catch (Throwable ignored) {
+            Toast.makeText(context, t("无法打开链接", "Cannot open link"), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // Footer links card, below the footer note: this project's
+    // open-source address, the upstream release page, and the
+    // author's Telegram channel with a jump button. The upstream
+    // source repository address was not verifiable from public
+    // channels, so the upstream button points at the upstream
+    // release page recorded in the repo (SOURCE_URL), not at a
+    // guessed source URL.
+    private void buildLinksFooter(LinearLayout container) {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        try {
+            card.setBackground(rounded(adjustAlpha(primaryTextColor, 0.04f), dp(16), strokeColor));
+        } catch (Throwable ignored) {}
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.topMargin = dp(16);
+        container.addView(card, cardParams);
+        TextView title = new TextView(context);
+        title.setText(t("开源与社区", "Open source & community"));
+        title.setTextColor(primaryTextColor);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        card.addView(title, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView desc = new TextView(context);
+        desc.setText(t("本项目基于上游 GramSieve（GPL-3.0）改编，适配 Conso 客户端；过滤本身在本地执行，不上传你的消息。下面是本项目的开源地址、上游发布页和作者的 Telegram 频道，点开即用浏览器或 Telegram 打开；新版本安装包与更新说明也会发在频道里。", "This project is adapted from upstream GramSieve (GPL-3.0) for the Conso client; filtering itself runs locally and does not upload your messages. Below are this project's open-source address, the upstream release page, and the author's Telegram channel; tapping opens them in the browser or Telegram. New releases and update notes are also posted in the channel."));
+        desc.setTextColor(secondaryTextColor);
+        desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        try { desc.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
+        LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        descParams.topMargin = dp(8);
+        descParams.bottomMargin = dp(12);
+        card.addView(desc, descParams);
+        LinearLayout linkRow = new LinearLayout(context);
+        linkRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button projectButton = manageActionButton(t("本项目开源地址", "Project source"), false);
+        projectButton.setOnClickListener(v -> openExternalLink("https://github.com/228983641/gramsieve-conso-mod"));
+        addManageButton(linkRow, projectButton);
+        Button upstreamButton = manageActionButton(t("上游发布页", "Upstream release"), false);
+        upstreamButton.setOnClickListener(v -> openExternalLink("https://github.com/Xposed-Modules-Repo/com.tianqianguai.gramsieve"));
+        addManageButton(linkRow, upstreamButton);
+        card.addView(linkRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button channelButton = manageActionButton(t("进入社区频道", "Join community channel"), true);
+        channelButton.setOnClickListener(v -> openExternalLink("https://t.me/shenlinzhibiao"));
+        LinearLayout.LayoutParams channelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        channelParams.topMargin = dp(8);
+        card.addView(channelButton, channelParams);
+        TextView channelNote = new TextView(context);
+        channelNote.setText(t("频道：https://t.me/shenlinzhibiao", "Channel: https://t.me/shenlinzhibiao"));
+        channelNote.setTextColor(secondaryTextColor);
+        channelNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        channelNote.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams channelNoteParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        channelNoteParams.topMargin = dp(8);
+        card.addView(channelNote, channelNoteParams);
     }
 
     // Floating hint for the manage-proxies dialog: a scrollable
