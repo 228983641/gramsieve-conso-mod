@@ -296,3 +296,8 @@ Untested on a real device. Known risks:
   - 按钮：主按钮蓝底白字、次按钮灰底深字、文字按钮蓝字，圆角 10dp；输入框：13sp 灰标签 + 8dp 圆角浅底描边框。弹窗的 7 个自定义界面全部走同一套窗口卡片，不再有方形白底弹窗。
   - 克制：无渐变、无辉光、无弹跳动效（aceternity 那类强动效只适合营销页，不适合内部工具）；无装饰性内容，底部字样是真实的产品名。
 - 其他逻辑不变；安装后必须强制停止 Conso 再重新打开，否则 LSPosed 仍加载旧代码。
+
+## 2026-10-28 智能分析关键词优化 + 归档走宿主路径（待构建）
+- 智能分析（长按 → 智能分析并屏蔽）：检索出的候选先按 @用户名、网站链接（含域名与 t.me 链接）、其余（IP、关键词、发送者等）排序，摘要与勾选列表用同一顺序；对话框打开时默认一个都不勾选，强信号不再默认全勾，误点确认不会一次加一堆；“全选 / 仅强信号”仍在，想全要可以一键选；候选不再每项独占一行，改成流式排布（新 CandidateFlowLayout，无外部 flexbox 依赖），短项同排、满了自动换行。排序逻辑在 MessageRuleFactory.sortSmartCandidates（稳定排序，同级保持原顺序）并有单测。
+- 自动归档：不再直接发 TL_folders_editPeerFolders 再手动改 folder_id + 刷新。核对官方 Telegram 源码（DialogsActivity.performSelectedDialogsAction：archive=105，delete=102——delete 值与模块已观测到的 0x66 一致，说明 Conso 共用这组码；第三方客户端同理）后确认：长按 → 归档最后调的是 MessagesController.addDialogToFolder(list, 1, -1, null, 0)，它按顺序做本地 folder_id、清置顶、建归档文件夹项（ensureFolderDialogExists）、排序、刷新、写存储，最后才发服务器请求；旧路跳过了中间这几步，宿主事后自己对账时就可能多出一个归档行。本次 applyArchiveChanges 改成先调宿主 addDialogToFolder（单条重载，folderId=1 归档 / 0 取消归档，pinnedNum=-1 与官方一致），宿主方法不存在时才回退旧的直接发包路径，宿主主动跳过的对话（自己 / 推广 / 服务号）不强行用旧路覆盖。归档提示的 Undo 浮层不跟进：那是手动点归档的撤销入口，自动归档不应弹它。
+- 验证：排序单测用 javac 直接编纯 Java 核心层跑过（sortSmartCandidates 顺序与不改动原列表均通过）；完整 Gradle 单测在本机没跑通（内存只剩约 500MB，Gradle 守护进程起不来；另需 Java 21 与 Android SDK 平台，CI 上须重跑 testDebugUnitTest）。其他逻辑不变；安装后必须强制停止 Conso 再重新打开，否则 LSPosed 仍加载旧代码。

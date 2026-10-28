@@ -4877,34 +4877,22 @@ final class TelegramHookInstaller {
             if (activity == null || activity.isFinishing()) {
                 throw new IllegalStateException("No Activity context for smart-block dialog");
             }
-            String[] labels = new String[candidates.size()];
-            List<String> keywordTerms = new ArrayList<>();
-            List<String> otherTerms = new ArrayList<>();
+            // Smart candidates are shown @handles first, then domains /
+            // links, then the rest, in the same order as the checkboxes
+            // below, so the summary and the list never disagree.
+            candidates = MessageRuleFactory.sortSmartCandidates(candidates);
+            List<String> orderedTerms = new ArrayList<>();
             for (int i = 0; i < candidates.size(); i++) {
-                FilterConfig.RuleSpec rule = candidates.get(i);
-                String targetLabel;
-                if (rule.pattern != null && rule.pattern.matches("\\d+\\.\\d+\\.\\d+\\.\\d+")) {
-                    targetLabel = "IP 地址";
-                } else if (rule.target == FilterConfig.RuleTarget.SENDER) {
-                    targetLabel = "发送者";
-                } else if (rule.pattern != null && rule.pattern.contains(".")) {
-                    targetLabel = "域名/链接";
-                } else {
-                    targetLabel = "关键词";
-                }
-                labels[i] = targetLabel + "：" + rule.pattern;
-                if ("关键词".equals(targetLabel)) {
-                    keywordTerms.add(rule.pattern);
-                } else {
-                    otherTerms.add(targetLabel + "：" + rule.pattern);
-                }
+                orderedTerms.add(candidates.get(i).pattern);
             }
-            // Strong terms are pre-checked; weak generic terms (体育 / 电子 /
-            // 红包) are offered unchecked, so confirming by habit does not
-            // block normal sports, e-goods or red-packet chats.
+            // Nothing is pre-checked: confirming by habit used to add
+            // every strong term at once, including ones the user never
+            // meant to block. "全选" and "仅强信号" below still offer
+            // one-tap selection for users who do want it.
             boolean[] checked = new boolean[candidates.size()];
+            boolean[] strongChecked = new boolean[candidates.size()];
             for (int i = 0; i < candidates.size(); i++) {
-                checked[i] = !FilterEngine.isWeakGamblingTerm(candidates.get(i).pattern);
+                strongChecked[i] = !FilterEngine.isWeakGamblingTerm(candidates.get(i).pattern);
             }
             // 2026-10-25 redesign for Build #7 feedback "smart analysis
             // does not show the analysed keywords": the old dialog used
@@ -4922,15 +4910,11 @@ final class TelegramHookInstaller {
             // so the analysed keywords are always visible before confirm.
             String summary;
             if (isChineseLocale(context)) {
-                StringBuilder sb = new StringBuilder();
-                sb.append("分析出的关键词：");
-                sb.append(keywordTerms.isEmpty() ? "无" : String.join("、", keywordTerms));
-                if (!otherTerms.isEmpty()) {
-                    sb.append("\n其他标识：").append(String.join("、", otherTerms));
-                }
-                summary = sb.toString();
+                summary = "分析出的关键词："
+                        + (orderedTerms.isEmpty() ? "无" : String.join("、", orderedTerms));
             } else {
-                summary = "Analysed keywords: " + (keywordTerms.isEmpty() ? "none" : String.join(", ", keywordTerms));
+                summary = "Analysed keywords: "
+                        + (orderedTerms.isEmpty() ? "none" : String.join(", ", orderedTerms));
             }
             // Build #30: background and text from the same Telegram
             // theme pair, contrast-guarded, and painted onto the
@@ -4959,15 +4943,6 @@ final class TelegramHookInstaller {
             try { summaryView.setLineSpacing(dp(context, 2f), 1.15f); } catch (Throwable ignored) {}
             dialogView.addView(summaryView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            // Group candidate indexes by category, in a fixed order, so
-            // the list reads as sections instead of one flat checkbox list.
-            java.util.Map<String, List<Integer>> groups = new java.util.LinkedHashMap<>();
-            for (int i = 0; i < candidates.size(); i++) {
-                String category = labels[i].contains("：")
-                        ? labels[i].substring(0, labels[i].indexOf("："))
-                        : "关键词";
-                groups.computeIfAbsent(category, k -> new ArrayList<>()).add(i);
-            }
             List<android.widget.CheckBox> checkBoxes = new ArrayList<>();
             for (int i = 0; i < candidates.size(); i++) {
                 checkBoxes.add(null);
@@ -5016,50 +4991,45 @@ final class TelegramHookInstaller {
             strongOnly.setOnClickListener(v -> {
                 for (int i = 0; i < candidates.size(); i++) {
                     if (checkBoxes.get(i) != null) {
-                        checkBoxes.get(i).setChecked(checked[i]);
+                        checkBoxes.get(i).setChecked(strongChecked[i]);
                     }
                 }
             });
             actionRow.addView(strongOnly, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             dialogView.addView(actionRow);
-            for (java.util.Map.Entry<String, List<Integer>> entry : groups.entrySet()) {
-                TextView sectionLabel = new TextView(activity);
-                sectionLabel.setTag("gramsieve_section");
-                sectionLabel.setText(entry.getKey());
-                sectionLabel.setTextColor(accent);
-                sectionLabel.setTextSize(13f);
-                sectionLabel.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-                LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                labelParams.topMargin = dp(context, 12f);
-                labelParams.bottomMargin = dp(context, 4f);
-                dialogView.addView(sectionLabel, labelParams);
-                for (int idx : entry.getValue()) {
-                    LinearLayout row = new LinearLayout(activity);
-                    row.setOrientation(LinearLayout.HORIZONTAL);
-                    row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-                    android.widget.CheckBox box = new android.widget.CheckBox(activity);
-                    box.setChecked(checked[idx]);
-                    try {
-                        int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
-                        int[] colors = new int[]{accent, 0xFF8A8A8A};
-                        box.setButtonTintList(new android.content.res.ColorStateList(states, colors));
-                    } catch (Throwable ignored) {}
-                    checkBoxes.set(idx, box);
-                    row.addView(box, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                    TextView itemText = new TextView(activity);
-                    itemText.setText(candidates.get(idx).pattern);
-                    itemText.setTextColor(smartPrimaryColor);
-                    itemText.setTextSize(15f);
-                    row.addView(itemText, new LinearLayout.LayoutParams(
-                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                    row.setOnClickListener(v -> box.setChecked(!box.isChecked()));
-                    dialogView.addView(row, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                }
+            // Candidates flow row by row instead of one per line: each
+            // chip is a checkbox + text at wrap width, and the flow
+            // layout wraps it onto the next row when the current row
+            // is full. Order is the sorted order above, so @handles
+            // and domains/links come first in the flow, not just in
+            // the summary. Nothing is pre-checked (see checked[]).
+            CandidateFlowLayout flow = new CandidateFlowLayout(activity);
+            for (int idx = 0; idx < candidates.size(); idx++) {
+                LinearLayout chip = new LinearLayout(activity);
+                chip.setOrientation(LinearLayout.HORIZONTAL);
+                chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                android.widget.CheckBox box = new android.widget.CheckBox(activity);
+                box.setChecked(checked[idx]);
+                try {
+                    int[][] states = new int[][]{{android.R.attr.state_checked}, {}};
+                    int[] colors = new int[]{accent, 0xFF8A8A8A};
+                    box.setButtonTintList(new android.content.res.ColorStateList(states, colors));
+                } catch (Throwable ignored) {}
+                checkBoxes.set(idx, box);
+                chip.addView(box, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                TextView itemText = new TextView(activity);
+                itemText.setText(candidates.get(idx).pattern);
+                itemText.setTextColor(smartPrimaryColor);
+                itemText.setTextSize(15f);
+                chip.addView(itemText, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                chip.setOnClickListener(v -> box.setChecked(!box.isChecked()));
+                flow.addView(chip);
             }
+            dialogView.addView(flow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             // Target selector (Build #17): smart analysis no longer only
             // adds to global rules. The user chooses per dialog: global
             // (all chats) or current chat only (this dialogId). The
@@ -5114,7 +5084,7 @@ final class TelegramHookInstaller {
             });
             TextView footer = new TextView(activity);
             footer.setTag("gramsieve_info");
-            footer.setText("已勾选的是强信号词；未勾选的是较通用词，可自行勾选。默认只加入当前聊天规则，不影响其他聊天。");
+            footer.setText("默认不勾选，请自行勾选要加入的项；@用户名和网站链接已排在最前面。默认只加入当前聊天规则，不影响其他聊天。");
             footer.setTextColor(smartSecondaryColor);
             footer.setTextSize(13f);
             LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
@@ -8512,7 +8482,69 @@ final class TelegramHookInstaller {
         return -1;
     }
 
+    // Archive through the host's own folder method, which is what
+    // the long-press selection path ends in. Verified against
+    // upstream Telegram (DialogsActivity.performSelectedDialogsAction,
+    // archive = 105, delete = 102 — the delete value matches the
+    // 0x66 this module already observes, so Conso shares this block):
+    // the selection action does NOT send editPeerFolders itself; it
+    // calls MessagesController.addDialogToFolder(list, 1, -1, null, 0).
+    // That host method, in order: sets dialog.folder_id, clears the
+    // pin, creates the Archive folder dialog if missing
+    // (ensureFolderDialogExists), sorts dialogs, posts
+    // dialogsNeedReload, writes the folder id to storage, and only
+    // then sends TL_folders_editPeerFolders. The module's old path
+    // sent the TL request directly and then patched folder_id +
+    // reload by hand, skipping the folder-dialog creation, the sort
+    // and the storage write — which is how a second Archive row
+    // could appear when the host later reconciled its own state.
+    // Returns null only when the host method is missing/failed, in
+    // which case the caller falls back to the old TL path. Otherwise
+    // returns whether at least one change was applied; a host return
+    // of 0 means the host deliberately skipped that dialog (self /
+    // promo / service chat), and the fallback must NOT override that
+    // guard by forcing it through the raw TL request. A skipped
+    // dialog is simply not marked as auto-archived, and the sync's
+    // delta logic will not re-offer it until it leaves and re-enters
+    // a folder.
+    private Boolean applyArchiveChangesViaHost(Object controller, Map<Long, Boolean> changes) {
+        boolean anyApplied = false;
+        for (Map.Entry<Long, Boolean> entry : changes.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            Object result = Reflect.invokeIfExists(controller, "addDialogToFolder",
+                    new Class<?>[]{long.class, int.class, int.class, long.class},
+                    entry.getKey(), entry.getValue() ? 1 : 0, -1, 0L);
+            if (result == null) {
+                info("FolderArchive: host addDialogToFolder unavailable, server fallback");
+                return null;
+            }
+            if (result instanceof Number && ((Number) result).intValue() > 0) {
+                anyApplied = true;
+            } else {
+                info("FolderArchive: host skipped a dialog, not forcing it");
+            }
+        }
+        if (anyApplied) {
+            info("FolderArchive: applied via host addDialogToFolder");
+        }
+        return anyApplied;
+    }
+
     private boolean applyArchiveChanges(Object controller, Map<Long, Boolean> changes) {
+        // Archive and unarchive both go through the host method
+        // first; only if it is unavailable does the old direct TL
+        // path below run, so the same dialog is never written twice.
+        if (changes != null && !changes.isEmpty()) {
+            try {
+                Boolean hostResult = applyArchiveChangesViaHost(controller, changes);
+                if (hostResult != null) {
+                    return hostResult;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
         try {
             int account = savedClassLoader != null ? resolveSelectedTelegramAccount(savedClassLoader) : 0;
             if (account < 0) {

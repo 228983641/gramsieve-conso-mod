@@ -174,6 +174,35 @@ public class MessageRuleFactoryTest {
         assertFalse(engine.evaluate(config, otherChat).matched);
     }
 
+    @Test
+    public void sortSmartCandidatesPutsHandlesAndLinksFirstWithoutMutatingInput() {
+        List<FilterConfig.RuleSpec> input = new java.util.ArrayList<>();
+        input.add(keywordRule("百家乐"));
+        input.add(keywordRule("122.com"));
+        input.add(keywordRule("@promo_admin"));
+        input.add(keywordRule("t.me/promo"));
+        input.add(keywordRule("153.43.183.234"));
+
+        List<FilterConfig.RuleSpec> sorted = MessageRuleFactory.sortSmartCandidates(input);
+
+        assertEquals("@promo_admin", sorted.get(0).pattern);
+        assertEquals("122.com", sorted.get(1).pattern);
+        assertEquals("t.me/promo", sorted.get(2).pattern);
+        assertEquals("153.43.183.234", sorted.get(3).pattern);
+        assertEquals("百家乐", sorted.get(4).pattern);
+        // Input order unchanged: the dialog sorts a copy, callers keep theirs.
+        assertEquals("百家乐", input.get(0).pattern);
+    }
+
+    private FilterConfig.RuleSpec keywordRule(String pattern) {
+        FilterConfig.RuleSpec rule = new FilterConfig.RuleSpec();
+        rule.mode = FilterConfig.RuleMode.KEYWORD;
+        rule.target = FilterConfig.RuleTarget.TEXT;
+        rule.pattern = pattern;
+        rule.caseSensitive = false;
+        return rule.sanitize();
+    }
+
     private boolean hasKeyword(List<FilterConfig.RuleSpec> rules, String pattern) {
         for (FilterConfig.RuleSpec rule : rules) {
             if (rule.mode == FilterConfig.RuleMode.KEYWORD && pattern.equals(rule.pattern)) {

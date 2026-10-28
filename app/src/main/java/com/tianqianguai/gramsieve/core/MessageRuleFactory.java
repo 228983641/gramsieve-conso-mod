@@ -144,6 +144,43 @@ public final class MessageRuleFactory {
         return new ArrayList<>(rules.values());
     }
 
+    /**
+     * Confirmation-dialog order for smart-block candidates: Telegram
+     * handles (@usernames) first, then website links and domains, then
+     * everything else (keywords, IPs, sender names, contact/payment
+     * tokens). Stable: candidates inside one rank keep the order
+     * smartRules produced, so a re-sort never shuffles equal items.
+     * Returns a new list; the input is not mutated.
+     */
+    public static List<FilterConfig.RuleSpec> sortSmartCandidates(List<FilterConfig.RuleSpec> candidates) {
+        List<FilterConfig.RuleSpec> sorted = new ArrayList<>();
+        if (candidates != null) {
+            sorted.addAll(candidates);
+        }
+        sorted.sort((left, right) -> Integer.compare(rankSmartCandidate(left), rankSmartCandidate(right)));
+        return sorted;
+    }
+
+    private static int rankSmartCandidate(FilterConfig.RuleSpec rule) {
+        if (rule == null || rule.pattern == null) {
+            return 3;
+        }
+        String pattern = rule.pattern.trim().toLowerCase(Locale.ROOT);
+        if (pattern.startsWith("@")) {
+            return 0;
+        }
+        if (pattern.startsWith("t.me/") || pattern.startsWith("telegram.me/")) {
+            return 1;
+        }
+        if (IP_ADDRESS.matcher(pattern).matches()) {
+            return 2;
+        }
+        if (DOMAIN.matcher(pattern).matches() || pattern.contains(".")) {
+            return 1;
+        }
+        return 3;
+    }
+
     public static FilterConfig.RuleSpec exactContentRule(MessageSnapshot snapshot) {
         if (snapshot == null) {
             return null;
