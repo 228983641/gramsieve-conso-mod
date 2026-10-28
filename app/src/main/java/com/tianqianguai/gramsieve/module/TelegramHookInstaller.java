@@ -4880,19 +4880,19 @@ final class TelegramHookInstaller {
             // Smart candidates are shown @handles first, then domains /
             // links, then the rest, in the same order as the checkboxes
             // below, so the summary and the list never disagree.
-            candidates = MessageRuleFactory.sortSmartCandidates(candidates);
+            final List<FilterConfig.RuleSpec> sortedCandidates = MessageRuleFactory.sortSmartCandidates(candidates);
             List<String> orderedTerms = new ArrayList<>();
-            for (int i = 0; i < candidates.size(); i++) {
-                orderedTerms.add(candidates.get(i).pattern);
+            for (int i = 0; i < sortedCandidates.size(); i++) {
+                orderedTerms.add(sortedCandidates.get(i).pattern);
             }
             // Nothing is pre-checked: confirming by habit used to add
             // every strong term at once, including ones the user never
             // meant to block. "全选" and "仅强信号" below still offer
             // one-tap selection for users who do want it.
-            boolean[] checked = new boolean[candidates.size()];
-            boolean[] strongChecked = new boolean[candidates.size()];
-            for (int i = 0; i < candidates.size(); i++) {
-                strongChecked[i] = !FilterEngine.isWeakGamblingTerm(candidates.get(i).pattern);
+            boolean[] checked = new boolean[sortedCandidates.size()];
+            boolean[] strongChecked = new boolean[sortedCandidates.size()];
+            for (int i = 0; i < sortedCandidates.size(); i++) {
+                strongChecked[i] = !FilterEngine.isWeakGamblingTerm(sortedCandidates.get(i).pattern);
             }
             // 2026-10-25 redesign for Build #7 feedback "smart analysis
             // does not show the analysed keywords": the old dialog used
@@ -4944,7 +4944,7 @@ final class TelegramHookInstaller {
             dialogView.addView(summaryView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             List<android.widget.CheckBox> checkBoxes = new ArrayList<>();
-            for (int i = 0; i < candidates.size(); i++) {
+            for (int i = 0; i < sortedCandidates.size(); i++) {
                 checkBoxes.add(null);
             }
             int accent = 0xFF3390EC;
@@ -4989,7 +4989,7 @@ final class TelegramHookInstaller {
             strongOnly.setTextSize(14f);
             strongOnly.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             strongOnly.setOnClickListener(v -> {
-                for (int i = 0; i < candidates.size(); i++) {
+                for (int i = 0; i < sortedCandidates.size(); i++) {
                     if (checkBoxes.get(i) != null) {
                         checkBoxes.get(i).setChecked(strongChecked[i]);
                     }
@@ -5005,7 +5005,7 @@ final class TelegramHookInstaller {
             // and domains/links come first in the flow, not just in
             // the summary. Nothing is pre-checked (see checked[]).
             CandidateFlowLayout flow = new CandidateFlowLayout(activity);
-            for (int idx = 0; idx < candidates.size(); idx++) {
+            for (int idx = 0; idx < sortedCandidates.size(); idx++) {
                 LinearLayout chip = new LinearLayout(activity);
                 chip.setOrientation(LinearLayout.HORIZONTAL);
                 chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -5020,7 +5020,7 @@ final class TelegramHookInstaller {
                 chip.addView(box, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 TextView itemText = new TextView(activity);
-                itemText.setText(candidates.get(idx).pattern);
+                itemText.setText(sortedCandidates.get(idx).pattern);
                 itemText.setTextColor(smartPrimaryColor);
                 itemText.setTextSize(15f);
                 chip.addView(itemText, new LinearLayout.LayoutParams(
@@ -5102,15 +5102,15 @@ final class TelegramHookInstaller {
             scrollView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             scrollView.addView(dialogView);
             AlertDialog smartDialog = new AlertDialog.Builder(activity)
-                    .setTitle(localizedSmartBlockDialogTitle(context) + "（" + candidates.size() + " 个建议）")
+                    .setTitle(localizedSmartBlockDialogTitle(context) + "（" + sortedCandidates.size() + " 个建议）")
                     .setView(scrollView)
                     .setPositiveButton(
                             isChineseLocale(context) ? "确认加入" : "Confirm",
                             (dialog, which) -> {
                                 List<FilterConfig.RuleSpec> selected = new ArrayList<>();
-                                for (int i = 0; i < candidates.size(); i++) {
+                                for (int i = 0; i < sortedCandidates.size(); i++) {
                                     if (checkBoxes.get(i) != null && checkBoxes.get(i).isChecked()) {
-                                        selected.add(candidates.get(i));
+                                        selected.add(sortedCandidates.get(i));
                                     }
                                 }
                                 if (chatRadio.isChecked() && smartDialogId != 0L) {
@@ -5130,9 +5130,9 @@ final class TelegramHookInstaller {
         } catch (Throwable throwable) {
             error("Smart-block dialog failed, adding all candidates directly", throwable);
             if (smartDialogId != 0L) {
-                addSmartBlockChatRules(context, messageView, candidates, smartDialogId);
+                addSmartBlockChatRules(context, messageView, sortedCandidates, smartDialogId);
             } else {
-                addSmartBlockGlobalRules(context, messageView, candidates);
+                addSmartBlockGlobalRules(context, messageView, sortedCandidates);
             }
         }
     }
