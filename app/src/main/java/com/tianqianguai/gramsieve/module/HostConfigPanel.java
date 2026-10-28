@@ -1922,6 +1922,34 @@ final class HostConfigPanel {
             // isFinishing check, so closing the dialog discarded the
             // whole batch even though the tests had already run.
             saveProxyTestResultsInBackground(entries);
+            // Auto-add after the test: the 10 lowest-latency
+            // tested-good proxies from this batch go into Conso's
+            // own proxy list. syncAvailableToHost dedupes by
+            // address:port and never switches the current proxy, so
+            // a repeat test adds nothing twice. This runs on the
+            // worker thread (the refresh path already calls the
+            // same helper off the UI thread), so it also happens
+            // when the dialog was closed mid-test; only the toast
+            // below needs a live activity. It is deliberately not
+            // gated on the auto-add switch: the user asked for the
+            // test itself to end with this step.
+            java.util.List<FilterConfig.ProxyEntry> testedGood = new java.util.ArrayList<>();
+            for (int index : selected) {
+                FilterConfig.ProxyEntry tested = entries.get(index);
+                if (tested != null && tested.pingMs >= 0) {
+                    testedGood.add(tested);
+                }
+            }
+            testedGood.sort((a, b) -> Long.compare(a.pingMs, b.pingMs));
+            java.util.List<FilterConfig.ProxyEntry> top10 = testedGood.subList(
+                    0, Math.min(10, testedGood.size()));
+            int addedToHost = TgProxyManager.syncAvailableToHost(context, top10);
+            int topCount = top10.size();
+            final String autoAddNote = topCount == 0
+                    ? t("，没有测通的代理可添加", ", no reachable proxy to add")
+                    : addedToHost > 0
+                    ? t("，已添加 " + addedToHost + " 个到 Conso 代理列表", ", added " + addedToHost + " to Conso's proxy list")
+                    : t("，延迟最低的前 " + topCount + " 个已在 Conso 代理列表里", ", the " + topCount + " fastest are already in Conso's proxy list");
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing()) {
                     return;
@@ -1944,11 +1972,11 @@ final class HostConfigPanel {
                 saveProxyEntries(entries);
                 if (showConnectivitySummary) {
                     Toast.makeText(context,
-                            t("联通 " + okCount + " 个，不通 " + failCount + " 个",
-                                    "Reachable " + okCount + ", unreachable " + failCount),
+                            t("联通 " + okCount + " 个，不通 " + failCount + " 个" + autoAddNote,
+                                    "Reachable " + okCount + ", unreachable " + failCount + autoAddNote),
                             Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(context, t("测速完成", "Speed test done"), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, t("测速完成" + autoAddNote, "Speed test done" + autoAddNote), Toast.LENGTH_SHORT).show();
                 }
             });
         }, "gramsieve-proxy-test").start();
@@ -2034,7 +2062,7 @@ final class HostConfigPanel {
         }
         android.widget.ScrollView scroll = new android.widget.ScrollView(context);
         TextView hint = new TextView(context);
-        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。测试时每条后面会显示“测试中…”，顶部有进度和当前测的代理，测速、检查联通、按延迟排序在测试结束前不可点。测试在后台线程跑，关掉弹窗或切出 Conso 也会继续，每测完一条就保存一次，重新打开管理代理就能看到结果，不用一直守在前台。\n按延迟排序：把测通的按延迟从低到高排前面，测不通的其次，未测的最后；勾选状态排完不变。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status. While testing, each row reads Testing…, the header shows progress and the proxy being tested, and test/sort buttons are disabled until it finishes. Testing runs on a background thread: closing the dialog or leaving Conso does not stop it, each finished result is saved immediately, and reopening the dialog shows the results, so there is no need to stay in the foreground.\nSort by latency: tested-good first by latency ascending, then unreachable, then untested last; ticks survive the sort.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
+        hint.setText(t("勾选后点下面的按钮：\n测速 / 检查联通：实测勾选的代理并更新每条后面的状态。测试时每条后面会显示“测试中…”，顶部有进度和当前测的代理，测速、检查联通、按延迟排序在测试结束前不可点。测试在后台线程跑，关掉弹窗或切出 Conso 也会继续，每测完一条就保存一次，重新打开管理代理就能看到结果，不用一直守在前台。测试结束后自动把本批测通里延迟最低的前 10 个加进 Conso 代理列表（已在列表里的不重复加，不切换当前代理）。\n按延迟排序：把测通的按延迟从低到高排前面，测不通的其次，未测的最后；勾选状态排完不变。\n添加到软件：把勾选的代理加进 Conso 自己的代理列表，只加列表，不切换当前代理。\n删除所选：删勾选的；删除失效：只删测不通和已过期的，不删未测的。\n\n每条后面的状态分四种：延迟毫秒是测通的；“已过期”是以前测通过但超过上面自定义的失效时间了；“测不通”是测过但连不上；“未测”是还没轮到测（一次刷新最多测 20 个，没轮到的下次刷新再测）。\n\n删除只影响模块列表，宿主当前正在用的代理不会因此断开，如需换掉请在 Conso 代理设置里手动切换或等下次自动刷新切到最快。", "Tick, then use the buttons below:\nTest speed / Check connectivity: actually tests the ticked proxies and updates each row's status. While testing, each row reads Testing…, the header shows progress and the proxy being tested, and test/sort buttons are disabled until it finishes. Testing runs on a background thread: closing the dialog or leaving Conso does not stop it, each finished result is saved immediately, and reopening the dialog shows the results, so there is no need to stay in the foreground. When the test finishes, the 10 lowest-latency reachable proxies from this batch are added to Conso's proxy list automatically (already-listed ones are not duplicated, and the current proxy is not switched).\nSort by latency: tested-good first by latency ascending, then unreachable, then untested last; ticks survive the sort.\nAdd to app: adds the ticked proxies to Conso's own proxy list (list only, it does not switch the current proxy).\nDelete selected: deletes the ticked ones; Delete expired: removes only unreachable and expired ones, not untested ones.\n\nRow status has four kinds: milliseconds means tested good; expired means tested good before but past the custom expiry time above; unreachable means tested but not connectable; untested means no test slot yet (max 20 per refresh).\n\nDeleting only affects the module list; the host's currently used proxy is not disconnected by this, switch manually in Conso proxy settings or wait for the next auto-refresh to switch to fastest."));
         hint.setTextColor(primaryTextColor);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         try { hint.setLineSpacing(dp(3), 1.35f); } catch (Throwable ignored) {}
