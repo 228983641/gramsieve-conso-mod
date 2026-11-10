@@ -8038,6 +8038,7 @@ final class TelegramHookInstaller {
             // Pinned highlight: onDraw after-proceed.
             try {
                 java.lang.reflect.Method onDraw = Reflect.method(dialogCellClass, "onDraw", android.graphics.Canvas.class);
+                deoptimize(onDraw, "DialogCell.onDraw pinned highlight");
                 hook(onDraw, chain -> {
                     Object result = chain.proceed();
                     try {
@@ -8053,8 +8054,7 @@ final class TelegramHookInstaller {
                         if (!(cell instanceof View)) {
                             return result;
                         }
-                        Boolean pinned = (Boolean) Reflect.invokeIfExists(cell, "getIsPinned", new Class<?>[0]);
-                        if (!Boolean.TRUE.equals(pinned)) {
+                        if (!PinnedDialogState.isPinned(cell)) {
                             return result;
                         }
                         Boolean isFolder = (Boolean) Reflect.invokeIfExists(cell, "isDialogFolder", new Class<?>[0]);

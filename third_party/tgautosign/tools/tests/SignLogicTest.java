@@ -1,0 +1,1948 @@
+package io.github.wlmosv_png.tgautosign;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 纯逻辑单测。**不依赖 JUnit / Android**，纯 javac + java 就能跑：
+ *
+ *     cd /data/local/tmp/tgas
+ *     javac -d /tmp/tcls tools/tests/SignLogicTest.java \
+ *           app/src/main/java/io/github/wlmosv_png/tgautosign/SignLogic.java
+ *     java -cp /tmp/tcls io.github.wlmosv_png.tgautosign.SignLogicTest
+ *
+ * 为什么是手写断言而不是 JUnit：
+ *   本机链（javac + D8）是模块构建的全部，不想为一个测试引入额外依赖。
+ *   手写 runner 更小、更快、零依赖，够用。
+ *
+ * 退出码 0 = 全过；非 0 = 有失败（可直接挂进 build.sh 当门禁）。
+ */
+public final class SignLogicTest {
+
+    private static int passed = 0;
+    private static final List<String> failed = new ArrayList<String>();
+
+    public static void main(String[] args) {
+        parseHM();
+        hhmmRoundtrip();
+        windowRange();
+        inWindowTests();
+        crossMidnight();
+        missBackTime();
+        backoff();
+        normalizeIdTests();
+        cbLabel();
+        verdict();
+        navButton();
+        extras();
+        signGate();
+        accountClamp();
+        permanentFail();
+        sentPhaseLifecycle();
+        emojiCommand();
+        pickEntryFilter();
+        humanSpanFmt();
+        // dice 表情判定不在 SignLogic 里（在 Core），此处只保证编译通过
+        resultClassification();
+        looseModeFailWords();
+        v160Regression();
+        sendAttemptsGate();
+        pendingDaySemantics();
+        crossDayRetry();
+        ruleTesterChain();
+        statsData();
+        p0ComboFalsePositive();
+        p2UpdateLogic();
+        judgeHardening();
+        judgeAudit();
+        soundGate();
+        p3DateUtils();
+        bareFailContext();
+        announcementFilter();
+        poolFilterEdge();
+        scopedBareGuard();
+        autoAddButtonScope();
+        startupCatchupTrigger();
+        resolveSignMinuteTests();
+        savedMsgScope();
+
+        System.out.println("----------------------------------------");
+        System.out.println("通过 " + passed + " / 失败 " + failed.size());
+        for (String f : failed) System.out.println("  ✗ " + f);
+        if (!failed.isEmpty()) {
+            System.out.println("FAILED");
+            System.exit(1);
+        }
+        System.out.println("ALL OK");
+    }
+
+    // ── 收藏夹摘要开关的账号作用域（2026-10-27 修跨账号串扰）──────────
+    private static void savedMsgScope() {
+        // ① 账号 A 关闭、账号 B 开启 → 只有 B 可发（B 的解析结果不受 A 影响）
+        eq("A关B开·账号A", SignLogic.resolveSavedMsgOn(Boolean.FALSE, null, true), Boolean.FALSE);
+        eq("A关B开·账号B", SignLogic.resolveSavedMsgOn(Boolean.TRUE, null, true), Boolean.TRUE);
+        // ② 账号 A 开启、账号 B 关闭 → 只有 A 可发
+        eq("A开B关·账号A", SignLogic.resolveSavedMsgOn(Boolean.TRUE, null, true), Boolean.TRUE);
+        eq("A开B关·账号B", SignLogic.resolveSavedMsgOn(Boolean.FALSE, null, true), Boolean.FALSE);
+        // ③ 切换当前账号不串扰：解析只依赖入参，多次/交错调用结果恒定
+        for (int i = 0; i < 5; i++) {
+            eq("切号不串扰·A#" + i, SignLogic.resolveSavedMsgOn(Boolean.FALSE, null, true), Boolean.FALSE);
+            eq("切号不串扰·B#" + i, SignLogic.resolveSavedMsgOn(Boolean.TRUE, null, true), Boolean.TRUE);
+        }
+        // ④ 持久化后重新初始化（实测现场：acc0=false 已落盘、acc3 无该键）
+        eq("重启恢复·acc0(false)", SignLogic.resolveSavedMsgOn(Boolean.FALSE, null, true), Boolean.FALSE);
+        eq("重启恢复·acc3(无键→默认开)", SignLogic.resolveSavedMsgOn(null, null, true), Boolean.TRUE);
+        // ⑤ 配置缺失时的兼容策略：账号键 → 全局 jmb_ 键 → 默认值
+        eq("缺省·都缺→默认", SignLogic.resolveSavedMsgOn(null, null, true), Boolean.TRUE);
+        eq("缺省·有全局false", SignLogic.resolveSavedMsgOn(null, Boolean.FALSE, true), Boolean.FALSE);
+        eq("缺省·有全局true", SignLogic.resolveSavedMsgOn(null, Boolean.TRUE, true), Boolean.TRUE);
+        eq("缺省·账号值优先于全局", SignLogic.resolveSavedMsgOn(Boolean.TRUE, Boolean.FALSE, true), Boolean.TRUE);
+        eq("缺省·账号false压过全局true", SignLogic.resolveSavedMsgOn(Boolean.FALSE, Boolean.TRUE, true), Boolean.FALSE);
+        // ⑥ 两个开关职责独立（不得因为「有两处判断」删掉其一）
+        eq("摘要·都开", SignLogic.canSendSavedSummary(true, true), Boolean.TRUE);
+        eq("摘要·关收藏夹", SignLogic.canSendSavedSummary(false, true), Boolean.FALSE);
+        eq("摘要·关通知", SignLogic.canSendSavedSummary(true, false), Boolean.FALSE);
+        eq("摘要·都关", SignLogic.canSendSavedSummary(false, false), Boolean.FALSE);
+        // ⑦ 三入口共用同一判定（契约由 tools/check-savedmsg-scope.py 静态校验）：
+        //    心跳 / 轮次结束 → trySendDailySummary → canSendSavedSummaryFor(acc)
+        //    失败告警        → savedMsgOnFor(account)
+        //    sendSavedMessage 内层还有一道 savedMsgOnFor(account) 兜底
+    }
+
+    // ── 断言助手 ──────────────────────────────────────────────
+
+    private static void eq(String what, Object got, Object want) {
+        boolean ok = got == null ? want == null : got.equals(want);
+        if (ok) passed++;
+        else failed.add(what + " → 得到 " + got + "，期望 " + want);
+    }
+
+    private static void tru(String what, boolean cond) {
+        if (cond) passed++;
+        else failed.add(what);
+    }
+
+    // ── 用例 ──────────────────────────────────────────────────
+
+    private static void parseHM() {
+        eq("parseHM 08:30", SignLogic.parseHM("08:30"), 8 * 60 + 30);
+        eq("parseHM 00:00", SignLogic.parseHM("00:00"), 0);
+        eq("parseHM 23:59", SignLogic.parseHM("23:59"), 23 * 60 + 59);
+        eq("parseHM 空格容错", SignLogic.parseHM(" 9:05 "), 9 * 60 + 5);
+        eq("parseHM 24:00 非法", SignLogic.parseHM("24:00"), -1);
+        eq("parseHM 12:60 非法", SignLogic.parseHM("12:60"), -1);
+        eq("parseHM 无冒号", SignLogic.parseHM("1230"), -1);
+        eq("parseHM 空", SignLogic.parseHM(""), -1);
+        eq("parseHM null", SignLogic.parseHM(null), -1);
+        eq("parseHM 非数字", SignLogic.parseHM("aa:bb"), -1);
+    }
+
+    private static void hhmmRoundtrip() {
+        eq("hhmm(510)", SignLogic.hhmm(510), "08:30");
+        eq("hhmm(0)", SignLogic.hhmm(0), "00:00");
+        eq("hhmm(1439)", SignLogic.hhmm(1439), "23:59");
+    }
+
+    private static void windowRange() {
+        int[] r = SignLogic.windowRangeOf("08:30-20:30");
+        tru("windowRange 正常解析", r != null && r[0] == 510 && r[1] == 1230);
+        tru("windowRange 空 = null", SignLogic.windowRangeOf("") == null);
+        tru("windowRange null = null", SignLogic.windowRangeOf(null) == null);
+        tru("windowRange 倒序 = null", SignLogic.windowRangeOf("20:30-08:30") == null);
+        tru("windowRange 缺一段 = null", SignLogic.windowRangeOf("08:30") == null);
+        int[] same = SignLogic.windowRangeOf("08:30-08:30");
+        tru("windowRange 起止相同合法", same != null && same[0] == same[1]);
+    }
+
+    private static void inWindowTests() {
+        int[] r = SignLogic.windowRangeOf("08:30-20:30");
+        tru("窗口内(10:00)", SignLogic.inWindow(600, r));
+        tru("窗口端点左", SignLogic.inWindow(510, r));
+        tru("窗口端点右", SignLogic.inWindow(1230, r));
+        tru("窗口前(08:29)", !SignLogic.inWindow(509, r));
+        tru("窗口后(20:31)", !SignLogic.inWindow(1231, r));
+        tru("无窗口 = 不限 = 恒真", SignLogic.inWindow(600, null));
+    }
+
+    private static void crossMidnight() {
+        // 跨天窗口 22:00-02:00
+        int[] any = SignLogic.windowRangeAny("22:00-02:00");
+        tru("跨天窗口可解析", any != null);
+        tru("识别为跨天", SignLogic.crossesMidnight(any));
+        tru("跨天：23:00 在内", SignLogic.inWindowAny(23 * 60, any));
+        tru("跨天：01:00 在内", SignLogic.inWindowAny(1 * 60, any));
+        tru("跨天：22:00 端点在内", SignLogic.inWindowAny(22 * 60, any));
+        tru("跨天：02:00 端点在内", SignLogic.inWindowAny(2 * 60, any));
+        tru("跨天：21:59 不在", !SignLogic.inWindowAny(21 * 60 + 59, any));
+        tru("跨天：02:01 不在", !SignLogic.inWindowAny(2 * 60 + 1, any));
+        tru("跨天：中午不在", !SignLogic.inWindowAny(12 * 60, any));
+
+        // 分钟轴展开：22:00-02:00 → [1320, 1560]（跨度 240 分钟）
+        int[] span = SignLogic.windowSpanAny(any);
+        tru("跨天跨度展开", span != null && span[0] == 1320 && span[1] == 1560);
+        eq("偏移折回：1560 → 120(02:00)", SignLogic.wrapMinute(1560), 120);
+        eq("偏移折回：1440 → 0", SignLogic.wrapMinute(1440), 0);
+        eq("偏移折回：1320 → 1320", SignLogic.wrapMinute(1320), 1320);
+
+        // 非跨天窗口行为不变
+        int[] day = SignLogic.windowRangeAny("08:30-20:30");
+        tru("非跨天不标记", !SignLogic.crossesMidnight(day));
+        tru("非跨天：10:00 在内", SignLogic.inWindowAny(600, day));
+        tru("非跨天：08:29 不在", !SignLogic.inWindowAny(509, day));
+        int[] dspan = SignLogic.windowSpanAny(day);
+        tru("非跨天跨度不展开", dspan != null && dspan[0] == 510 && dspan[1] == 1230);
+
+        // 起止相同 = 单点窗口，不算跨天
+        int[] same = SignLogic.windowRangeAny("08:30-08:30");
+        tru("起止相同不算跨天", !SignLogic.crossesMidnight(same));
+        tru("起止相同：08:30 在内", SignLogic.inWindowAny(510, same));
+        tru("起止相同：08:31 不在", !SignLogic.inWindowAny(511, same));
+
+        // 非法
+        tru("非法窗口 → null", SignLogic.windowRangeAny("25:00-02:00") == null);
+        tru("空 → null", SignLogic.windowRangeAny("") == null);
+        tru("null → null", SignLogic.windowRangeAny(null) == null);
+    }
+
+    private static void missBackTime() {
+        int[] r = SignLogic.windowRangeOf("08:30-20:30");
+        // 关掉补签
+        tru("补签关：恒假", !SignLogic.inMissBackTime(700, r, 23 * 60, false));
+        // 截止 23:00 >= 窗口开始 08:30 → 同日区间
+        tru("同日：窗口开始时刻在内", SignLogic.inMissBackTime(510, r, 23 * 60, true));
+        tru("同日：截止时刻在内", SignLogic.inMissBackTime(23 * 60, r, 23 * 60, true));
+        tru("同日：窗口开始之前不在", !SignLogic.inMissBackTime(509, r, 23 * 60, true));
+        tru("同日：截止之后不在", !SignLogic.inMissBackTime(23 * 60 + 1, r, 23 * 60, true));
+        // 截止 06:00 < 窗口开始 20:00 → 跨天
+        int[] late = SignLogic.windowRangeOf("20:00-23:00");
+        tru("跨天：晚间在内", SignLogic.inMissBackTime(21 * 60, late, 6 * 60, true));
+        tru("跨天：凌晨在内", SignLogic.inMissBackTime(3 * 60, late, 6 * 60, true));
+        tru("跨天：下午不在", !SignLogic.inMissBackTime(15 * 60, late, 6 * 60, true));
+    }
+
+    private static void backoff() {
+        eq("退避 0", SignLogic.backoffDelay(0), 5L * 60 * 1000);
+        eq("退避 1", SignLogic.backoffDelay(1), 15L * 60 * 1000);
+        eq("退避 2", SignLogic.backoffDelay(2), 45L * 60 * 1000);
+        eq("退避 3", SignLogic.backoffDelay(3), 2L * 60 * 60 * 1000);
+        eq("退避 4", SignLogic.backoffDelay(4), 4L * 60 * 60 * 1000);
+        eq("退避 超表按末档", SignLogic.backoffDelay(99), 4L * 60 * 60 * 1000);
+        eq("退避 负数不越界", SignLogic.backoffDelay(-5), 5L * 60 * 1000);
+    }
+
+    private static void normalizeIdTests() {
+        eq("纯数字", SignLogic.normalizeId("12345"), "12345");
+        eq("负数群 ID", SignLogic.normalizeId("-1001234567890"), "-1001234567890");
+        eq("含空格", SignLogic.normalizeId(" 123 456 "), "123456");
+        eq("unicode 负号 −", SignLogic.normalizeId("\u2212100123"), "-100123");
+        eq("全角负号 －", SignLogic.normalizeId("\uFF0D100123"), "-100123");
+        eq("en dash –", SignLogic.normalizeId("\u2013100123"), "-100123");
+        eq("em dash —", SignLogic.normalizeId("\u2014100123"), "-100123");
+        eq("多个负号只留开头", SignLogic.normalizeId("--100--123"), "-100123");
+        eq("负号在中间被丢", SignLogic.normalizeId("100-123"), "100123");
+        eq("带链接文字", SignLogic.normalizeId("https://t.me/c/123456"), "123456");
+        eq("空", SignLogic.normalizeId(""), "");
+        eq("null", SignLogic.normalizeId(null), "");
+        eq("纯文字", SignLogic.normalizeId("abc"), "");
+    }
+
+    private static void cbLabel() {
+        eq("ASCII data", SignLogic.cbDataLabel("checkin".getBytes()), "checkin");
+        eq("空数组", SignLogic.cbDataLabel(new byte[0]), "回调按钮");
+        eq("null", SignLogic.cbDataLabel(null), "回调按钮");
+        // 非 ASCII → 退化成 base64 前缀
+        String lbl = SignLogic.cbDataLabel(new byte[]{(byte) 0xFF, (byte) 0xFE, (byte) 0xFD});
+        tru("非 ASCII 退化为 base64 前缀: " + lbl, lbl.startsWith("回调:"));
+        // 超长截断到 24 字符 + 省略号
+        String longData = "abcdefghijklmnopqrstuvwxyz0123456789";
+        String cut = SignLogic.cbDataLabel(longData.getBytes());
+        eq("超长截断", cut, "abcdefghijklmnopqrstuvwx\u2026");
+    }
+
+    private static void navButton() {
+        // ══ 用户实测漏掉的三例（2026-09-30 二次修复的起因）══
+        eq("实测·ub_back_menu", SignLogic.navButtonHit("ub_back_menu", "ub_back_menu") != null, true);
+        eq("实测·👤 账户信息", SignLogic.navButtonHit("👤 账户信息", null) != null, true);
+        eq("实测·<<<返回主界面", SignLogic.navButtonHit("<<<返回主界面", null) != null, true);
+        // data 串（网络层只拿得到 data）
+        eq("data 串·back",
+           SignLogic.navButtonHit(null, "menu:back:main") != null, true);
+        eq("data 串·mainmenu",
+           SignLogic.navButtonHit(null, "ub_main_menu") != null, true);
+
+        // 各类别覆盖
+        eq("返回上一步", SignLogic.navButtonHit("返回上一步", null) != null, true);
+        eq("回到首页", SignLogic.navButtonHit("回到首页", null) != null, true);
+        eq("个人中心", SignLogic.navButtonHit("个人中心", null) != null, true);
+        eq("我的账户", SignLogic.navButtonHit("我的账户", null) != null, true);
+        eq("设置", SignLogic.navButtonHit("⚙ 设置", null) != null, true);
+        eq("帮助", SignLogic.navButtonHit("帮助中心", null) != null, true);
+        eq("wallet", SignLogic.navButtonHit("My Wallet", null) != null, true);
+        eq("profile", SignLogic.navButtonHit("Profile", null) != null, true);
+        eq("exit", SignLogic.navButtonHit("Exit", null) != null, true);
+
+        // ══ 防误伤闸门：含签到词的一律不挡 ══
+        eq("闸门·返回签到页不该挡", SignLogic.navButtonHit("返回签到页", null), null);
+        eq("闸门·签到按钮", SignLogic.navButtonHit("签到", null), null);
+        eq("闸门·每日签到", SignLogic.navButtonHit("每日签到", null), null);
+        eq("闸门·check in", SignLogic.navButtonHit("Check in", null), null);
+        eq("闸门·领取奖励", SignLogic.navButtonHit("领取奖励", null), null);
+        eq("闸门·打卡领取", SignLogic.navButtonHit("打卡领取", null), null);
+        eq("闸门·data 含 sign", SignLogic.navButtonHit(null, "bot:sign:daily"), null);
+
+        // 应该被识别为导航按钮（不学习）
+        eq("主菜单", SignLogic.navButtonHit("主菜单") != null, true);
+        eq("← 主菜单", SignLogic.navButtonHit("← 主菜单") != null, true);
+        eq("返回", SignLogic.navButtonHit("返回") != null, true);
+        eq("返回菜单", SignLogic.navButtonHit("返回菜单") != null, true);
+        eq("关闭", SignLogic.navButtonHit("关闭") != null, true);
+        eq("取消", SignLogic.navButtonHit("取消") != null, true);
+        eq("Back", SignLogic.navButtonHit("Back") != null, true);
+        eq("BACK TO MENU", SignLogic.navButtonHit("BACK TO MENU") != null, true);
+        eq("首页", SignLogic.navButtonHit("首页") != null, true);
+        eq("纯箭头", SignLogic.navButtonHit("←") != null, true);
+
+        // 绝不能误伤：这些是真实的签到按钮文案
+        eq("误伤检查·签到", SignLogic.navButtonHit("签到"), null);
+        eq("误伤检查·📅 签到", SignLogic.navButtonHit("📅 签到"), null);
+        eq("误伤检查·每日签到", SignLogic.navButtonHit("每日签到"), null);
+        eq("误伤检查·打卡", SignLogic.navButtonHit("打卡"), null);
+        eq("误伤检查·领取奖励", SignLogic.navButtonHit("领取奖励"), null);
+        eq("误伤检查·点击签到", SignLogic.navButtonHit("点击签到"), null);
+        eq("误伤检查·check in", SignLogic.navButtonHit("Check in"), null);
+        eq("误伤检查·立即签到", SignLogic.navButtonHit("立即签到"), null);
+        eq("误伤检查·去看商城", SignLogic.navButtonHit("去商城逛逛"), null);
+        eq("误伤检查·空", SignLogic.navButtonHit(""), null);
+        eq("误伤检查·null", SignLogic.navButtonHit(null), null);
+    }
+
+    /** 2026-10-25：签到音效闸门（一天只响一次的核心判据，必须可测）。 */
+    private static void soundGate() {
+        // 时段
+        tru("音效-时段内", SoundGate.inWindow(10 * 60, 8 * 60, 23 * 60));
+        tru("音效-太早", !SoundGate.inWindow(7 * 60, 8 * 60, 23 * 60));
+        tru("音效-太晚", !SoundGate.inWindow(23 * 60 + 30, 8 * 60, 23 * 60));
+        tru("音效-跨天深夜", SoundGate.inWindow(23 * 60 + 30, 22 * 60, 8 * 60));
+        tru("音效-跨天凌晨", SoundGate.inWindow(7 * 60, 22 * 60, 8 * 60));
+        tru("音效-跨天白天不算", !SoundGate.inWindow(12 * 60, 22 * 60, 8 * 60));
+        tru("音效-首尾相等=全天", SoundGate.inWindow(3 * 60, 8 * 60, 8 * 60));
+        // 一天只响一次
+        tru("音效-首次允许", SoundGate.allow(true, true, false, 10 * 60, 480, 1380, false));
+        tru("音效-当天已响过→拒绝", !SoundGate.allow(true, true, true, 10 * 60, 480, 1380, false));
+        tru("音效-总开关关→拒绝", !SoundGate.allow(false, true, false, 10 * 60, 480, 1380, false));
+        tru("音效-该时机关→拒绝", !SoundGate.allow(true, false, false, 10 * 60, 480, 1380, false));
+        tru("音效-静音→拒绝", !SoundGate.allow(true, true, false, 10 * 60, 480, 1380, true));
+        tru("音效-时段外→拒绝", !SoundGate.allow(true, true, false, 2 * 60, 480, 1380, false));
+        // 时段文本解析（用户手输，必须容错）
+        eq("音效-parseHM 08:00", Integer.valueOf(SoundGate.parseHM("08:00", -1)), Integer.valueOf(480));
+        eq("音效-parseHM 全角冒号", Integer.valueOf(SoundGate.parseHM("8\uFF1A30", -1)), Integer.valueOf(510));
+        eq("音效-parseHM 空→默认", Integer.valueOf(SoundGate.parseHM("", 123)), Integer.valueOf(123));
+        eq("音效-parseHM 非法→默认", Integer.valueOf(SoundGate.parseHM("abc", 123)), Integer.valueOf(123));
+        eq("音效-parseHM 越界→默认", Integer.valueOf(SoundGate.parseHM("25:00", 123)), Integer.valueOf(123));
+        eq("音效-fmtHM", SoundGate.fmtHM(480), "08:00");
+        // 音色档位（2026-10-27 新增自研完成音 style=3；老档位语义不变）
+        eq("音效-档位0=系统通知音", SoundGate.styleName(0), "系统通知音");
+        eq("音效-档位1=清脆", SoundGate.styleName(1), "清脆");
+        eq("音效-档位2=低音", SoundGate.styleName(2), "低音");
+        eq("音效-档位3=完成音", SoundGate.styleName(3), "完成音");
+        eq("音效-非法档位→系统通知音", SoundGate.styleName(99), "系统通知音");
+        eq("音效-循环0→1", Integer.valueOf(SoundGate.nextStyle(0)), Integer.valueOf(1));
+        eq("音效-循环1→2", Integer.valueOf(SoundGate.nextStyle(1)), Integer.valueOf(2));
+        eq("音效-循环2→3", Integer.valueOf(SoundGate.nextStyle(2)), Integer.valueOf(3));
+        eq("音效-循环3→0", Integer.valueOf(SoundGate.nextStyle(3)), Integer.valueOf(0));
+        eq("音效-负值归1", Integer.valueOf(SoundGate.nextStyle(-1)), Integer.valueOf(1));
+        tru("音效-默认档位是完成音(3)", SoundGate.STYLE_GLASS == 3);
+        // 音色轮换：系统 → 清脆 → 低音 → 系统（不会卡死在同一档）
+        // 2026-10-27：档位由 3 档扩到 4 档（新增自研「完成音」=3），
+        // 循环断言已在上方更新为 0→1→2→3→0；原来的「2→0」不再成立，
+        // 这是本次音效接入中**唯一被刻意修改**的既有期望值。
+    }
+
+    /** 2026-10-25：漏判/误判专项审查样本（固化，防回归）。
+     *  A 组验「真结果带公告特征不能漏判」，B 组验「教程/广告不能误判成功」。 */
+    private static void judgeAudit() {
+        String[] ok = mergeOkForTest("社工库功能,👑,欢迎使用hope,呵呵");
+        eq("A1 真结果+官方频道", scopedOf("🎉 恭喜完成签到，欢迎加入官方频道 @xxx", ok), SignLogic.V_SIGNED);
+        eq("A2 真结果+广告提醒", scopedOf("签到成功！注意：上方广告都是骗子，请勿点击", ok), SignLogic.V_SIGNED);
+        eq("A3 真结果+邀请尾巴", scopedOf("✅ 签到成功，积分+3（每天可邀请好友得积分）", ok), SignLogic.V_SIGNED);
+        eq("A4 打卡完成+积分", scopedOf("打卡完成，获得 2 积分", ok), SignLogic.V_SIGNED);
+        eq("B1 教程句", scopedOf("进行普通签到可以随机获得积分", ok), SignLogic.V_UNKNOWN);
+        eq("B2 广告含👑", scopedOf("😇暗影社工库 | 2026最新数据 👑政务接口", ok), SignLogic.V_UNKNOWN);
+        eq("B3 防骗提示", scopedOf("☝️ 上方出现广告🟰骗子 请不要上当", ok), SignLogic.V_UNKNOWN);
+        eq("B4 迁移通知", scopedOf("📢 迁移通知：新机器人 @KaliSGKai 点击加入", ok), SignLogic.V_UNKNOWN);
+        eq("C1 成功+条件词", scopedOf("签到成功！请先关注频道解锁更多功能", ok), SignLogic.V_SIGNED);
+        eq("C2 真失败+条件词", scopedOf("签到失败，请先关注频道", ok), SignLogic.V_FAILED);
+        eq("C4 纯拒绝", scopedOf("⚠️ 请先加入以下1个频道才能使用功能", ok), SignLogic.V_FAILED);
+        eq("D1 已签过", scopedOf("您今天已经签到过了", ok), SignLogic.V_SIGNED);
+        eq("D2 额度用尽", scopedOf("❌ 您本日的规则触发数量上限，请明日再试", ok), SignLogic.V_EXHAUSTED);
+        eq("E1 闲聊", scopedOf("你好，有什么可以帮你？", ok), SignLogic.V_UNKNOWN);
+        tru("F1 广告判公告", SignLogic.isLikelyAnnouncement("😇暗影社工库 | 2026最新数据 👑政务接口"));
+        tru("F2 真结果不判公告", !SignLogic.isLikelyAnnouncement("🎉 恭喜完成签到，欢迎加入官方频道 @xxx"));
+        // G 宽词 / 后置否定（防误判）
+        eq("G1 查询结果含宽词", scopedOf("您的查询已获得结果", ok), SignLogic.V_UNKNOWN);
+        eq("G2 说明句重复+无效", scopedOf("每天签到可获得积分，重复签到无效", ok), SignLogic.V_UNKNOWN);
+        eq("G3 英文 Success", scopedOf("Success!", ok), SignLogic.V_SIGNED);
+        eq("G4 签到获得积分", scopedOf("签到获得 3 积分", ok), SignLogic.V_SIGNED);
+        eq("G5 查询完成", scopedOf("查询完成，共 3 条命中", ok), SignLogic.V_UNKNOWN);
+        tru("F3 blockedOkWord 报出 👑",
+                "👑".equals(SignLogic.blockedOkWord("😇暗影社工库 | 2026最新数据 👑政务接口", ok, null, null)));
+    }
+
+    /** 2026-10-24：判定链硬化 —— 假成功（广告命中自定义词）与假失败（条件词抢先）。
+     *
+     *  真实现场：
+     *    · 假成功：用户全局成功词含 👑 / 社工库功能，而社工库 bot 的推广文案满屏 👑
+     *      → 「😇暗影社工库 | 2026最新数据 👑政务接口…」被判 V_SIGNED（没签到却显示已签）。
+     *    · 假失败：「签到成功！请先关注频道解锁更多功能」含条件词「请先关注」→ 判失败。
+     */
+    private static void judgeHardening() {
+        String[] okMerged = mergeOkForTest("社工库功能,👑,欢迎使用hope,呵呵");
+
+        eq("广告含👑 → 不再判成功",
+                scopedOf("😇暗影社工库 | 2026最新数据 👑政务接口 | 👑26年新数据 | 👑短信轰炸", okMerged),
+                SignLogic.V_UNKNOWN);
+        eq("欢迎语 → 不再判成功",
+                scopedOf("🎉欢迎使用hope社工机器人hope社工库官方查档频道@makegoodhopepeople", okMerged),
+                SignLogic.V_UNKNOWN);
+        eq("公告(迁移通知) → 不判成功",
+                scopedOf("📢 エ庫迁移通知 我们已迁移至新机器人 新机器人：@KaliSGKai 点击用户名加入", okMerged),
+                SignLogic.V_UNKNOWN);
+        eq("真结论(带条件尾巴) → 仍成功",
+                scopedOf("签到成功，获得 1 积分 额外奖励条件：- 资料中未包含机器人链接", okMerged),
+                SignLogic.V_SIGNED);
+        eq("真结论(短) → 成功",
+                scopedOf("🎉 签到成功，积分+3", okMerged), SignLogic.V_SIGNED);
+        eq("已签过 → 成功",
+                scopedOf("⚠️你今天已经签到过了 🌟您可以通过 充值、推广 获取更多学分", okMerged),
+                SignLogic.V_SIGNED);
+
+        // 假失败：成功结论 + 条件型失败词同句
+        eq("成功+请先关注 → 以成功为准",
+                scopedOf("签到成功！请先关注频道解锁更多功能", okMerged), SignLogic.V_SIGNED);
+        eq("成功+已过期(条件) → 以成功为准",
+                scopedOf("签到成功，会员已过期不影响本次签到", okMerged), SignLogic.V_SIGNED);
+        // 真失败不能被翻
+        eq("真失败+条件词 → 仍失败",
+                scopedOf("签到失败，请先关注频道后重试", okMerged), SignLogic.V_FAILED);
+        eq("没有签到成功 → 仍失败",
+                scopedOf("没有签到成功", okMerged), SignLogic.V_FAILED);
+        eq("纯拒绝(无成功词) → 仍失败",
+                scopedOf("⚠️ 请先加入以下1个频道才能使用功能", okMerged), SignLogic.V_FAILED);
+
+        // 辅助判据
+        tru("isAlreadySignedWord(已经签)", SignLogic.isAlreadySignedWord("已经签"));
+        tru("isAlreadySignedWord(已打卡)", SignLogic.isAlreadySignedWord("已打卡"));
+        tru("isAlreadySignedWord(签到成功)=false", !SignLogic.isAlreadySignedWord("签到成功"));
+        tru("isTooBroadOkWord(👑)", SignLogic.isTooBroadOkWord("👑"));
+        tru("isTooBroadOkWord(社工库功能)", SignLogic.isTooBroadOkWord("社工库功能"));
+        tru("isTooBroadOkWord(签到成功)=false", !SignLogic.isTooBroadOkWord("签到成功"));
+        tru("tooBroadWords 命中 2 条",
+                SignLogic.tooBroadWords("社工库功能,👑,签到成功").size() == 2);
+    }
+
+    private static int scopedOf(String text, String[] okMerged) {
+        Object[] vd = SignLogic.verdictDetailScoped(text, okMerged,
+                SignLogic.FAIL_WORDS_DEFAULT, null, null, null, null);
+        return ((Integer) vd[0]).intValue();
+    }
+
+    private static String[] mergeOkForTest(String csv) {
+        java.util.LinkedHashSet<String> s = new java.util.LinkedHashSet<String>();
+        for (String w : SignLogic.OK_WORDS_DEFAULT) s.add(w);
+        for (String w : SignLogic.parseExtraWords(csv)) s.add(w);
+        return s.toArray(new String[0]);
+    }
+
+    private static void verdict() {
+        // 成功
+        eq("中文成功", SignLogic.verdictOf("签到成功！明天再来", null, null, null), SignLogic.V_SIGNED);
+        eq("英文成功", SignLogic.verdictOf("Success! See you tomorrow", null, null, null), SignLogic.V_SIGNED);
+        // 已签过 → 也算已签（关键：不能被"签到"二字误判成刚成功）
+        eq("今日已签", SignLogic.verdictOf("您今日已签到", null, null, null), SignLogic.V_SIGNED);
+        eq("already signed", SignLogic.verdictOf("Already signed today", null, null, null), SignLogic.V_SIGNED);
+        // 失败
+        eq("中文失败", SignLogic.verdictOf("签到失败，请稍后再试", null, null, null), SignLogic.V_FAILED);
+        eq("活动已结束", SignLogic.verdictOf("活动已结束", null, null, null), SignLogic.V_FAILED);
+        eq("英文失败", SignLogic.verdictOf("Request failed", null, null, null), SignLogic.V_FAILED);
+        // 认不出来 → UNKNOWN（这是新行为：以前静默什么都不做）
+        eq("无关回复 → UNKNOWN", SignLogic.verdictOf("你好，有什么可以帮你？", null, null, null), SignLogic.V_UNKNOWN);
+        eq("空 → UNKNOWN", SignLogic.verdictOf("", null, null, null), SignLogic.V_UNKNOWN);
+        eq("null → UNKNOWN", SignLogic.verdictOf(null, null, null, null), SignLogic.V_UNKNOWN);
+
+        // ── 「按钮型收到回复即成功」必须被拒绝语拦住（2026-10-14 用户质疑）──
+        // 用户原话：「按钮类型的只要收到消息就是成功？那签到失败呢？」
+        // 质疑成立：拒绝语绝不能被当成成功。这些必须判 V_FAILED。
+        eq("请先加入频道 → 失败", SignLogic.verdictOf("⚠️ 请先加入以下1个频道才能使用功能", null, null, null), SignLogic.V_FAILED);
+        eq("未绑定账号 → 失败", SignLogic.verdictOf("您还没有绑定账号", null, null, null), SignLogic.V_FAILED);
+        eq("已过期 → 失败", SignLogic.verdictOf("您的会员已过期", null, null, null), SignLogic.V_FAILED);
+        eq("没有签到成功 → 失败", SignLogic.verdictOf("没有签到成功", null, null, null), SignLogic.V_FAILED);
+        eq("禁止签到 → 失败", SignLogic.verdictOf("您已被禁止签到", null, null, null), SignLogic.V_FAILED);
+        eq("no permission → 失败", SignLogic.verdictOf("no permission to use this bot", null, null, null), SignLogic.V_FAILED);
+        eq("failed → 失败", SignLogic.verdictOf("checkin failed, try again", null, null, null), SignLogic.V_FAILED);
+        // 顺序：已签过必须优先于成功（"已签到"含"签到"）
+        eq("顺序：已签到不判成刚成功", SignLogic.verdictOf("您今日已签到成功过", null, null, null), SignLogic.V_SIGNED);
+        // 自定义词表覆盖
+        eq("自定义成功词", SignLogic.verdictOf("领取完毕", new String[0], new String[]{"领取完毕"}, null), SignLogic.V_SIGNED);
+        eq("自定义失败词", SignLogic.verdictOf("不可领取", new String[0], null, new String[]{"不可领取"}), SignLogic.V_FAILED);
+        // 大小写不敏感
+        eq("大小写不敏感", SignLogic.verdictOf("SUCCESS", null, null, null), SignLogic.V_SIGNED);
+        // 新增词表覆盖：用户反馈"今天已签到"这类没被识别
+        eq("今天已签到", SignLogic.verdictOf("今天已签到", null, null, null), SignLogic.V_SIGNED);
+        eq("您已签到", SignLogic.verdictOf("您已签到，明天再来", null, null, null), SignLogic.V_SIGNED);
+        eq("已打卡", SignLogic.verdictOf("今日已打卡", null, null, null), SignLogic.V_SIGNED);
+        eq("签到已完成", SignLogic.verdictOf("签到已完成", null, null, null), SignLogic.V_SIGNED);
+        eq("签到获得积分", SignLogic.verdictOf("签到获得 3 积分", null, null, null), SignLogic.V_SIGNED);
+        eq("already checked", SignLogic.verdictOf("You already checked in", null, null, null), SignLogic.V_SIGNED);
+        // 反例：这些不该被判成已签
+        eq("请勿重复提交 → 不该已签", SignLogic.verdictOf("请勿重复提交", null, null, null), SignLogic.V_UNKNOWN);
+        eq("请勿重复提交 → 不是失败", SignLogic.verdictOf("请勿重复提交", null, null, null) != SignLogic.V_FAILED, true);
+        // verdictDetail 要能说出「命中了哪条词」—— 排障靠它
+        Object[] d1 = SignLogic.verdictDetail("您今日已签到", null, null, null);
+        eq("detail 判定码", d1[0], SignLogic.V_SIGNED);
+        eq("detail 命中词", d1[1], "今日已签");
+
+        // ══ 2026-09-30 新增：否定词优先 ══
+        // 背景：三张表都是子串匹配，中文否定词常加在肯定词前面。
+        // 若先查成功表，「未签到成功」里的「签到成功」会命中 → 把失败判成成功，
+        // 用户以为签上了、实际没签，第二天直接断签。
+        eq("未签到成功 → 失败", SignLogic.verdictOf("未签到成功", null, null, null), SignLogic.V_FAILED);
+        eq("没有签到成功 → 失败", SignLogic.verdictOf("没有签到成功哦", null, null, null), SignLogic.V_FAILED);
+        eq("签到未成功 → 失败", SignLogic.verdictOf("本次签到未成功", null, null, null), SignLogic.V_FAILED);
+        eq("打卡失败 → 失败", SignLogic.verdictOf("打卡失败，明天再来", null, null, null), SignLogic.V_FAILED);
+        eq("not signed → 失败", SignLogic.verdictOf("Sorry, not signed", null, null, null), SignLogic.V_FAILED);
+
+        // ══ 2026-09-30 新增：组合判定 ══
+        // 背景：bot 措辞千奇百怪，穷举词表追不上，实测用户报「签上了却判不出」多属此类。
+        // 规则：同时含「签到类行为词」+「成功类结果词」→ 成功。
+        eq("组合：打卡 +1", SignLogic.verdictOf("✅ 今日打卡 +1", null, null, null), SignLogic.V_SIGNED);
+        eq("组合：签到获得奖励", SignLogic.verdictOf("签到获得 5 积分奖励", null, null, null), SignLogic.V_SIGNED);
+        eq("组合：恭喜签到", SignLogic.verdictOf("恭喜你，签到成功", null, null, null), SignLogic.V_SIGNED);
+        eq("组合：check in success", SignLogic.verdictOf("Check-in success", null, null, null), SignLogic.V_SIGNED);
+        eq("组合：打卡完成", SignLogic.verdictOf("今日打卡已完成", null, null, null), SignLogic.V_SIGNED);
+
+        // 组合判定的边界：只有行为词、或只有结果词，都不算
+        eq("只有「签到」不算成功", SignLogic.verdictOf("请点击下方按钮签到", null, null, null), SignLogic.V_UNKNOWN);
+        eq("只有「成功」不算签到", SignLogic.verdictOf("操作成功", null, null, null) != SignLogic.V_FAILED, true);
+        // 含否定词的组合仍须判失败（否定优先）
+        eq("组合不可覆盖否定", SignLogic.verdictOf("签到未成功，请重试", null, null, null), SignLogic.V_FAILED);
+        Object[] d2 = SignLogic.verdictDetail("活动已结束", null, null, null);
+        eq("detail 失败码", d2[0], SignLogic.V_FAILED);
+        eq("detail 失败命中词", d2[1], "活动已结束");
+        Object[] d3 = SignLogic.verdictDetail("随便说说", null, null, null);
+        eq("detail UNKNOWN 码", d3[0], SignLogic.V_UNKNOWN);
+        eq("detail UNKNOWN 无命中词", d3[1], "");
+        // 顺序：dup 必须优先于 ok —— 命中词能证明用的哪张表
+        Object[] d4 = SignLogic.verdictDetail("您今日已签到成功", null, null, null);
+        eq("顺序：dup 表先命中", d4[1], "今日已签");
+    }
+
+    /**
+     * v1.6.0 修复对应的回归用例。
+     *
+     * 每一个都对应一个真实修掉的 bug —— 加进来是为了让"改回去"能被门禁拦住。
+     */
+    /**
+     * 「已发出」状态生命周期回归。
+     *
+     * 复现用户报的 bug（2026-09-27）：
+     *   cb 目标发出后显示「已发出」；bot 若把结论放在 callback answer 里、不再另发消息，
+     *   回复判定永远等不到 → 过了 sent_at_ 时效后状态**退回「待签」** → 被重新排期重发。
+     *   用户感受：签上了却显示已发出，过一阵又变回没签。
+     *
+     * 修法：超时后转「待确认」（而不是退回待签），并给用户处置入口。
+     */
+    private static void sentPhaseLifecycle() {
+        final long TTL = 10L * 60 * 1000;   // SILENT_TO_PENDING_MS
+        final long T0  = 1_700_000_000_000L;
+
+        // ── 没发过 -> 待签 ──
+        eq("没发过 -> NONE", SignLogic.sentPhase(false, 0L, T0, TTL), SignLogic.SENT_NONE);
+
+        // ── 刚发出 -> 已发出 ──
+        eq("刚发出 -> FRESH", SignLogic.sentPhase(true, T0, T0, TTL), SignLogic.SENT_FRESH);
+        eq("5 分钟后 -> FRESH", SignLogic.sentPhase(true, T0, T0 + 5 * 60_000L, TTL), SignLogic.SENT_FRESH);
+        eq("恰好 TTL -> FRESH（边界含等于）",
+           SignLogic.sentPhase(true, T0, T0 + TTL, TTL), SignLogic.SENT_FRESH);
+
+        // ── 超时 -> 待确认 ──
+        eq("TTL+1ms -> STALE",
+           SignLogic.sentPhase(true, T0, T0 + TTL + 1, TTL), SignLogic.SENT_STALE);
+        eq("30 分钟后 -> STALE",
+           SignLogic.sentPhase(true, T0, T0 + 30 * 60_000L, TTL), SignLogic.SENT_STALE);
+
+        // ── 取不到时间戳：保守算"还在时效内"，绝不能当过期（会重复发送） ──
+        eq("有 opt_ 无 sent_at_ -> FRESH（保守）",
+           SignLogic.sentPhase(true, 0L, T0, TTL), SignLogic.SENT_FRESH);
+        eq("有 opt_ 负时间戳 -> FRESH（保守）",
+           SignLogic.sentPhase(true, -1L, T0, TTL), SignLogic.SENT_FRESH);
+
+        // ── 时钟回拨（sent_at_ 在未来）：不当过期 ──
+        eq("sent_at_ 在未来 -> FRESH",
+           SignLogic.sentPhase(true, T0 + 60_000L, T0, TTL), SignLogic.SENT_FRESH);
+
+        // ── 2026-10-16 事故回归：跨天残留的 sent_at_ 绝不能判成 STALE ──
+        // 现场：几天前发过、没走到"有结论"那一步 → sent_at_ 没被清。
+        //   旧代码只判 now-sent > 90s → 第二天打开面板时
+        //   把全部目标判成"已发出 4999 分钟未结案"。
+        //   不变式：**今天没发过 → 一律 SENT_NONE**，不管时间戳多久。
+        eq("昨天发的（跨天残留）-> NONE",
+           SignLogic.sentPhase(false, T0, T0 + 24 * 60 * 60_000L, TTL), SignLogic.SENT_NONE);
+        eq("三天前发的 -> NONE",
+           SignLogic.sentPhase(false, T0, T0 + 3 * 24 * 60 * 60_000L, TTL), SignLogic.SENT_NONE);
+        eq("几天前发的 + 短 TTL(90s) -> NONE",
+           SignLogic.sentPhase(false, T0, T0 + 83 * 60 * 60_000L, 90_000L), SignLogic.SENT_NONE);
+        // 反向保护：今天发的依然会 STALE（不能修成“从此不判未回复”）
+        eq("今天发的、超时 -> STALE",
+           SignLogic.sentPhase(true, T0, T0 + 5 * 60_000L, 90_000L), SignLogic.SENT_STALE);
+        // 升级判定同样不能被跨天残留触发
+        tru("跨天残留不升级（应为 false）",
+            !SignLogic.shouldPromoteToPending(false, T0, T0 + 24 * 60 * 60_000L, TTL,
+                                              false, false, false));
+
+        // ── 升级判定：只有"发了+超时+今天没结论+没处置过"才升级 ──
+        tru("超时且未签 -> 升级",
+            SignLogic.shouldPromoteToPending(true, T0, T0 + TTL + 1, TTL, false, false, false));
+        tru("超时但今天已签 -> 不升级",
+            !SignLogic.shouldPromoteToPending(true, T0, T0 + TTL + 1, TTL, true, false, false));
+        tru("超时但已是待确认 -> 不升级",
+            !SignLogic.shouldPromoteToPending(true, T0, T0 + TTL + 1, TTL, false, true, false));
+        tru("超时但重试已用尽 -> 不升级",
+            !SignLogic.shouldPromoteToPending(true, T0, T0 + TTL + 1, TTL, false, false, true));
+        tru("还在时效内 -> 不升级",
+            !SignLogic.shouldPromoteToPending(true, T0, T0 + 60_000L, TTL, false, false, false));
+        tru("没发过 -> 不升级",
+            !SignLogic.shouldPromoteToPending(false, 0L, T0 + TTL + 1, TTL, false, false, false));
+        tru("有 opt_ 无时间戳 -> 不升级（保守）",
+            !SignLogic.shouldPromoteToPending(true, 0L, T0 + TTL + 1, TTL, false, false, false));
+    }
+
+    /**
+    /**
+     * 「按钮可学性」过滤 —— 已于 2026-09-28 整体移除，故本函数一并删除。
+     *
+     * 原先这里断言的是「支付/菜单按钮必须被挡住」。那套启发式被证明判据错了：
+     * 它靠 data 前缀和文案黑名单去猜按钮性质，于是必然同时误伤真签到按钮
+     * （实测 EmbyPulse 的签到入口叫 ub_back_menu，撞 ub_menu_ 前缀；
+     * 文案「🔙 主菜单」又撞「菜单」）和漏挡新菜单（每个 bot 文案都不同）。
+     *
+     * 现在改成「用户点按钮 = 意图，点了就学」，不再猜。
+     * 剩下的准入判断（排除的 bot / 排除规则）在 TGAutoSignCore.learnDenyReason，
+     * 属于 Android 依赖代码，不在本纯逻辑单测的覆盖范围内。
+     */
+
+    private static void v160Regression() {
+        // P1-4：跨天窗口的补签时段判定。
+        // 旧实现走 windowRange()（不支持跨天，返回 null）→ start 退化成 0 →
+        // "窗口开始 ~ 截止"恒成立 = 全天补签。这里锁定正确行为。
+        int[] cross = SignLogic.windowRangeAny("22:00-02:00");
+        tru("跨天窗口可解析", cross != null);
+        tru("跨天标记", SignLogic.crossesMidnight(cross));
+        // 窗口 22:00-02:00、补签截止 06:00 → 12:00 不该在补签时段
+        tru("跨天窗口 12:00 不在补签时段", !SignLogic.inMissBackTime(12 * 60, new int[]{22 * 60, 2 * 60}, 6 * 60, true));
+        tru("跨天窗口 23:00 在补签时段", SignLogic.inMissBackTime(23 * 60, new int[]{22 * 60, 2 * 60}, 6 * 60, true));
+        tru("跨天窗口 01:00 在补签时段", SignLogic.inMissBackTime(60, new int[]{22 * 60, 2 * 60}, 6 * 60, true));
+        tru("跨天窗口 07:00 不在补签时段", !SignLogic.inMissBackTime(7 * 60, new int[]{22 * 60, 2 * 60}, 6 * 60, true));
+        // 普通窗口不回归
+        tru("普通窗口 10:00 在补签时段", SignLogic.inMissBackTime(10 * 60, new int[]{8 * 60, 20 * 60}, 23 * 60, true));
+        tru("补签开关关 → 恒 false", !SignLogic.inMissBackTime(10 * 60, new int[]{8 * 60, 20 * 60}, 23 * 60, false));
+
+        // P3-7：normalizeId 不能返回纯 "-"（下游 Long.parseLong 会抛异常被静默吞）
+        eq("normalizeId 纯负号 → 空串", SignLogic.normalizeId("-"), "");
+        eq("normalizeId 全角负号 → 空串", SignLogic.normalizeId("－"), "");
+        eq("normalizeId 连字符无数字 → 空串", SignLogic.normalizeId("---"), "");
+        eq("normalizeId 正常负数保留", SignLogic.normalizeId("-1001234567890"), "-1001234567890");
+        eq("normalizeId 负号在中间被清掉", SignLogic.normalizeId("123-456"), "123456");
+
+        // 判定顺序：dup 优先于 ok（历史踩过的坑，永久锁定）
+        Object[] d = SignLogic.verdictDetail("签到成功，今日已签到", null, null, null);
+        eq("dup 优先于 ok（命中词证明）", d[1], "今日已签");
+    }
+
+    private static void extras() {
+        tru("附加词为空 → null", SignLogic.parseExtraWords("") == null);
+        tru("附加词 null → null", SignLogic.parseExtraWords(null) == null);
+        tru("附加词全空白 → null", SignLogic.parseExtraWords("  ,  ,  ") == null);
+        String[] a = SignLogic.parseExtraWords("已领取,领取完毕\n签到OK");
+        tru("附加词解析 3 条", a != null && a.length == 3);
+        String[] b = SignLogic.parseExtraWords("全角，逗号");
+        tru("附加词支持全角逗号", b != null && b.length == 2);
+    }
+
+    /** 统一签到闸（decideSign）：这是"同一 bot 连发两条"的根治点，必须有回归。 */
+    private static void signGate() {
+        // 空对象 → 放行
+        eq("gate 空 → 放行", SignLogic.decideSign(new SignLogic.SignGate()), SignLogic.SKIP_NONE);
+
+        // 自动路径
+        SignLogic.SignGate g = new SignLogic.SignGate();
+        g.signedToday = true;
+        eq("已签 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_ALREADY_SIGNED);
+
+        g = new SignLogic.SignGate();
+        g.sentPendingFresh = true;
+        eq("已发出待结论 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_SENT_PENDING);
+
+        g = new SignLogic.SignGate();
+        g.retryExhausted = true;
+        eq("重试用尽 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_RETRY_EXHAUST);
+
+        g = new SignLogic.SignGate();
+        g.inBackoff = true;
+        eq("退避中 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_BACKOFF);
+
+        g = new SignLogic.SignGate();
+        g.disabled = true;
+        eq("停用 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_DISABLED);
+
+        // 在途：manual 也不放行（防并发双发）
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.inFlight = true;
+        eq("在途 + manual → 仍跳过", SignLogic.decideSign(g), SignLogic.SKIP_IN_FLIGHT);
+
+        // manual 豁免「已签 / 在途」这类**进度状态**（用户明确要求重发就该发），
+        // 但**不豁免** retryExhausted / inBackoff / sendAttemptsExhausted ——
+        // 那三个是「别再打了」的硬闸，豁免会导致连点按钮把同一目标发到十几次
+        // （2026-10-14 用户实测：全账号签到连点两次，日志出现「已发送 10 次」，
+        //   每次都同步落盘，界面明显卡顿）。
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.signedToday = true;
+        g.sentPendingFresh = true;
+        eq("manual 豁免已签/在途 → 放行", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.retryExhausted = true;
+        eq("manual 不豁免重试用尽", SignLogic.decideSign(g), SignLogic.SKIP_RETRY_EXHAUST);
+
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.inBackoff = true;
+        eq("manual 不豁免退避", SignLogic.decideSign(g), SignLogic.SKIP_BACKOFF);
+
+        // manual 不豁免 disabled
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.disabled = true;
+        eq("manual 不豁免停用", SignLogic.decideSign(g), SignLogic.SKIP_DISABLED);
+
+        // 优先级：在途 > 已签（在途更"硬"）
+        g = new SignLogic.SignGate();
+        g.inFlight = true;
+        g.signedToday = true;
+        eq("在途优先于已签", SignLogic.decideSign(g), SignLogic.SKIP_IN_FLIGHT);
+
+        // 标签不为空（日志要用）
+        tru("skipLabel 有文案", SignLogic.skipLabel(SignLogic.SKIP_SENT_PENDING).length() > 0);
+        eq("skipLabel 放行 → 空串", SignLogic.skipLabel(SignLogic.SKIP_NONE), "");
+
+        // ── 发送失败细分（2026-10-30）──
+        // 起因：四种完全不同的发送失败共用一条码 + 一句「取不到会话数据」，
+        // 用户看提示去会话里发消息，而真因是「等不到带按钮的新消息」。
+        tru("细分码都不同",
+            SignLogic.SKIP_SEND_FAIL != SignLogic.SKIP_SEND_FAIL_PEER
+            && SignLogic.SKIP_SEND_FAIL_PEER != SignLogic.SKIP_SEND_FAIL_PANEL
+            && SignLogic.SKIP_SEND_FAIL_PANEL != SignLogic.SKIP_SEND_FAIL_EXC
+            && SignLogic.SKIP_SEND_FAIL_EXC != SignLogic.SKIP_SEND_WAITING_PANEL
+            && SignLogic.SKIP_SEND_FAIL != SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST);
+        tru("peer 细分码有日志文案", SignLogic.skipLabel(SignLogic.SKIP_SEND_FAIL_PEER).length() > 0);
+        tru("异常细分码有日志文案", SignLogic.skipLabel(SignLogic.SKIP_SEND_FAIL_EXC).length() > 0);
+        tru("等面板细分码有日志文案", SignLogic.skipLabel(SignLogic.SKIP_SEND_WAITING_PANEL).length() > 0);
+        tru("面板细分码指向前置命令",
+            SignLogic.skipLabel(SignLogic.SKIP_SEND_FAIL_PANEL).indexOf("前置命令") >= 0);
+
+        // ── 账号级停用（1.6.1 补）──
+        // 此前 isAccountEnabled 只在界面/一键签全部/心跳非当前账号三处检查，
+        // 没进这道统一闸 → 切到停用账号后所有触发源照签，开关形同虚设。
+        g = new SignLogic.SignGate();
+        g.accountDisabled = true;
+        eq("账号停用 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_ACCOUNT_DISABLED);
+
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.accountDisabled = true;
+        eq("账号停用 + manual → 仍跳过（账号级开关不可被手动绕过）",
+           SignLogic.decideSign(g), SignLogic.SKIP_ACCOUNT_DISABLED);
+
+        // 账号停用优先级最高：即使同时「已签/在途」也报账号停用，
+        // 用户看到的提示才准确（是账号关了，不是今天签过了）。
+        g = new SignLogic.SignGate();
+        g.accountDisabled = true;
+        g.inFlight = true;
+        g.signedToday = true;
+        eq("账号停用优先于在途/已签", SignLogic.decideSign(g), SignLogic.SKIP_ACCOUNT_DISABLED);
+
+        // 未停用不受影响
+        g = new SignLogic.SignGate();
+        eq("账号未停用 → 放行", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+
+        g = new SignLogic.SignGate();
+        g.accountDisabled = false;
+        g.manual = true;
+        eq("账号未停用 + manual → 放行", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+
+        // 目标级 disabled 与账号级互不干扰
+        g = new SignLogic.SignGate();
+        g.disabled = true;
+        eq("仅目标级停用 → SKIP_DISABLED（不是账号码）",
+           SignLogic.decideSign(g), SignLogic.SKIP_DISABLED);
+
+        tru("skipLabel 账号停用有文案",
+            SignLogic.skipLabel(SignLogic.SKIP_ACCOUNT_DISABLED).length() > 0);
+        eq("skipLabel 账号停用文案", SignLogic.skipLabel(SignLogic.SKIP_ACCOUNT_DISABLED), "账号已停用");
+
+        // ── 时间展示（今日计划 / 补签列表，2026-09-28）──
+        timeDisplay();
+
+        // ── skipSigned：批量入口只签未签的（2026-09-28 用户反馈）──
+        batchSkipSigned();
+    }
+
+    /**
+     * 批量「立即签到」/「签全部账号」不该重发已签的。
+     *
+     * 用户原话：「立即签到是所有的都签到 我签过的又给我重复了一遍」
+     *          「签过的没人会再二次签的吧」
+     * 根因：批量入口传 force=true（=manual），而 manual 会绕过 signedToday 检查。
+     */
+    private static void batchSkipSigned() {
+        // ① 已签 + skipSigned → 跳过（这是本次修复的核心）
+        SignLogic.SignGate g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.signedToday = true;
+        eq("批量 + 已签 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_ALREADY_SIGNED);
+
+        // ② 已发出待结论 + skipSigned → 也跳过（可能已经签上，重发就是重复）
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.sentPendingFresh = true;
+        eq("批量 + 已发出待结论 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_SENT_PENDING);
+
+        // ③ 未签 + skipSigned → 正常放行（批量要签的就是这些）
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        eq("批量 + 未签 → 放行", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+
+        // ④ 单目标入口（skipSigned=false）保留强制重签能力 —— 用户点得具体，
+        //    通常怀疑没签上，要允许重发。这是有意保留的行为，不是漏改。
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = false;
+        g.signedToday = true;
+        eq("单目标 + 已签 → 仍放行（可强制重签）", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = false;
+        g.sentPendingFresh = true;
+        eq("单目标 + 已发出 → 仍放行", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+
+        // ⑤ skipSigned 只影响 manual 分支；自动路径本来就会跳已签，不受影响
+        g = new SignLogic.SignGate();
+        g.manual = false;
+        g.skipSigned = true;
+        g.signedToday = true;
+        eq("自动 + 已签 → 跳过（原有行为不变）", SignLogic.decideSign(g), SignLogic.SKIP_ALREADY_SIGNED);
+
+        // ⑥ skipSigned 不豁免停用（停用优先）
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.signedToday = true;
+        g.disabled = true;
+        eq("批量 + 已签 + 目标停用 → 报已签（已签在前，语义更准）",
+           SignLogic.decideSign(g), SignLogic.SKIP_ALREADY_SIGNED);
+
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.disabled = true;
+        eq("批量 + 目标停用 → 报停用", SignLogic.decideSign(g), SignLogic.SKIP_DISABLED);
+
+        // ⑦ 账号停用优先级最高，skipSigned 不能绕过
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.accountDisabled = true;
+        eq("批量 + 账号停用 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_ACCOUNT_DISABLED);
+
+        // ⑧ 在途保护不受 skipSigned 影响（manual 也不放行）
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.inFlight = true;
+        eq("批量 + 在途 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_IN_FLIGHT);
+
+        // ⑨ 批量（manual）同样受「重试用尽 / 退避」约束 —— 见上方 2026-10-14 说明。
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.retryExhausted = true;
+        eq("批量 + 重试用尽 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_RETRY_EXHAUST);
+
+        g = new SignLogic.SignGate();
+        g.manual = true;
+        g.skipSigned = true;
+        g.inBackoff = true;
+        eq("批量 + 退避中 → 跳过", SignLogic.decideSign(g), SignLogic.SKIP_BACKOFF);
+    }
+
+    /** 时间口径：补签判定、HH:MM 格式化、相对时间文案。 */
+    private static void timeDisplay() {
+        // hhmmOf：<=0 视为未知，返回空串（调用方据此回退到 ✔）
+        eq("hhmmOf(0) → 空串", SignLogic.hhmmOf(0L), "");
+        eq("hhmmOf(-1) → 空串", SignLogic.hhmmOf(-1L), "");
+        // 用固定时刻验证格式化（避免依赖当前时区/时刻）
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.set(java.util.Calendar.HOUR_OF_DAY, 9);
+        c.set(java.util.Calendar.MINUTE, 5);
+        c.set(java.util.Calendar.SECOND, 0);
+        c.set(java.util.Calendar.MILLISECOND, 0);
+        eq("hhmmOf 09:05", SignLogic.hhmmOf(c.getTimeInMillis()), "09:05");
+        c.set(java.util.Calendar.HOUR_OF_DAY, 23);
+        c.set(java.util.Calendar.MINUTE, 59);
+        eq("hhmmOf 23:59", SignLogic.hhmmOf(c.getTimeInMillis()), "23:59");
+
+        long day0 = 0L;
+        java.util.Calendar d = java.util.Calendar.getInstance();
+        d.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        d.set(java.util.Calendar.MINUTE, 0);
+        d.set(java.util.Calendar.SECOND, 0);
+        d.set(java.util.Calendar.MILLISECOND, 0);
+        day0 = d.getTimeInMillis();
+
+        // isMissBack：① 有 miss 记录 → 一律算补签（最可信）
+        tru("有补签记录 → 补签",
+            SignLogic.isMissBack(true, day0 + 8 * 3600000L, 8 * 60, day0, 5));
+        // 有记录时即使实签比计划早也算（记录优先）
+        tru("有补签记录(实签早于计划) → 仍补签",
+            SignLogic.isMissBack(true, day0 + 7 * 3600000L, 8 * 60, day0, 5));
+
+        // ② 无记录 → 按时间差兜底
+        // 计划 08:30，实签 08:31（晚 1 分）→ 在 5 分宽限内，不算补签
+        tru("准点(晚1分) → 非补签",
+            !SignLogic.isMissBack(false, day0 + 8 * 3600000L + 30 * 60000L + 60000L, 8 * 60 + 30, day0, 5));
+        // 计划 08:30，实签 08:36（晚 6 分）→ 超宽限，算补签
+        tru("晚6分(超5分宽限) → 补签",
+            SignLogic.isMissBack(false, day0 + 8 * 3600000L + 30 * 60000L + 6 * 60000L, 8 * 60 + 30, day0, 5));
+        // 边界：正好 5 分 → 不算（要求「大于」阈值）
+        tru("正好晚5分 → 非补签",
+            !SignLogic.isMissBack(false, day0 + 8 * 3600000L + 30 * 60000L + 5 * 60000L, 8 * 60 + 30, day0, 5));
+        // 实签早于计划 → 不算补签
+        tru("提前签 → 非补签",
+            !SignLogic.isMissBack(false, day0 + 8 * 3600000L, 8 * 60 + 30, day0, 5));
+        // 缺数据 → 不算（宁可不标，也不误标）
+        tru("无实签时刻 → 非补签", !SignLogic.isMissBack(false, 0L, 8 * 60, day0, 5));
+        tru("无计划 → 非补签", !SignLogic.isMissBack(false, day0 + 9 * 3600000L, -1, day0, 5));
+        tru("无当天零点 → 非补签", !SignLogic.isMissBack(false, day0 + 9 * 3600000L, 8 * 60, 0L, 5));
+
+        // minutesSince：向下取整，未来/未知 → 0
+        eq("minutesSince 未来 → 0", SignLogic.minutesSince(1000L, 500L), 0);
+        eq("minutesSince 未知 → 0", SignLogic.minutesSince(0L, 99999L), 0);
+        eq("minutesSince 42 分", SignLogic.minutesSince(1000L, 1000L + 42L * 60000L), 42);
+        eq("minutesSince 不足1分 → 0", SignLogic.minutesSince(1000L, 1000L + 59L * 1000L), 0);
+
+        // humanMinutes：0/分/小时/时分
+        eq("humanMinutes 0", SignLogic.humanMinutes(0), "0 分");
+        eq("humanMinutes 负数", SignLogic.humanMinutes(-5), "0 分");
+        eq("humanMinutes 42", SignLogic.humanMinutes(42), "42 分");
+        eq("humanMinutes 60", SignLogic.humanMinutes(60), "1 小时");
+        eq("humanMinutes 72", SignLogic.humanMinutes(72), "1 小时 12 分");
+        eq("humanMinutes 119", SignLogic.humanMinutes(119), "1 小时 59 分");
+    }
+
+    /** 账号索引归一化：多账号串号的根治点，必须有回归。 */
+    private static void accountClamp() {
+        // 正常范围：原样
+        eq("3账号 raw=0 -> 0", SignLogic.clampAccount(0, 3), 0);
+        eq("3账号 raw=1 -> 1", SignLogic.clampAccount(1, 3), 1);
+        eq("3账号 raw=2 -> 2", SignLogic.clampAccount(2, 3), 2);
+
+        // 越界索引一律按原值用（不再钳到 total-1）
+        //
+        // 为什么：selectedAccount 读到的值不等于账号的「第几个」。
+        // 实测 Nagram XF 登录 4 个账号会读到 7、9，那些是合法索引，数据在 acc9_ 里。
+        // 钳到 total-1 会让模块读到另一个账号的分区 —— 表现为「账号1的配置变成账号2的」。
+        eq("3账号 raw=3 -> 3（原值）", SignLogic.clampAccount(3, 3), 3);
+        eq("2账号 raw=2 -> 2（原值）", SignLogic.clampAccount(2, 2), 2);
+        eq("4账号 raw=9 -> 9（原值）", SignLogic.clampAccount(9, 4), 9);
+        eq("1账号 raw=2 -> 2（原值）", SignLogic.clampAccount(2, 1), 2);
+
+        // 负值 -> 0（负值不可能合法；返回负数会拼出 acc-1_ 垃圾分区）
+        eq("raw=-1 -> 0", SignLogic.clampAccount(-1, 3), 0);
+        eq("raw=-99 -> 0", SignLogic.clampAccount(-99, 3), 0);
+
+        // 是否越界（raw >= 0 && total > 0 && raw >= total；负值不算越界）
+        tru("raw=3/total=3 越界", SignLogic.accountOutOfRange(3, 3));
+        tru("raw=9/total=4 越界", SignLogic.accountOutOfRange(9, 4));
+        tru("raw=2/total=3 不算越界", !SignLogic.accountOutOfRange(2, 3));
+        tru("正常不算越界", !SignLogic.accountOutOfRange(1, 3));
+        tru("负值不算越界（由 clampAccount 退回 0）", !SignLogic.accountOutOfRange(-1, 3));
+        tru("total=0 不算越界", !SignLogic.accountOutOfRange(5, 0));
+    }
+
+    /** 确定性失败词：命中即应冻结当天，不再重试。 */
+    private static void permanentFail() {
+        // 属于确定性失败
+        tru("请先关注 → 确定性失败", SignLogic.isPermanentFail("请先关注"));
+        tru("未关注 → 确定性失败", SignLogic.isPermanentFail("未关注"));
+        tru("没有资格 → 确定性失败", SignLogic.isPermanentFail("没有资格"));
+        tru("活动已结束 → 确定性失败", SignLogic.isPermanentFail("活动已结束"));
+        tru("已过期 → 确定性失败", SignLogic.isPermanentFail("已过期"));
+        tru("not allowed → 确定性失败", SignLogic.isPermanentFail("not allowed"));
+        tru("大小写不敏感", SignLogic.isPermanentFail("Not Allowed"));
+
+        // 不属于（这些该走普通重试）
+        tru("签到失败 → 非确定性", !SignLogic.isPermanentFail("签到失败"));
+        tru("try again → 非确定性", !SignLogic.isPermanentFail("try again"));
+        tru("invalid → 非确定性", !SignLogic.isPermanentFail("invalid"));
+        tru("空串 → 非确定性", !SignLogic.isPermanentFail(""));
+        tru("null → 非确定性", !SignLogic.isPermanentFail(null));
+
+        // 与 verdictDetail 联动：确定性失败词必须先被认成 V_FAILED
+        Object[] vd = SignLogic.verdictDetail("请先关注本频道再签到", null, null, null);
+        eq("「请先关注」判为 V_FAILED", ((Integer) vd[0]).intValue(), SignLogic.V_FAILED);
+        tru("命中词可被 isPermanentFail 认出", SignLogic.isPermanentFail(String.valueOf(vd[1])));
+
+        // 现场回归（2026-09-25 目标 7719383660）：
+        // bot 先回"✅ 正在签到,请稍后..."（词表认不出 → V_UNKNOWN，
+        //   但宽松模式「有回复即算成功」把它当成功 → retry 清零）
+        // 再回"请先关注"（命中确定性失败词 → 冻结当天）
+        Object[] v1 = SignLogic.verdictDetail("✅ 正在签到,请稍后...", null, null, null);
+        eq("「正在签到」词表认不出 → V_UNKNOWN", ((Integer) v1[0]).intValue(), SignLogic.V_UNKNOWN);
+        Object[] v2 = SignLogic.verdictDetail("请先关注", null, null, null);
+        eq("「请先关注」判为 V_FAILED", ((Integer) v2[0]).intValue(), SignLogic.V_FAILED);
+        tru("确定性失败词可被认出（冻结依据）", SignLogic.isPermanentFail(String.valueOf(v2[1])));
+        // 说明：V_UNKNOWN 走的是宽松模式分支，不由本函数决定；这里只锁定词表行为。
+
+        eq("单日失败上限 = 3", SignLogic.FAILS_PER_DAY_LIMIT, 3);
+    }
+
+    /**
+     * 执行结果归类（2026-09-28）。
+     *
+     * 背景：改前有 5 处散落的 if-else 决定成败，「待确认」一词还被两处
+     * 不同语义共用。现在每次执行必须落到恰好一个归类。
+     * 这里锁定归类的**语义契约** —— 谁需要处置、谁会自动重试、谁算已签。
+     */
+    private static void resultClassification() {
+        eq("R_SIGNED 码", SignLogic.resultCode(SignLogic.R_SIGNED), "signed");
+        eq("R_FAILED 码", SignLogic.resultCode(SignLogic.R_FAILED), "failed");
+        eq("R_BTN_STALE 码", SignLogic.resultCode(SignLogic.R_BTN_STALE), "btn_stale");
+        eq("R_REPLIED_UNK 码", SignLogic.resultCode(SignLogic.R_REPLIED_UNK), "replied_unknown");
+        eq("R_NO_REPLY 码", SignLogic.resultCode(SignLogic.R_NO_REPLY), "no_reply");
+        eq("R_JUDGE_OFF 码", SignLogic.resultCode(SignLogic.R_JUDGE_OFF), "judge_off");
+        eq("码->btn_stale", SignLogic.resultOfCode("btn_stale"), SignLogic.R_BTN_STALE);
+        eq("码->no_reply", SignLogic.resultOfCode("no_reply"), SignLogic.R_NO_REPLY);
+        eq("未知码 -> -1", SignLogic.resultOfCode("nonsense"), -1);
+        eq("null -> -1", SignLogic.resultOfCode(null), -1);
+
+        tru("SIGNED 不需处置", !SignLogic.needsAttention(SignLogic.R_SIGNED));
+        tru("FAILED 不需处置", !SignLogic.needsAttention(SignLogic.R_FAILED));
+        tru("BTN_STALE 需处置", SignLogic.needsAttention(SignLogic.R_BTN_STALE));
+        tru("REPLIED_UNK 需处置", SignLogic.needsAttention(SignLogic.R_REPLIED_UNK));
+        tru("NO_REPLY 需处置", SignLogic.needsAttention(SignLogic.R_NO_REPLY));
+        tru("JUDGE_OFF 需处置", SignLogic.needsAttention(SignLogic.R_JUDGE_OFF));
+
+        tru("FAILED 可重试", SignLogic.autoRetryable(SignLogic.R_FAILED));
+        tru("BTN_STALE 可重试", SignLogic.autoRetryable(SignLogic.R_BTN_STALE));
+        tru("REPLIED_UNK 不重试", !SignLogic.autoRetryable(SignLogic.R_REPLIED_UNK));
+        tru("NO_REPLY 不重试", !SignLogic.autoRetryable(SignLogic.R_NO_REPLY));
+        tru("JUDGE_OFF 不重试", !SignLogic.autoRetryable(SignLogic.R_JUDGE_OFF));
+        tru("SIGNED 不重试", !SignLogic.autoRetryable(SignLogic.R_SIGNED));
+
+        tru("只有 SIGNED 算已签", SignLogic.countsAsSigned(SignLogic.R_SIGNED));
+        tru("NO_REPLY 不算已签", !SignLogic.countsAsSigned(SignLogic.R_NO_REPLY));
+        tru("BTN_STALE 不算已签", !SignLogic.countsAsSigned(SignLogic.R_BTN_STALE));
+        tru("REPLIED_UNK 不算已签", !SignLogic.countsAsSigned(SignLogic.R_REPLIED_UNK));
+        tru("JUDGE_OFF 不算已签", !SignLogic.countsAsSigned(SignLogic.R_JUDGE_OFF));
+
+        tru("「正在签到」是进度", SignLogic.looksLikeProgress("正在签到,请稍后..."));
+        tru("「请稍后」是进度", SignLogic.looksLikeProgress("请稍后"));
+        tru("processing 是进度", SignLogic.looksLikeProgress("Processing..."));
+        tru("「签到成功」不是进度", !SignLogic.looksLikeProgress("签到成功"));
+        tru("null 不是进度", !SignLogic.looksLikeProgress(null));
+
+        tru("「正在签到」不算结果", !SignLogic.looksLikeSignResult("正在签到,请稍后..."));
+        tru("「正在查询」不算结果", !SignLogic.looksLikeSignResult("正在查询,请稍后"));
+        tru("「签到成功」算结果", SignLogic.looksLikeSignResult("签到成功"));
+        tru("checkin 算结果", SignLogic.looksLikeSignResult("checkin done"));
+        tru("无关文本不算结果", !SignLogic.looksLikeSignResult("这是 EmbyPulse 用户自助服务机器人"));
+        tru("空串不算结果", !SignLogic.looksLikeSignResult(""));
+        tru("null 不算结果", !SignLogic.looksLikeSignResult(null));
+
+        // ── 命令菜单/使用说明识别（2026-10-14 用户反馈的「hope 那种问题」）──
+        // hope 社工库首次交互推的是「可用命令 /start /my /sign …」这类菜单，
+        // 含 sign 字样会被 looksLikeSignResult 判成「像结果」，进而归「回复判不出」。
+        // 用户看到「未识别」以为坏了，其实它就不是签到结果。
+        tru("hope 菜单被识别", SignLogic.looksLikeMenuHelp(
+                "🎉 欢迎使用 hope社工机器人\n📌 可用命令\n/start - 🚀注册账户\n"
+              + "/my - 👤个人信息\n/sign - 📅今日签到\n/help - ℹ️使用说明"));
+        tru("「可用命令」+「使用说明」算菜单", SignLogic.looksLikeMenuHelp("可用命令 /help 使用说明"));
+        tru("只有单个 help 不算菜单", !SignLogic.looksLikeMenuHelp("签到 help"));
+        tru("「签到成功」不算菜单", !SignLogic.looksLikeMenuHelp("签到成功"));
+        tru("null 不算菜单", !SignLogic.looksLikeMenuHelp(null));
+        tru("空串不算菜单", !SignLogic.looksLikeMenuHelp(""));
+        // 组合判定：菜单不应再被判成「像签到结果」
+        String _menu = "📌 可用命令 /start 注册账户 /my 个人信息 /help 使用说明";
+        tru("菜单不算结果(组合)", !(SignLogic.looksLikeSignResult(_menu) && !SignLogic.looksLikeMenuHelp(_menu)));
+
+        // ── 媒体占位符（2026-10-14 流光画廊机器人：点完按钮回一张图）──
+        // messageText 对纯图片渲染成「图片」；旧逻辑当文本判定 → 判不出 → 误报「回复判不出」。
+        tru("「图片」是媒体占位符", SignLogic.isMediaPlaceholderText("图片"));
+        tru("「贴纸」是媒体占位符", SignLogic.isMediaPlaceholderText("贴纸"));
+        tru("「photo」是媒体占位符", SignLogic.isMediaPlaceholderText("photo"));
+        tru("「签到成功」不是占位符", !SignLogic.isMediaPlaceholderText("签到成功"));
+        tru("长文本不是占位符", !SignLogic.isMediaPlaceholderText("恭喜您签到成功，获得积分+10"));
+        tru("null 不是占位符", !SignLogic.isMediaPlaceholderText(null));
+        tru("空串不是占位符", !SignLogic.isMediaPlaceholderText(""));
+
+        // ── 带说明文字的图：caption 必须参与判定（2026-10-14 回归事故）──
+        // 流光画廊机器人回「请先加入用户群，再签到…」+ 一张图，被判成「已签」。
+        // 根因：正文只取 messageText（带图时是占位符「图片」），
+        // 真正的 caption 在 messageOwner.message 里，被丢掉了 → 拒绝语从未进入判定链。
+        // 现在 caption 优先，下面这些必须判失败。
+        eq("请先加入用户群 → 失败（带图的拒绝语）",
+           SignLogic.verdictOf("请先加入用户群，再签到、抢红包或兑换邀请码。", null, null, null),
+           SignLogic.V_FAILED);
+        eq("请先加入频道 → 失败",
+           SignLogic.verdictOf("⚠️ 请先加入以下1个频道才能使用功能", null, null, null),
+           SignLogic.V_FAILED);
+        eq("请先加入用户群（带表情换行）→ 失败",
+           SignLogic.verdictOf("😇 官方频道 @x\n😇 请先加入用户群再签到", null, null, null),
+           SignLogic.V_FAILED);
+        // 而「图片」这种占位符本身不该被当成结果
+        tru("「图片」是占位符而非结果",
+            SignLogic.isMediaPlaceholderText("图片"));
+    }
+
+    /**
+     * 宽松模式的「功能性拒绝」词（2026-09-28）。
+     *
+     * 实测事故：宽松模式下「⚠️ 请先加入以下1个频道才能使用功能」被判成签到成功 ——
+     * 那是明确的拒绝，用户压根没签到。同类还有「🔒 请先绑定或注册账号」。
+     *
+     * 这类措辞的共同点：**要求用户先做某事**，属于前置条件未满足，
+     * 而不是业务结果。它们必须先于"有回复即成功"被判失败。
+     */
+    private static void looseModeFailWords() {
+        // 必须判失败：功能性拒绝
+        tru("请先加入频道 → 失败",
+            SignLogic.verdictOf("⚠️ 请先加入以下1个频道才能使用功能：", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+        tru("请先绑定账号 → 失败",
+            SignLogic.verdictOf("🔒 请先绑定或注册账号后才能使用此功能", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+        tru("未绑定 → 失败",
+            SignLogic.verdictOf("你还没有绑定账号，请先绑定", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+        tru("无权限 → 失败",
+            SignLogic.verdictOf("无权限操作", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+        tru("not linked → 失败",
+            SignLogic.verdictOf("Account not linked", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+
+        // 不能误伤：正常成功回复仍判成功
+        tru("签到成功 → 成功",
+            SignLogic.verdictOf("🎉 签到成功", null, SignLogic.OK_WORDS_DEFAULT, SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_SIGNED);
+        tru("已签到 → 成功（重复词）",
+            SignLogic.verdictOf("你今天已经签到过了", null, null, SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_SIGNED);
+        // 「请先」类词不能撞到正常回复
+        tru("欢迎语不判失败",
+            SignLogic.verdictOf("🎉 欢迎使用本机器人", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_UNKNOWN);
+    }
+
+    private static void sendAttemptsGate() {
+        SignLogic.SignGate g = new SignLogic.SignGate();
+        g.sendAttemptsExhausted = false;
+        eq("次数未满 -> 放行", SignLogic.decideSign(g), SignLogic.SKIP_NONE);
+        g = new SignLogic.SignGate();
+        g.sendAttemptsExhausted = true;
+        eq("次数已满 -> 跳过", SignLogic.decideSign(g), SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST);
+        // 2026-10-14 反转：manual **不再豁免**次数上限。
+        // 旧断言（豁免）是造成「连点两次发到 10 次、界面卡」的直接原因。
+        g = new SignLogic.SignGate();
+        g.manual = true; g.sendAttemptsExhausted = true;
+        eq("manual 不豁免次数上限", SignLogic.decideSign(g), SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST);
+        g = new SignLogic.SignGate();
+        g.manual = true; g.skipSigned = true; g.sendAttemptsExhausted = true;
+        eq("批量 manual 同样受限", SignLogic.decideSign(g), SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST);
+        g = new SignLogic.SignGate();
+        g.pendingUnconfirmed = true; g.sendAttemptsExhausted = true;
+        eq("待确认优先于次数上限", SignLogic.decideSign(g), SignLogic.SKIP_PENDING_CONFIRM);
+        g = new SignLogic.SignGate();
+        g.sendAttemptsExhausted = true; g.inBackoff = true;
+        eq("次数上限优先于退避", SignLogic.decideSign(g), SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST);
+        tru("次数上限有日志文案", SignLogic.skipLabel(SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST).length() > 0);
+        eq("SKIP 码不冲突", SignLogic.SKIP_SEND_ATTEMPTS_EXHAUST, 10);
+        eq("MAX_SEND_ATTEMPTS 仍为 3", SignLogic.MAX_SEND_ATTEMPTS, 3);
+        long now = 1700000000000L;
+        tru("发满即收工", SignLogic.shouldGiveUpSending(SignLogic.MAX_SEND_ATTEMPTS, now, now, false, false, false, false));
+        tru("未满且刚发出 -> 不收工", !SignLogic.shouldGiveUpSending(1, now, now, false, false, false, false));
+        tru("已签 -> 不收工", !SignLogic.shouldGiveUpSending(99, now, now, false, true, false, false));
+        tru("已在待确认 -> 不收工", !SignLogic.shouldGiveUpSending(99, now, now, false, false, true, false));
+        tru("重试用尽 -> 不收工", !SignLogic.shouldGiveUpSending(99, now, now, false, false, false, true));
+    }
+
+    private static void pendingDaySemantics() {
+        String today = "2026-10-02";
+        String marked = "2026-10-02";
+        tru("今天标的 -> 保留", today.equals(marked));
+        String old = "2026-10-01";
+        tru("昨天标的 -> 判为残留", !today.equals(old) && old.length() > 0);
+        tru("无日期标注 -> 保守保留", "".length() == 0);
+        boolean removeToday = !today.equals(marked) && marked.length() > 0;
+        tru("今天标的绝不被清", !removeToday);
+        boolean removeOld = !today.equals(old) && old.length() > 0;
+        tru("旧的确实要清", removeOld);
+    }
+
+    private static void crossDayRetry() {
+        String today = "2026-10-03", yesterday = "2026-10-02";
+        int limit = 5, retry = 5;
+        tru("昨天计数今天不算用尽", !(retry >= limit && today.equals(yesterday)));
+        tru("今天的计数才算用尽", retry >= limit && today.equals(today));
+        tru("旧判据确实会误判（回归保护）", retry >= limit);
+    }
+
+    // ── 规则测试器用的判定链（2026-10-03）─────────────────────────
+    /**
+     * 测试器必须与生产链路同序：进度词优先 -> 失败 > 重复 > 成功。
+     *
+     * 这里不直接测 judgeReplyForTest（它依赖 Android prefs），
+     * 而是把**它依赖的那条链**逐项钉住 —— 链一变，测试器就不再可信。
+     */
+    private static void ruleTesterChain() {
+        String[] dup = SignLogic.DUP_WORDS_DEFAULT;
+        String[] ok  = SignLogic.OK_WORDS_DEFAULT;
+        String[] fail = SignLogic.FAIL_WORDS_DEFAULT;
+
+        // ① 进度词优先：即使内容里有成功词，也不能产生结论
+        tru("进度词「正在签到」被识别",
+            SignLogic.looksLikeProgress("✅ 正在签到，请稍后..."));
+        tru("进度词不是成功结论",
+            SignLogic.verdictOf("✅ 正在签到，请稍后...", dup, ok, fail) == SignLogic.V_UNKNOWN
+            || SignLogic.looksLikeProgress("✅ 正在签到，请稍后..."));
+
+        // ② 否定词优先于肯定词（中文否定常加在肯定词前）
+        eq("「未签到成功」判失败",
+            SignLogic.verdictOf("未签到成功", dup, ok, fail), SignLogic.V_FAILED);
+        eq("「没有签到成功」判失败",
+            SignLogic.verdictOf("没有签到成功", dup, ok, fail), SignLogic.V_FAILED);
+
+        // ③ 明确的成功
+        eq("「签到成功」判已签",
+            SignLogic.verdictOf("签到成功", dup, ok, fail), SignLogic.V_SIGNED);
+
+        // ④ 已签过等价于已签（dup 表）
+        eq("「您今天已经签到过了」判已签",
+            SignLogic.verdictOf("您今天已经签到过了", dup, ok, fail), SignLogic.V_SIGNED);
+
+        // ⑤ 认不出 -> V_UNKNOWN（测试器要显示"认不出"而不是瞎猜）
+        eq("无关文本判认不出",
+            SignLogic.verdictOf("今天天气不错", dup, ok, fail), SignLogic.V_UNKNOWN);
+
+        // ⑥ verdictDetail 必须同时给出命中词（测试器的核心输出）
+        Object[] vd = SignLogic.verdictDetail("签到成功", dup, ok, fail);
+        eq("detail 判定码", ((Integer) vd[0]).intValue(), SignLogic.V_SIGNED);
+        tru("detail 带命中词", String.valueOf(vd[1]).length() > 0);
+
+        // ⑦ 今日用尽
+        eq("「已达每日上限」判用尽",
+            SignLogic.verdictOf("您已达到每日上限，请明日再试", dup, ok, fail),
+            SignLogic.V_EXHAUSTED);
+
+        // ⑧ 空输入不炸
+        eq("空串判认不出",
+            SignLogic.verdictOf("", dup, ok, fail), SignLogic.V_UNKNOWN);
+    }
+
+    // ── 统计页纯计算（2026-10-04 分层重构后新增）──────────────────
+    /**
+     * 这些用例的存在理由：热力图日期范围曾经算错（最后一格不是今天），
+     * 当时只能靠 Python 手算才发现。搬进 StatsData 后就能钉住。
+     */
+    private static void statsData() {
+        // ① 周列范围：起点必须是周一，终点必须是今天
+        java.util.List<String> r = StatsData.dateRange("2026-10-04", 90, true);
+        eq("周列起点是周一", weekdayOf(r.get(0)), 0);
+        eq("周列终点是今天", r.get(r.size() - 1), "2026-10-04");
+        eq("周列长度是 7 的倍数", r.size() % 7, 0);
+        // 起点 = 今天回退 12 周 + 本周内的偏移
+        eq("周列首格是 07-06", r.get(0), "2026-07-06");
+
+        // ② 普通范围：终点今天、长度正确
+        java.util.List<String> r2 = StatsData.dateRange("2026-10-04", 30, false);
+        eq("普通范围长度", r2.size(), 30);
+        eq("普通范围终点", r2.get(29), "2026-10-04");
+        eq("普通范围起点", r2.get(0), "2026-09-05");
+
+        // ③ 跨月/跨年边界
+        java.util.List<String> r3 = StatsData.dateRange("2026-01-01", 5, false);
+        eq("跨年终点", r3.get(4), "2026-01-01");
+        eq("跨年起点", r3.get(0), "2025-12-28");
+
+        // ④ 滑动平均：全 1 输入 → 全 1 输出
+        float[] ones = StatsData.movingAvg(new float[]{1,1,1,1,1,1,1,1,1,1}, 7);
+        tru("均线全 1", Math.abs(ones[ones.length - 1] - 1f) < 0.001f);
+        // 前 3 天为 1、后面 0 → 窗口 3 时第 3 天为 1、第 4 天约 2/3
+        float[] mix = StatsData.movingAvg(new float[]{1,1,1,0,0,0,0}, 3);
+        tru("均线第3天 = 1", Math.abs(mix[2] - 1f) < 0.001f);
+        tru("均线第4天 = 2/3", Math.abs(mix[3] - 0.6667f) < 0.01f);
+        // 空输入不炸
+        eq("均线空输入长度", StatsData.movingAvg(new float[0], 7).length, 0);
+        eq("均线 null 输入", StatsData.movingAvg(null, 7).length, 0);
+
+        // ⑤ 命中计数
+        java.util.Set<String> d = new java.util.HashSet<String>();
+        d.add("2026-10-01"); d.add("2026-10-03");
+        java.util.List<String> range = java.util.Arrays.asList(
+                "2026-09-30","2026-10-01","2026-10-02","2026-10-03");
+        eq("命中 2 天", StatsData.countHits(d, range), 2);
+        eq("null 集合算 0", StatsData.countHits(null, range), 0);
+
+        // ⑥ 星期分布：2026-10-04 是周日 → 索引 6
+        java.util.Set<String> one = new java.util.HashSet<String>();
+        one.add("2026-10-04");
+        int[] wd = StatsData.weekdayDist(one);
+        eq("周日落在索引6", wd[6], 1);
+        eq("周一为 0", wd[0], 0);
+        // 2026-10-05 是周一 → 索引 0
+        one.clear(); one.add("2026-10-05");
+        eq("周一落在索引0", StatsData.weekdayDist(one)[0], 1);
+
+        // ⑦ 首尾对比
+        java.util.Set<String> h = new java.util.HashSet<String>();
+        for (int i = 0; i < 7; i++) h.add(r2.get(i));
+        int[] ht = StatsData.headTailHits(h, r2, 7);
+        eq("前 7 天命中", ht[0], 7);
+        eq("后 7 天命中", ht[1], 0);
+    }
+
+    /** 取 yyyy-MM-dd 的星期（0=周一 … 6=周日）。 */
+    private static int weekdayOf(String ymd) {
+        try {
+            java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+            java.util.Calendar c = java.util.Calendar.getInstance();
+            c.setTime(f.parse(ymd));
+            int dow = c.get(java.util.Calendar.DAY_OF_WEEK);   // 1=周日
+            return (dow + 5) % 7;
+        } catch (Throwable t) { return -1; }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  P0 · 组合判定误判回归（2026-10-06 交接单）
+    //
+    //  背景：COMBO_OK 曾含过宽的「已/积分/奖励/领取」，与「签到」同句极易命中；
+    //        且 FAIL 表只列固定组合，没有通用否定守卫 ——
+    //        说明类/统计类/冷却类文本被判成 V_SIGNED，当天不再补发，用户次日才发现断签。
+    // ══════════════════════════════════════════════════════════════
+    private static void p0ComboFalsePositive() {
+        // ── 不能判成功（结果必须 != V_SIGNED）──
+        String[] notSigned = {
+                "今日已有 123 人签到",
+                "签到提醒:您今天还没有签到,已为您准备好奖励",
+                "您已被禁止签到",
+                "您还没有完成今日签到任务",
+                "您的积分:120,今日尚未签到",
+                "签到规则:每日签到可获得积分",
+                "每日签到:连续签到 3 天,明日可领取更多奖励",
+                "You haven't checked in today. Received 0 points",
+                "签到冷却中,请于 8 小时后再试,已签到 5 次",
+                "Daily check-in rules: earn points every day",
+        };
+        for (String r : notSigned) {
+            int v = SignLogic.verdictOf(r, null, null, null);
+            tru("P0 不能判成功: " + r, v != SignLogic.V_SIGNED);
+        }
+
+        // ── 指定期望值 ──
+        eq("P0 统计类 → UNKNOWN", SignLogic.verdictOf("今日已有 123 人签到", null, null, null),
+           Integer.valueOf(SignLogic.V_UNKNOWN));
+        eq("P0 规则类 → UNKNOWN", SignLogic.verdictOf("签到规则:每日签到可获得积分", null, null, null),
+           Integer.valueOf(SignLogic.V_UNKNOWN));
+        eq("P0 英文规则 → UNKNOWN", SignLogic.verdictOf("Daily check-in rules: earn points every day", null, null, null),
+           Integer.valueOf(SignLogic.V_UNKNOWN));
+        eq("P0 禁止签到 → FAILED", SignLogic.verdictOf("您已被禁止签到", null, null, null),
+           Integer.valueOf(SignLogic.V_FAILED));
+
+        // ── 必须仍然判成功 ──
+        String[] stillSigned = {
+                "签到成功",
+                "今日已签到",
+                "今天已经签到过了",
+                "🎉 恭喜你完成签到",
+                "✅ 今日打卡 +1",
+                "签到完成,获得 5 积分",
+                "恭喜,今日签到成功",
+                // 否定词离得远的反例 —— 不能被守卫误杀
+                "没问题,签到成功",
+                "不错,今日已签到",
+        };
+        for (String r : stillSigned) {
+            int v = SignLogic.verdictOf(r, null, null, null);
+            eq("P0 仍应成功: " + r, Integer.valueOf(v), Integer.valueOf(SignLogic.V_SIGNED));
+        }
+
+        // ── 必须仍然判失败 ──
+        String[] stillFailed = {
+                "签到失败",
+                "未签到成功",
+                "没有签到成功",
+                "Check-in failed, please try again",
+                "请先关注频道后再签到,已关注请重试",
+        };
+        for (String r : stillFailed) {
+            int v = SignLogic.verdictOf(r, null, null, null);
+            eq("P0 仍应失败: " + r, Integer.valueOf(v), Integer.valueOf(SignLogic.V_FAILED));
+        }
+
+        // ── 否定守卫本身：中文按字符窗口 ──
+        eq("守卫 还没有签到", SignLogic.negated("还没有签到", "签到"), true);
+        eq("守卫 尚未签到成功", SignLogic.negated("尚未签到成功", "签到成功"), true);
+        eq("守卫 无法签到", SignLogic.negated("无法签到", "签到"), true);
+        eq("守卫 反例:没问题,签到成功", SignLogic.negated("没问题,签到成功", "签到成功"), false);
+        eq("守卫 反例:不错,今日已签到", SignLogic.negated("不错,今日已签到", "已签到"), false);
+        // ── 否定守卫：英文按词窗口 ──
+        eq("守卫 EN haven't checked in", SignLogic.negated("you haven't checked in", "checked in"), true);
+        eq("守卫 EN not signed", SignLogic.negated("not signed", "signed"), true);
+        eq("守卫 EN 反例 no problem, checked in ok", SignLogic.negated("no problem, checked in ok", "checked in"), false);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  P2 · 更新检查纯函数（2026-10-06 交接单）
+    // ══════════════════════════════════════════════════════════════
+    private static void p2UpdateLogic() {
+        // ── parseTag ──
+        eq("parseTag 1.6.5", UpdateLogic.parseTag("1.6.5")[0], "1.6.5");
+        eq("parseTag v1.6.5", UpdateLogic.parseTag("v1.6.5")[0], "1.6.5");
+        eq("parseTag 103-1.6.5 版本", UpdateLogic.parseTag("103-1.6.5")[0], "1.6.5");
+        eq("parseTag 103-1.6.5 码", UpdateLogic.parseTag("103-1.6.5")[1], "103");
+        eq("parseTag v1.6.5-debug", UpdateLogic.parseTag("v1.6.5-debug")[0], "1.6.5");
+        eq("parseTag 空", UpdateLogic.parseTag(null)[0], "");
+        eq("parseTag 1.6.5/extra", UpdateLogic.parseTag("1.6.5/extra")[0], "1.6.5");
+
+        // ── compareVersion（含段数不等）──
+        eq("cmp 1.6.5 > 1.6.4", UpdateLogic.compareVersion("1.6.5", "1.6.4"), Integer.valueOf(1));
+        eq("cmp 1.6.4 < 1.6.5", UpdateLogic.compareVersion("1.6.4", "1.6.5"), Integer.valueOf(-1));
+        eq("cmp 1.6 == 1.6.0（段数不等）", UpdateLogic.compareVersion("1.6", "1.6.0"), Integer.valueOf(0));
+        eq("cmp 1.6.0 == 1.6（反向）", UpdateLogic.compareVersion("1.6.0", "1.6"), Integer.valueOf(0));
+        eq("cmp 1.10 > 1.9（非字典序）", UpdateLogic.compareVersion("1.10", "1.9"), Integer.valueOf(1));
+        eq("cmp 2.0 > 1.99", UpdateLogic.compareVersion("2.0", "1.99"), Integer.valueOf(1));
+        eq("cmp 1.6.5-beta == 1.6.5", UpdateLogic.compareVersion("1.6.5-beta", "1.6.5"), Integer.valueOf(0));
+        eq("cmp 空 vs 1.0", UpdateLogic.compareVersion("", "1.0"), Integer.valueOf(-1));
+
+        // ── resolveRedirect ──
+        eq("redirect 绝对 https",
+           UpdateLogic.resolveRedirect("https://a.com/x", "https://b.com/y"),
+           "https://b.com/y");
+        eq("redirect 相对路径",
+           UpdateLogic.resolveRedirect("https://a.com/dir/x", "y.apk"),
+           "https://a.com/dir/y.apk");
+        eq("redirect 根相对",
+           UpdateLogic.resolveRedirect("https://a.com/dir/x", "/z.apk"),
+           "https://a.com/z.apk");
+        eq("redirect 拒绝 http 降级",
+           UpdateLogic.resolveRedirect("https://a.com/x", "http://b.com/y"),
+           null);
+        eq("redirect 拒绝空", UpdateLogic.resolveRedirect("https://a.com/x", ""), null);
+        eq("redirect 拒绝 null", UpdateLogic.resolveRedirect("https://a.com/x", null), null);
+        eq("redirect 拒绝垃圾", UpdateLogic.resolveRedirect("https://a.com/x", "::::"), null);
+
+        // ── parseShaLine（P2 第 5 点：找不到同名行不再回退）──
+        String sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        eq("sha 命中同名",
+           UpdateLogic.parseShaLine(sha + "  TGAutoSign-v1.6.5.apk", "TGAutoSign-v1.6.5.apk"), sha);
+        eq("sha 不同名 → 空",
+           UpdateLogic.parseShaLine(sha + "  Other.apk", "TGAutoSign-v1.6.5.apk"), "");
+        eq("sha 行太短 → 空",
+           UpdateLogic.parseShaLine("abc  x.apk", "x.apk"), "");
+        eq("sha 非法字符 → 空",
+           UpdateLogic.parseShaLine("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz  x.apk", "x.apk"), "");
+        eq("sha apkName 为空 → 空",
+           UpdateLogic.parseShaLine(sha + "  x.apk", ""), "");
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  P3 · 日期工具（2026-10-06 交接单）
+    // ══════════════════════════════════════════════════════════════
+    private static void p3DateUtils() {
+        String today = DateUtils.today();
+        String yest = DateUtils.yesterday();
+
+        // 格式必须是 yyyy-MM-dd（存量 prefs 依赖，不可变）
+        tru("P3 today 格式", today.matches("\\d{4}-\\d{2}-\\d{2}"));
+        tru("P3 yesterday 格式", yest.matches("\\d{4}-\\d{2}-\\d{2}"));
+
+        // 今天 / 昨天判断
+        eq("P3 isToday(今天)", DateUtils.isToday(today), true);
+        eq("P3 isToday(昨天)", DateUtils.isToday(yest), false);
+        eq("P3 isYesterday(昨天)", DateUtils.isYesterday(yest), true);
+        eq("P3 isYesterday(今天)", DateUtils.isYesterday(today), false);
+        eq("P3 isTodayOrYesterday(今天)", DateUtils.isTodayOrYesterday(today), true);
+        eq("P3 isTodayOrYesterday(昨天)", DateUtils.isTodayOrYesterday(yest), true);
+
+        // ── failStreak 语义：stamp 为今天或昨天 → 延续；更早 → 中断 ──
+        // （failStreakContinues 就是直接转发 isTodayOrYesterday，此处等价覆盖）
+        eq("P3 连续失败:今天 → 延续", DateUtils.isTodayOrYesterday(today), true);
+        eq("P3 连续失败:昨天 → 延续", DateUtils.isTodayOrYesterday(yest), true);
+        eq("P3 连续失败:前天 → 中断",
+           DateUtils.isTodayOrYesterday(DateUtils.fromMillis(System.currentTimeMillis() - 2L * 86400000L)),
+           false);
+
+        // 空串 / 非法串 → 不延续（不得抛异常）
+        eq("P3 连续失败:空串 → 中断", DateUtils.isTodayOrYesterday(""), false);
+        eq("P3 连续失败:null → 中断", DateUtils.isTodayOrYesterday(null), false);
+        eq("P3 连续失败:非法串 → 中断", DateUtils.isTodayOrYesterday("not-a-date"), false);
+
+        // 解析
+        eq("P3 parse 合法", DateUtils.parse("2026-10-06").toString(), "2026-10-06");
+        eq("P3 parse 非法 → null", DateUtils.parse("2026-13-99"), null);
+        eq("P3 parse 空 → null", DateUtils.parse(""), null);
+
+        // ── 跨月 / 跨年边界 ──
+        // 用 daysBetween 验证跨月跨年不塌
+        eq("P3 daysBetween 跨月", DateUtils.daysBetween("2026-01-31", "2026-02-01"), Long.valueOf(1));
+        eq("P3 daysBetween 跨年", DateUtils.daysBetween("2025-12-31", "2026-01-01"), Long.valueOf(1));
+        eq("P3 daysBetween 闰年2月", DateUtils.daysBetween("2024-02-28", "2024-03-01"), Long.valueOf(2));
+        eq("P3 daysBetween 平年2月", DateUtils.daysBetween("2026-02-28", "2026-03-01"), Long.valueOf(1));
+        eq("P3 daysBetween 非法 → -1", DateUtils.daysBetween("bad", "2026-01-01"), Long.valueOf(-1));
+
+        // fromMillis 回环
+        long now = System.currentTimeMillis();
+        eq("P3 fromMillis 回环", DateUtils.fromMillis(now), today);
+
+        // 2026-10-06 补做第 4 项：新增格式化助手的回归
+        eq("P3 nowHms 格式", DateUtils.nowHms().matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"), true);
+        eq("P3 todayCompact 格式", DateUtils.todayCompact().matches("\\d{8}"), true);
+        eq("P3 todayCompact 与 today 一致",
+           DateUtils.todayCompact(), today.replace("-", ""));
+        eq("P3 hms 回环解析", DateUtils.parseHms(DateUtils.hms(now)).toString().substring(0, 10), today);
+        eq("P3 parseHms 非法 → null", DateUtils.parseHms("bad"), null);
+        eq("P3 parseHms 空 → null", DateUtils.parseHms(""), null);
+        eq("P3 parseCompact 合法", DateUtils.parseCompact(DateUtils.todayCompact()).toString(), today);
+        eq("P3 parseCompact 长度错 → null", DateUtils.parseCompact("202610"), null);
+        eq("P3 parseCompact 非法 → null", DateUtils.parseCompact("zzzzzzzz"), null);
+        eq("P3 ymd(ms)", DateUtils.ymd(now), today);
+    }
+
+    /** emoji 签到指令识别（2026-10-17）。
+     *  场景：某些 bot 的签到就是"发一个 🎲/🎳/🎯/🎰"，不是 /命令。
+     *  旧逻辑 stripDecor 会把 emoji 全丢掉 -> bare 为空 -> 判"不像口令"
+     *  -> 群里自动学习永远学不进来。现在纯符号且够短也算口令。 */
+    private static void emojiCommand() {
+        // 正向：四个常见签到表情都要认
+        tru("🎲 算口令", SignLogic.looksLikeSignCommand("\uD83C\uDFB2"));
+        tru("🎳 算口令", SignLogic.looksLikeSignCommand("\uD83C\uDFB3"));
+        tru("🎯 算口令", SignLogic.looksLikeSignCommand("\uD83C\uDFAF"));
+        tru("🎰 算口令", SignLogic.looksLikeSignCommand("\uD83C\uDFB0"));
+        tru("带空格也认", SignLogic.looksLikeSignCommand(" \uD83C\uDFB2 "));
+        tru("/qd 仍算口令", SignLogic.looksLikeSignCommand("/qd"));
+        tru("签到 仍算口令", SignLogic.looksLikeSignCommand("签到"));
+        // 反向：不能把长句/闲聊放进来
+        tru("长句子不算", !SignLogic.looksLikeSignCommand("谁找找我修复群聊签到吧这个我很急"));
+        tru("空串不算", !SignLogic.looksLikeSignCommand(""));
+        tru("纯空白不算", !SignLogic.looksLikeSignCommand("   "));
+        // 工具函数本身
+        tru("emoji 检出", SignLogic.hasEmojiOrSymbol("\uD83C\uDFB2"));
+        tru("纯中文不算符号", !SignLogic.hasEmojiOrSymbol("签到"));
+    }
+
+
+    /** 会话选择器的搜索/分类/合并（2026-10-17，纯逻辑）。 */
+    private static void pickEntryFilter() {
+        java.util.List<PickEntry> src = new java.util.ArrayList<PickEntry>();
+        src.add(PickEntry.fromDid(123456789L, "CheckBot", "checkin_bot", true, true));
+        src.add(PickEntry.fromDid(-1869891509L, "光之国", "", false, true));
+        src.add(PickEntry.fromDid(-1001234567890L, "公告频道", "notice_ch", false, false));
+        src.add(PickEntry.fromDid(555666777L, "普通朋友", "", false, false));
+
+        // 名称搜
+        eq("按名称搜", PickEntry.filter(src, "check", "all", 0).size(), 1);
+        eq("按中文名称搜", PickEntry.filter(src, "光之", "all", 0).size(), 1);
+        // @username 搜（带不带 @ 都行）
+        eq("按 @username 搜", PickEntry.filter(src, "@checkin_bot", "all", 0).size(), 1);
+        eq("username 不带 @ 也搜得到", PickEntry.filter(src, "checkin_bot", "all", 0).size(), 1);
+        // 数字 ID 搜（负号可省）
+        // ID 用「包含」匹配（模糊更友好）：123456789 同时命中 123456789 与 -1001234567890
+        eq("按 ID 搜（包含匹配）", PickEntry.filter(src, "123456789", "all", 0).size(), 2);
+        eq("精确 ID 也能命中", PickEntry.filter(src, "123456789", "bot", 0).size(), 1);
+        eq("群 ID 省负号也搜得到", PickEntry.filter(src, "1869891509", "all", 0).size(), 1);
+        // 分类
+        eq("只要机器人", PickEntry.filter(src, "", "bot", 0).size(), 1);
+        eq("只要群组", PickEntry.filter(src, "", "group", 0).size(), 1);
+        eq("只要频道", PickEntry.filter(src, "", "channel", 0).size(), 1);
+        eq("全部", PickEntry.filter(src, "", "all", 0).size(), 4);
+        // 空查询等于不过滤
+        eq("空查询全出", PickEntry.filter(src, "", "all", 0).size(), 4);
+        // 排序：会话内 + bot 优先
+        java.util.List<PickEntry> sorted = PickEntry.filter(src, "", "all", 0);
+        eq("首条是会话内的 bot", sorted.get(0).did, 123456789L);
+        // 合并去重
+        java.util.Map<Long, PickEntry> bag = PickEntry.newBag();
+        PickEntry.merge(bag, PickEntry.fromDid(1L, "", "", false, false));
+        PickEntry.merge(bag, PickEntry.fromDid(1L, "后补的名字", "u1", true, true));
+        eq("合并后只有一条", bag.size(), 1);
+        PickEntry merged = bag.get(Long.valueOf(1L));
+        eq("合并补上名字", merged.title, "后补的名字");
+        eq("合并补上 username", merged.username, "u1");
+        tru("合并标记会话内", merged.inDialog);
+        // 类型推断
+        eq("频道类型", PickEntry.typeOf(-1001234567890L, false), PickEntry.T_CHANNEL);
+        eq("群类型", PickEntry.typeOf(-1869891509L, false), PickEntry.T_GROUP);
+        eq("bot 类型", PickEntry.typeOf(123L, true), PickEntry.T_BOT);
+        eq("普通用户类型", PickEntry.typeOf(123L, false), PickEntry.T_USER);
+    }
+
+
+    /** humanSpan 格式化（定时日志的"延迟 5h21m"）。函数在 Core 里，
+     *  这里用同公式验证关键边界，防止将来改坏。 */
+    private static void humanSpanFmt() {
+        eq("不到 1 分钟", fmtSpan(30_000L), "不到 1 分钟");
+        eq("5 分钟", fmtSpan(5 * 60_000L), "5m");
+        eq("35 分钟", fmtSpan(35 * 60_000L), "35m");
+        eq("整 1 小时", fmtSpan(60 * 60_000L), "1h");
+        eq("5 小时 21 分", fmtSpan((5 * 60 + 21) * 60_000L), "5h21m");
+        eq("2 天 3 小时", fmtSpan((2 * 1440 + 3 * 60) * 60_000L), "2d3h");
+    }
+
+    /** 与 Core.humanSpan 同公式（Core 是实例类不便直接调，这里复刻验证边界）。 */
+    private static String fmtSpan(long ms) {
+        long m = Math.max(0L, ms) / 60000L;
+        if (m < 1) return "不到 1 分钟";
+        long d = m / 1440L, h = (m % 1440L) / 60L, mm = m % 60L;
+        StringBuilder sb = new StringBuilder();
+        if (d > 0) sb.append(d).append("d");
+        if (h > 0) sb.append(h).append("h");
+        if (mm > 0 && d == 0) sb.append(mm).append("m");
+        return sb.length() == 0 ? (m + "m") : sb.toString();
+    }
+
+
+    /** ── 裸失败词语境守卫（2026-10-17）────────────────────────────
+     *
+     *  背景：用户反馈两个 bot 长期「失败」。
+     *  · 7601994292 每次命中「未注册」
+     *  · 8500640583 每次命中「拉黑」，连续 4 天 7 次
+     *  而 7601 同一秒又收到「您今天已经签到过了」——
+     *  说明判的是**模板句**，不是签到结论。
+     *
+     *  修法：裸短词命中后过语境校验（条件连词 / 短句 / 是否指向用户）。
+     */
+    private static void bareFailContext() {
+        // ── 真失败：必须仍判失败 ──
+        tru("你已被拉黑 → 失败",
+            SignLogic.verdictOf("你已被管理员拉黑，无法使用本功能",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) == SignLogic.V_FAILED);
+        tru("未注册用户无法使用 → 失败",
+            SignLogic.verdictOf("您还未注册，请先 /start 完成注册后再使用",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) == SignLogic.V_FAILED);
+        tru("短句 未注册 → 失败",
+            SignLogic.verdictOf("未注册", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+        tru("短句 无权限操作 → 失败",
+            SignLogic.verdictOf("无权限操作", null, new String[0], SignLogic.FAIL_WORDS_DEFAULT)
+                == SignLogic.V_FAILED);
+        tru("禁止你使用 → 失败",
+            SignLogic.verdictOf("管理员已禁止你使用本机器人",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) == SignLogic.V_FAILED);
+
+        // ── 模板句：不能判失败（本次修复的核心）──
+        tru("公告 点了会被拉黑 → 不作废为失败",
+            SignLogic.verdictOf("⚠️ 广告是骗子，点了会被拉黑，请注意甄别，保护好自己的账号安全",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) != SignLogic.V_FAILED);
+        tru("公告 否则封禁 → 不判失败",
+            SignLogic.verdictOf("请勿重复刷屏，否则封禁处理，谢谢配合，祝您使用愉快",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) != SignLogic.V_FAILED);
+        tru("公告 未注册用户无法使用(长句无主语) → 不判失败",
+            SignLogic.verdictOf("本机器人由情报部维护，未注册用户无法使用部分功能，请先完成注册流程",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) != SignLogic.V_FAILED);
+        tru("公告 禁止刷屏 → 不判失败",
+            SignLogic.verdictOf("群内禁止刷屏禁止广告禁止私聊，违者踢出，感谢大家的配合与支持",
+                null, new String[0], SignLogic.FAIL_WORDS_DEFAULT) != SignLogic.V_FAILED);
+
+        // ── 用户自定义词不受守卫限制（用户亲自确认过的语义）──
+        tru("自定义词 拉黑 仍判失败",
+            SignLogic.verdictOf("广告是骗子点了会被拉黑请注意",
+                null, new String[0],
+                new String[]{"拉黑"}) == SignLogic.V_FAILED);
+
+        // ── 守卫纯函数直测 ──
+        tru("isBareFailWord 拉黑", SignLogic.isBareFailWord("拉黑"));
+        tru("isBareFailWord 未注册", SignLogic.isBareFailWord("未注册"));
+        tru("isBareFailWord 签到失败=false", !SignLogic.isBareFailWord("签到失败"));
+        tru("条件句 会被拉黑 → 不支持",
+            !SignLogic.bareFailSupported("广告是骗子点了会被拉黑请注意甄别", "拉黑"));
+        tru("短句 → 支持", SignLogic.bareFailSupported("无权限操作", "无权限"));
+        tru("有代词长句 → 支持",
+            SignLogic.bareFailSupported("您还未注册请先完成注册后再使用本机器人", "未注册"));
+        tru("长句无主语 → 不支持（不认可为真失败）",
+            !SignLogic.bareFailSupported("本机器人未注册用户无法使用部分功能请先完成注册流程", "未注册"));
+    }
+
+
+
+    /** ── 公告不进池（2026-10-18）────────────────────────────────
+     *
+     *  用例全部来自用户真实日志 / 截图里那批「废话回复」。
+     *  目标：广告、公告、免责、菜单一律不进未识别池；
+     *        而真正的签到结果哪怕措辞奇怪也必须进池（宁可漏挡不可误挡）。
+     */
+    private static void announcementFilter() {
+        // ── 必须判为公告（不进池）──
+        tru("防骗公告 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "上方出现广告🚫骗子请不要上当⛔️⚠️该广告非kali社工库官方投放机器人官方频道聊天中带"));
+        tru("价格表公告 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "抬头向上看咱们今日路线查询价格表如机器人提示被注销或无法使用可以尝试用下方的其他机器人"));
+        tru("邀请公告 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "邀请1位朋友点你的邀请链接可获得额外积分奖励多多益善"));
+        tru("命令菜单 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "请选择功能👇 签到 / 查询 / 商城 / 帮助，点击下方按钮开始使用"));
+        tru("免责声明 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "本机器人最终解释权归官方所有，谨防假冒，请认准官方频道，谢谢配合"));
+        tru("超长无结果词 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "这是一段非常长的说明文字用于测试长度阈值它是aaaaaaaaaaaaaaaaaaaa"
+              + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              + "dddddddddddddddddddddddddddddddddddddddddddddddddddddddd"));
+
+        // ── 必须放行（真结果，要进池）──
+        tru("签到成功 → 不是公告",
+            !SignLogic.isLikelyAnnouncement("🎉 签到成功，您已获得 1 积分，当前积分 47 分"));
+        tru("已签到 → 不是公告",
+            !SignLogic.isLikelyAnnouncement("🌟 您已经签到过了！如果您还想继续增加积分，可使用 /cz 充值"));
+        tru("签到失败 → 不是公告",
+            !SignLogic.isLikelyAnnouncement("❌ 签到失败，原因是您的积分不足，请明日再试"));
+        tru("次数用完 → 不是公告",
+            !SignLogic.isLikelyAnnouncement("❌ 您本日的规则触发数量上限，请明日再试"));
+        tru("措辞奇怪但含结果 → 不是公告",
+            !SignLogic.isLikelyAnnouncement("任务达成！本次获得积分+2"));
+        tru("空串 → 不是公告",
+            !SignLogic.isLikelyAnnouncement(""));
+        tru("null → 不是公告",
+            !SignLogic.isLikelyAnnouncement(null));
+
+        // ── worthLearning 也要拦住公告 ──
+        tru("worthLearning 拦防骗公告",
+            !SignLogic.worthLearning(
+                "上方出现广告🚫骗子请不要上当该广告非官方投放机器人官方频道聊天中带"));
+        tru("worthLearning 放行真结果",
+            SignLogic.worthLearning("签到成功，获得积分+3"));
+    }
+
+
+
+    /** ── 公告过滤的边界情况（2026-10-18）─────────────────────── */
+    private static void poolFilterEdge() {
+        // 结果词 + 广告词混排：结果词优先，必须放行（否则真结论被吞）
+        tru("含「签到成功」+「广告」→ 放行",
+            !SignLogic.isLikelyAnnouncement("签到成功！顺便：下方广告是骗子请勿点击"));
+
+        // 纯公告但很短：仍按特征词判公告
+        tru("短公告「广告勿点」→ 公告",
+            SignLogic.isLikelyAnnouncement("广告勿点"));
+
+        // 菜单（含「签到」二字）：判公告，避免用户去给菜单学词
+        tru("菜单含签到 → 公告",
+            SignLogic.isLikelyAnnouncement("请选择功能：签到 / 查询 / 商城"));
+
+        // 真结果含「积分」但不含公告词
+        tru("积分结果 → 放行",
+            !SignLogic.isLikelyAnnouncement("本次签到获得积分 +5，当前 120 分"));
+
+        // 英文
+        tru("英文公告 → 公告",
+            SignLogic.isLikelyAnnouncement("This is an advertisement. Please join our official channel."));
+        tru("英文结果 → 放行",
+            !SignLogic.isLikelyAnnouncement("Check-in success! You earned 5 points."));
+
+        // ── 真机样本验证发现的两条，固化成回归用例 ──
+        // ① 教程句含「随机获得积分」，不是结果
+        tru("教程：可随机获得积分 → 公告",
+            SignLogic.isLikelyAnnouncement(
+                "发送三个emoji表情里的任意一个给机器人进行普通签到可以随机获得积分"));
+        // ② 「获得积分」必须带数字才是结果
+        tru("真结果：获得积分:2 → 放行",
+            !SignLogic.isLikelyAnnouncement("签到成功！此次签到获得积分:2"));
+        tru("真结果：获得积分+3 → 放行",
+            !SignLogic.isLikelyAnnouncement("任务达成！本次获得积分+3"));
+        tru("非结果：随机获得积分（无数字）→ 公告",
+            SignLogic.isLikelyAnnouncement("完成每日任务可以随机获得积分奖励"));
+
+        // worthLearning 与 isLikelyAnnouncement 不冲突
+        tru("worthLearning 与公告判定一致（公告）",
+            !SignLogic.worthLearning("广告勿点，谨防上当"));
+        tru("worthLearning 与公告判定一致（结果）",
+            SignLogic.worthLearning("签到成功，获得积分+1"));
+    }
+
+
+
+    /** ── scoped 路径的裸词守卫（2026-10-18 真 bug 回归）─────────────
+     *
+     *  bug：verdictDetail 加了守卫，但判定链实际走 verdictDetailScoped，
+     *       那里直接 return V_FAILED —— 守卫在真实路径上完全没生效。
+     *  教训：给判定链加规则，两个入口都必须验证。
+     */
+    private static void scopedBareGuard() {
+        String[] okD = SignLogic.OK_WORDS_DEFAULT;
+        String[] failD = SignLogic.FAIL_WORDS_DEFAULT;
+
+        // 合并表（判定链真实传法）：公告句不能判失败
+        tru("scoped·公告不被裸词误判",
+            ((Integer) SignLogic.verdictDetailScoped(
+                "点了会被拉黑，请注意甄别，保护好自己的账号安全",
+                okD, failD, null, null, null, null)[0]).intValue() != SignLogic.V_FAILED);
+
+        // 真失败仍判失败
+        tru("scoped·真拉黑判失败",
+            ((Integer) SignLogic.verdictDetailScoped(
+                "你已被管理员拉黑，无法使用本功能",
+                okD, failD, null, null, null, null)[0]).intValue() == SignLogic.V_FAILED);
+
+        // 合并表里用户新加的词 → 豁免守卫（用户表态优先）
+        String[] failMerged = new String[failD.length + 1];
+        System.arraycopy(failD, 0, failMerged, 0, failD.length);
+        failMerged[failD.length] = "今日已结算";
+        tru("scoped·用户新加词豁免守卫",
+            ((Integer) SignLogic.verdictDetailScoped(
+                "本次结果：今日已结算，欢迎下次",
+                okD, failMerged, null, null, null, null)[0]).intValue() == SignLogic.V_FAILED);
+
+        // 纯用户表（不含全部默认词）→ 整体豁免
+        tru("scoped·纯用户表豁免守卫",
+            ((Integer) SignLogic.verdictDetailScoped(
+                "点了会被拉黑请注意",
+                okD, new String[]{"拉黑"}, null, null, null, null)[0]).intValue() == SignLogic.V_FAILED);
+
+        // isUserAddedWord 直测
+        tru("纯表判为用户表", SignLogic.isUserAddedWord("拉黑", new String[]{"拉黑"}));
+        tru("默认表不判为用户表", !SignLogic.isUserAddedWord("拉黑", failD));
+    }
+
+
+
+    /** ── 「点按钮被偷偷加进签到列表」（2026-10-18 真事故回归）──────
+     *
+     *  根因：looksLikeSignButton 的 SIGN_WORDS 含「领取/奖励/积分」等宽词，
+     *        而 learnTarget 调用时 data 恒为 null，反向否决词无处发挥。
+     *        用户点「领取奖励」就被直接写进签到列表，不经待添加池。
+     *
+     *  原则：自动放行只用**强词**；宽词一律进待添加池让用户决定。
+     */
+    private static void autoAddButtonScope() {
+        // 强词：可以自动加入
+        tru("「签到」自动放行", SignLogic.looksLikeSignButton("签到", null));
+        tru("「每日签到」自动放行", SignLogic.looksLikeSignButton("每日签到", null));
+        tru("「打卡」自动放行", SignLogic.looksLikeSignButton("打卡", null));
+        tru("「报到」自动放行", SignLogic.looksLikeSignButton("报到", null));
+
+        // 宽词：必须进待添加（这是本次修复的核心）
+        tru("「领取奖励」不自动加", !SignLogic.looksLikeSignButton("领取奖励", null));
+        tru("「我的奖励」不自动加", !SignLogic.looksLikeSignButton("我的奖励", null));
+        tru("「领取」不自动加", !SignLogic.looksLikeSignButton("领取", null));
+        tru("「每日任务」不自动加", !SignLogic.looksLikeSignButton("每日任务", null));
+        tru("「积分兑换」不自动加", !SignLogic.looksLikeSignButton("积分兑换", null));
+
+        // 宽词仍记录在软词表里（供排序/展示，不用于放行）
+        boolean hasSoft = false;
+        for (String w : SignLogic.SIGN_SOFT_WORDS) {
+            if ("领取".equals(w)) { hasSoft = true; break; }
+        }
+        tru("软词表保留「领取」", hasSoft);
+
+        // 强词表不得包含宽词（防止以后又被加回去）
+        boolean leak = false;
+        for (String w : SignLogic.SIGN_SOFT_WORDS) {
+            if ("领取".equals(w) || "奖励".equals(w) || "积分".equals(w)) {
+                // 这些词绝不能同时出现在强词表里被放行
+                if (SignLogic.looksLikeSignButton("仅" + w, null)
+                        && !("签到".equals(w))) {
+                    // 「仅领取」若被判 true 说明强词表漏进了宽词
+                    leak = true;
+                }
+            }
+        }
+        tru("强词表未泄漏宽词", leak == false);
+    }
+
+
+
+    /** ── 打开 TG 时补签：触发源判定（2026-10-21）─────────────
+     *
+     *  isStartupTrigger 决定「这次 timerHook 是不是用户刚打开宿主」。
+     *  只有启动/打开类触发才允许越窗补签，定时类仍受窗口约束。
+     */
+    private static void startupCatchupTrigger() {
+        tru("「启动」算启动触发", TGAutoSignCore.isStartupTrigger("启动"));
+        tru("「启动补签」算启动触发", TGAutoSignCore.isStartupTrigger("启动补签"));
+        tru("「打开TG」算启动触发", TGAutoSignCore.isStartupTrigger("打开TG"));
+        tru("「定时」不算", !TGAutoSignCore.isStartupTrigger("定时"));
+        tru("「进入窗口」不算", !TGAutoSignCore.isStartupTrigger("进入窗口"));
+        tru("空串不算", !TGAutoSignCore.isStartupTrigger(""));
+        tru("null 不算", !TGAutoSignCore.isStartupTrigger(null));
+    }
+
+
+
+    /** ── 单目标固定时刻签到：窗口夹取（2026-10-21）──────────────
+     *
+     *  规则：窗口内用指定值；越界夹到边界；跨天窗口取最近边界。
+     */
+    private static void resolveSignMinuteTests() {
+        int[] win = SignLogic.windowRangeAny("08:00-20:00");     // 480..1200
+        eq("窗口内原样", Integer.valueOf(SignLogic.resolveSignMinute(510, win)[0]), Integer.valueOf(510));
+        eq("窗口内不算夹取", Integer.valueOf(SignLogic.resolveSignMinute(510, win)[1]), Integer.valueOf(0));
+
+        // 早于窗口 → 夹到窗口开始 480
+        int[] r1 = SignLogic.resolveSignMinute(360, win);        // 06:00
+        eq("早于窗口→夹到开始", Integer.valueOf(r1[0]), Integer.valueOf(480));
+        eq("早于窗口→标记夹取", Integer.valueOf(r1[1]), Integer.valueOf(1));
+
+        // 晚于窗口 → 夹到 1199（结束前一分钟）
+        int[] r2 = SignLogic.resolveSignMinute(1380, win);       // 23:00
+        eq("晚于窗口→夹到结束前", Integer.valueOf(r2[0]), Integer.valueOf(1199));
+        eq("晚于窗口→标记夹取", Integer.valueOf(r2[1]), Integer.valueOf(1));
+
+        // 边界值本身算窗口内
+        eq("正好开始", Integer.valueOf(SignLogic.resolveSignMinute(480, win)[0]), Integer.valueOf(480));
+        eq("正好开始不夹取", Integer.valueOf(SignLogic.resolveSignMinute(480, win)[1]), Integer.valueOf(0));
+        eq("正好结束", Integer.valueOf(SignLogic.resolveSignMinute(1200, win)[0]), Integer.valueOf(1200));
+
+        // 窗口不限（null）→ 原样
+        eq("无窗口原样", Integer.valueOf(SignLogic.resolveSignMinute(510, null)[0]), Integer.valueOf(510));
+
+        // 跨天窗口 22:00-02:00：窗口内 = >=1320 或 <=120
+        int[] cw = SignLogic.windowRangeAny("22:00-02:00");
+        eq("跨天·23点在内", Integer.valueOf(SignLogic.resolveSignMinute(1380, cw)[0]), Integer.valueOf(1380));
+        eq("跨天·1点在内", Integer.valueOf(SignLogic.resolveSignMinute(60, cw)[0]), Integer.valueOf(60));
+
+        // 跨天·落在空档 12:00 → 取最近边界（到 22:00 距离 600，到 2:00 距离 600）→ 取 start
+        int[] r3 = SignLogic.resolveSignMinute(720, cw);
+        eq("跨天·空档取边界", Integer.valueOf(r3[0]), Integer.valueOf(1320));
+        eq("跨天·空档标记夹取", Integer.valueOf(r3[1]), Integer.valueOf(1));
+
+        // 跨天·空档 08:00 → 到 22:00 是 840，到 2:00 是 360 → 取 end 侧 (2:00-1=119)
+        int[] r4 = SignLogic.resolveSignMinute(480, cw);
+        eq("跨天·近结束侧", Integer.valueOf(r4[0]), Integer.valueOf(119));
+
+        // 非法输入
+        eq("want 负数→0", Integer.valueOf(SignLogic.resolveSignMinute(-1, win)[0]), Integer.valueOf(0));
+    }
+
+
+}

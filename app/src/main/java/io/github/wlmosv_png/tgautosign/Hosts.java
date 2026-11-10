@@ -1,0 +1,151 @@
+package io.github.wlmosv_png.tgautosign;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * 宿主判定 —— 决定模块注入哪些进程。
+ *
+ * 两条路径，命中任意一条即注入：
+ *  1) 已知包名白名单：逐个用真实 APK 的 DEX 校验过全部反射类与 hook 成员（见 README「支持的客户端」矩阵）。
+ *  2) 能力探测兜底：宿主 ClassLoader 能解析 Telegram-Android 的三个标志类。
+ *     fork 只换 applicationId、不换内部类名，所以新出现的 fork 不用等模块更新；
+ *     而换过内核的客户端（例如 Telegram X 的 xcobalt 分支）标志类不齐全，会被自然挡掉，不会误注入。
+ *
+ * 注意：作用域由 Xposed 管理器决定，用户必须先把对应客户端勾选进模块作用域，
+ * 本类只负责"进了作用域之后要不要真的注入"。
+ *
+ * <h3>2026-11-08 语义修订：白名单只代表「允许尝试适配」</h3>
+ * Telegram 13.2.0 起 R8 不再保留 {@code org.telegram.messenger.*} 类名。白名单命中
+ * <b>不等于</b>适配成功 —— 过去白名单直接放行，会出现「模块报告已加载、面板也能开，
+ * 但会话列表 / Peer / 账号 / 回复判定全部失效」的假注入。
+ * 现在：白名单 = 允许注入并尝试解析；<b>真正的门是 {@link HostSymbols} 对关键符号的解析结果</b>，
+ * 由模块入口按「每个业务 Hook 所需的符号」逐个判定是否安装（见 TGAutoSignEntry）。
+ */
+public final class Hosts {
+
+    private Hosts() {}
+
+    /** Telegram 主客户端（Google Play 等渠道） */
+    public static final String PKG_OFFICIAL = "org.telegram.messenger";
+    /** Telegram 官网直连版（telegram.org/dl/android/apk），与 Play 版可共存 */
+    public static final String PKG_OFFICIAL_WEB = "org.telegram.messenger.web";
+    /** Nagram XF（NagramX 的 rebrand 分支，Keeperorowner / sukri369 发布） */
+    public static final String PKG_NAGRAM_XF = "fork.risin42.nagramx";
+
+    private static final Set<String> KNOWN = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            PKG_OFFICIAL,
+            PKG_OFFICIAL_WEB,
+            PKG_NAGRAM_XF,
+            "nu.gpu.nagram",       // Nagram / NagramX（risin42 dev、main 分支 APP_PACKAGE）
+            "nu.gpu.nagramx",      // NagramX base 变体（risin42 base 分支 APP_PACKAGE）
+            "nu.gpu.nagram.web",   // NagramNX（thesv4k 分支 APP_PACKAGE）
+            "com.exteraless.app",  // ExteraLess（ExteraGram fork，12.10.1-feae791 实测标志类齐全）
+            "xyz.nextalone.nagram", // NextAlone Nagram（12.10.1，标志类齐全）
+            "xyz.nextalone.nnngram", // Nnngram（NextAlone 的 Nagram-reborn／基于 Nullgram；
+                                     // 12.10.6-ddbf1ef 实测：26129 类，MessagesController.getInputPeer(J)
+                                     // 与官方字段完全一致，ChatActivityEnterView/UserConfig/ConnectionsManager
+                                     // 三个标志类齐全 → 兼容）
+            "com.radolyn.ayugram",  // AyuGram for Android（基于 exteraGram；同为 org.telegram.* 类结构，
+                                    // 由能力探测兜底放行 —— 待真机 APK 校验后再确认是否加入白名单）
+            // 2026-10-06 移除 Nekogram：实测其 R8 混淆把 tgnet 包压到只剩 6 个类，
+            //   MessagesController / UserConfig / TLRPC$TL_messages_sendMessage /
+            //   SendMessagesHelper 全部不存在 —— 注入后会「提示已注入但 /jmb 无反应」，
+            //   且回复判定与账号识别同样失效。
+            //   注意：MARKERS 里本就有 UserConfig，能力探测本来就会正确挡掉它，
+            //   是这里的白名单硬放行才造成误导。移出后由能力探测自然处理。
+            "it.belloworld.mercurygram", // Mercurygram
+            // Turrit（SEASTAR FUTURE；1.9.0.4.2 / 40427 实测：7 dex / 57774 类，
+            // 未加固，且**类名未被 R8 混淆** —— ChatActivity、ChatMessageCellDelegate、
+            // didPressedBotButton 全部按原名校验通过，比官方 12.10.6 更好适配。）
+            "org.telegram.group"
+    )));
+
+    /** 三者齐全才认定是 Telegram-Android 血统 */
+    private static final String[] MARKERS = {
+            "org.telegram.tgnet.ConnectionsManager",
+            "org.telegram.ui.Components.ChatActivityEnterView",
+            "org.telegram.messenger.UserConfig"
+    };
+
+    public static boolean isKnownPackage(String pkg) {
+        return pkg != null && KNOWN.contains(pkg);
+    }
+
+    /** 是否注入该宿主。loader 允许为 null（此时只有白名单命中才注入）。 */
+    public static boolean isSupported(String pkg, ClassLoader loader) {
+        if (pkg == null || pkg.length() == 0) return false;
+        if (isKnownPackage(pkg)) return true;
+        return looksLikeTelegramAndroid(loader);
+    }
+
+    public static boolean looksLikeTelegramAndroid(ClassLoader loader) {
+        if (loader == null) return false;
+        for (String marker : MARKERS) {
+            if (!canLoad(loader, marker)) return false;
+        }
+        return true;
+    }
+
+    /** 命中方式说明，用于日志与 /jmb 运行日志 */
+    public static String describe(String pkg, ClassLoader loader) {
+        if (isKnownPackage(pkg)) return "已知客户端";
+        if (looksLikeTelegramAndroid(loader)) return "能力探测命中（Telegram-Android 血统 fork）";
+        return "不支持";
+    }
+
+    /** 未命中时到底缺哪个标志类（给日志与自诊断，别再让用户猜） */
+    public static String missingMarkers(ClassLoader loader) {
+        if (loader == null) return "拿不到 ClassLoader";
+        StringBuilder sb = new StringBuilder();
+        for (String marker : MARKERS) {
+            if (canLoad(loader, marker)) continue;
+            if (sb.length() > 0) sb.append("、");
+            sb.append(marker.substring(marker.lastIndexOf('.') + 1));
+        }
+        return sb.toString();
+    }
+
+    public static Set<String> knownPackages() {
+        return KNOWN;
+    }
+
+    // ── 2026-11-08：适配状态（供日志与 /jmb 面板显示「兼容 / 降级」实在结果）──
+
+    /** 关键宿主符号是否解析成功（HostSymbols 的结果，不是白名单结果）。 */
+    public static boolean isAdapted() {
+        return HostSymbols.hostAdapted();
+    }
+
+    /** 是否有会话/账号数据能力（MessagesController 解析成功）。 */
+    public static boolean hasDataSymbols() {
+        return HostSymbols.hasMessagesController();
+    }
+
+    /** 是否有事件层能力（NotificationCenter 解析成功）。 */
+    public static boolean hasEventSymbols() {
+        return HostSymbols.hasNotificationCenter();
+    }
+
+    /** 适配状态一句话（日志 + 自检面板共用）。 */
+    public static String adaptationStatus(boolean en) {
+        if (!HostSymbols.isInstalled()) return en ? "not initialised" : "未初始化";
+        if (isAdapted()) {
+            return en ? "adapted (" + HostSymbols.mapLabel() + ")"
+                      : "已适配（" + HostSymbols.mapLabel() + "）";
+        }
+        return en ? "host version NOT supported — data/event features disabled"
+                  : "宿主版本未适配 —— 数据与事件功能已停用（仅保留命令与按钮学习）";
+    }
+
+    private static boolean canLoad(ClassLoader loader, String name) {
+        try {
+            Class.forName(name, false, loader);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+}

@@ -1,0 +1,1603 @@
+package io.github.wlmosv_png.tgautosign;
+
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Lightweight i18n: keeps all existing Chinese call sites untouched and
+ * translates UI-visible strings at the display layer.
+ *
+ * Rules:
+ *  - Only UI text (buttons / labels / titles / toasts) is translated.
+ *    Log lines are intentionally left in Chinese.
+ *  - Unmapped strings fall back to Chinese, so translation can be done
+ *    incrementally without ever showing blanks.
+ *  - Strings with variables use {0} {1} placeholders; call tf("... {0}", v).
+ *
+ * Language mode: 0 = follow system, 1 = Chinese, 2 = English.
+ */
+public final class Lang {
+
+    public static volatile int MODE = 0;
+
+    private Lang() {}
+
+    public static boolean isEnglish() {
+        if (MODE == 2) return true;
+        if (MODE == 1) return false;
+        try {
+            String lang = Locale.getDefault().getLanguage();
+            return lang != null && !lang.toLowerCase(Locale.US).startsWith("zh");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    public static String tr(String zh) {
+        if (zh == null || zh.length() == 0) return zh;
+        if (!isEnglish()) return zh;
+        try {
+            String v = EN.get(zh);
+            return v != null ? v : zh;
+        } catch (Throwable t) {
+            return zh;
+        }
+    }
+
+    public static String tf(String zh, Object... args) {
+        String t = tr(zh);
+        if (args == null || args.length == 0) return t;
+        try {
+            for (int i = 0; i < args.length; i++) t = t.replace("{" + i + "}", String.valueOf(args[i]));
+        } catch (Throwable ignored) {}
+        return t;
+    }
+
+    /**
+     * 短词表：仅用于空间紧张的等宽 chip（英文比中文长，会挤坏布局）。
+     * trShort 优先取这里，取不到再走 EN，最后回退中文。
+     */
+    private static final Map<String, String> EN_SHORT = new HashMap<String, String>();
+
+    public static String trShort(String zh) {
+        if (zh == null || zh.length() == 0) return zh;
+        if (!isEnglish()) return zh;
+        try {
+            String v = EN_SHORT.get(zh);
+            if (v != null) return v;
+        } catch (Throwable ignored) {}
+        return tr(zh);
+    }
+
+    private static final Map<String, String> EN = new HashMap<String, String>();
+
+    static {
+        // ── 短词表：空间紧张的等宽 chip（英文优先取这里）──
+        EN_SHORT.put("全部目标", "All");
+        EN_SHORT.put("只看重要", "Important");
+        EN_SHORT.put("只看错误", "Errors");
+        EN_SHORT.put("唤醒", "Wake");
+        EN_SHORT.put("定时签到", "Timer");
+        EN_SHORT.put("已放弃", "Dropped");
+        EN_SHORT.put("已签", "Done");
+        EN_SHORT.put("待签", "Todo");
+        EN_SHORT.put("按钮学习", "Buttons");
+        EN_SHORT.put("日志", "Log");
+        EN_SHORT.put("目标", "List");
+        EN_SHORT.put("立即签到", "Sign");
+        EN_SHORT.put("网络学习", "Network");
+        EN_SHORT.put("自检", "Check");
+        EN_SHORT.put("过滤", "Filter");
+        EN_SHORT.put("退避中", "Backoff");
+        EN_SHORT.put("重试中", "Retry");
+        EN_SHORT.put("错过补签", "Make-up");
+
+        // ── 全文：中文 -> 英文 ──
+        EN.put("群", "Group");
+        EN.put("补", "M");
+        EN.put(" 群", " Group");
+        EN.put(" 补", " M");
+        EN.put("中文", "中文");
+        EN.put("保存", "Save");
+        EN.put("全部", "All");
+        EN.put("关闭", "Close");
+        EN.put("冻结", "Frozen");
+        EN.put("删除", "Delete");
+        EN.put("加入", "Add");
+        EN.put("取消", "Cancel");
+        EN.put("唤醒", "Wake");
+        EN.put("回调", "Callback");
+        EN.put("夜间", "Dark");
+        EN.put("完成", "Done");
+        EN.put("定时", "Timer");
+        EN.put("导出", "Export");
+        EN.put("已签", "Signed");
+        EN.put("已补", "Made up");
+        EN.put("帮助", "Help");
+        EN.put("待签", "Pending");
+        EN.put("待补", "To make up");
+        EN.put("忽略", "Skip");
+        EN.put("指令", "Command");
+        EN.put("排序", "Sort");
+        EN.put("操作", "Actions");
+        EN.put("放弃", "Gave up");
+        EN.put("数据", "Data");
+        EN.put("日志", "Logs");
+        EN.put("日间", "Light");
+        EN.put("暂停", "Paused");
+        EN.put("未知", "unknown");
+        EN.put("添加", "Add");
+        EN.put("清空", "Clear");
+        EN.put("目标", "Targets");
+        EN.put("确定", "OK");
+        EN.put("系统", "System");
+        EN.put("维护", "Maintain");
+        EN.put("编辑", "Edit");
+        EN.put("自动", "Auto");
+        EN.put("自检", "Self-check");
+        EN.put("设置", "Settings");
+        EN.put("账号", "Account");
+        EN.put("过滤", "Filter");
+        EN.put("返回", "Back");
+        EN.put("退避", "Backing off");
+        EN.put("重试", "Retry");
+        EN.put("错过", "Missed");
+        EN.put("频道", "Channel");
+        EN.put(" 冻结", " Frozen");
+        EN.put(" 出品", "");
+        EN.put(" 定时", " Timer");
+        EN.put(" 已签", " Signed");
+        EN.put(" 待签", " Pending");
+        EN.put("▍外观", "APPEARANCE");
+        EN.put("▍帮助", "HELP");
+        EN.put("▍操作", "ACTIONS");
+        EN.put("▍数据", "DATA");
+        EN.put("▍目标", "TARGETS");
+        EN.put("▍签到", "SIGNING");
+        EN.put("▍维护", "MAINTENANCE");
+        EN.put("▍诊断", "DIAGNOSTICS");
+        EN.put("▍通知", "NOTIFICATIONS");
+        EN.put("已保存", "Saved");
+        EN.put("已停用", "Disabled");
+        EN.put("已冻结", "Frozen");
+        EN.put("已删除", "Deleted");
+        EN.put("已加入", "Added");
+        EN.put("已发出", "Sent");
+        EN.put("已忽略", "Skipped");
+        EN.put("未经校验", "Not verified");
+        EN.put("这次下载没有校验文件指纹", "This download was not checksum-verified");
+        EN.put("发布页里没有找到与这个安装包同名的 sha256 校验行，因此无法核对文件是否完整。\n"
+             + "校验和与安装包来自同一个发布页，它本身不能防止发布端被篡改；真正的保护是系统要求同签名的包才能覆盖安装。",
+               "No sha256 line matching this package was found on the release page, so the file could not be verified.\n"
+             + "The checksum comes from the same page as the package, so it cannot protect against the release source being tampered with; the real protection is that Android only allows an update signed with the same key.");
+        EN.put("文件已保存在：", "File saved at: ");
+        EN.put("如需继续，可在「下载」目录里手动点开该 APK 安装", "To continue, open the APK manually from your Downloads folder");
+        EN.put("下载未校验，请在「下载」目录手动确认安装", "Download was not verified — confirm the install manually from Downloads");
+        EN.put("下载到系统「下载」目录，尽力核对文件指纹后交给系统安装", "Download to the system Downloads folder, verify the fingerprint where possible, then hand it to the system installer");
+        EN.put("{0} 个新按钮待添加 —— 点此选择加入", "{0} new button(s) to add — tap to choose");
+        // 2026-10-25 签到音效
+        EN.put("▍签到音效", "\u25cd Sign-in sound");
+        EN.put("签到音效", "Sign-in sound");
+        // 2026-10-27 音效可用性提示（试听走媒体流；签到音受静音/通知音量影响）
+        EN.put("手机处于静音/勿扰：签到成功时不会响（点「试听」仍能听到音色）", "Phone is silent / DND: no sound on successful sign-in (Preview still plays via media volume)");
+        EN.put("通知音量为 0：签到成功时不会响；请调高通知音量（「试听」走媒体音量）", "Notification volume is 0: no sound on successful sign-in; please raise notification volume (Preview uses media volume)");
+        EN.put("试听走媒体音量（不受静音影响）；当前静音/勿扰，签到音不会响", "Preview plays on media volume (ignores silent mode); phone is currently silent/DND, so the sign-in sound will not play");
+        EN.put("通知音量为 0：签到音不会响，请调高通知音量", "Notification volume is 0: the sign-in sound will not play; please raise notification volume");
+        // 2026-10-25 手动添加兜底
+        EN.put("手动添加", "Add manually");
+        EN.put("取不到这个 bot 的会话数据（本账号本地没有它的记录，已尝试自动拉取；也可在 TG 里用这个账号打开它发一条消息）",
+                "Cannot read this bot's chat data (no local record under this account; auto-fetch attempted — you can also open it in Telegram with this account and send a message)");
+        EN.put("解析并填入", "Resolve & fill");
+        EN.put("没读到会话列表（{0}）。两个办法：\n① 直接填下框（数字 ID 或 @用户名）；\n② 更省事：在 Telegram 里点一次那个 bot 的签到按钮，模块会自动学会它。",
+                "Could not read the chat list ({0}). Two options: \n1) Fill in the box below (numeric ID or @username); \n2) Easier: tap that bot's check-in button once in Telegram and the module will learn it automatically.");
+        EN.put("机器人 ID 或 @用户名（如 123456789 或 @xxx_bot）", "Bot ID or @username (e.g. 123456789 or @xxx_bot)");
+        EN.put("请填写 ID 或 @用户名", "Enter an ID or @username");
+        EN.put("没解析到 {0}：先在 Telegram 里给这个 bot 发一条消息再试",
+                "Could not resolve {0}: send that bot a message in Telegram first, then retry");
+        EN.put("已填入 {0}", "Filled {0}");
+        EN.put("全部签完再响一次", "Also play when all done");
+        EN.put("音色：{0}", "Tone: {0}");
+        EN.put("系统通知音", "System notification");
+        EN.put("清脆", "Chime");
+        EN.put("低音", "Low");
+        EN.put("试听", "Preview");
+        EN.put("响铃时段", "Sound hours");
+        EN.put("当天第一次签到成功时响一次（多账号各自一次）；静音/勿打扰、以及时段外不响。",
+                "Plays once on the day's first successful sign-in (once per account); muted in silent/DND mode and outside the hours below.");
+        EN.put("成功词过宽，容易把广告判成签到成功，建议删掉：{0}",
+                "These success keywords are too broad and may mark bot ads as signed in. Suggest removing: {0}");
+        EN.put("以后这个 bot 的按钮都自动加入", "Always learn buttons from this bot automatically");
+        EN.put("以后这个 bot 的按钮都不再问", "Never ask about buttons from this bot again");
+        EN.put("按钮学习需确认", "Confirm before learning a button");
+        EN.put("开：点按钮后先进「待添加」，你确认了才成为签到目标。\n关：点什么学什么（旧行为）。",
+               "On: a tapped button goes to \"Pending add\" first — it becomes a sign-in target only after you confirm.\nOff: whatever you tap gets learned (old behaviour).");
+        EN.put("必学规则（一行一条，命中即学、不再确认）", "Always-learn rules (one per line; matched means learn immediately, no confirm)");
+        EN.put("匹配按钮文案与回调 data。普通词按子串（不分大小写）；\n用 / 包裹当正则，如 /^(每日|每天).*(签|领)/ 。# 开头为注释。",
+               "Matches button text and callback data. Plain words match as substrings (case-insensitive);\nwrap in / for regex, e.g. /^(每日|每天).*(签|领)/ . Lines starting with # are comments.");
+        EN.put("已学会「{0}」，以后不用再勾", "Learned \"{0}\" — no need to confirm again");
+        EN.put("已排除", "Blocked");
+        EN.put("已放弃", "Gave up");
+        EN.put("已跳过", "Skipped");
+        EN.put("已过期", "Expired");
+        EN.put("已错过", "Missed");
+        EN.put("待确认", "Unconfirmed");
+        EN.put("按名称", "By name");
+        EN.put("无计划", "No plan");
+        EN.put("明日排", "Tomorrow");
+        EN.put("暂停中", "Paused");
+        EN.put("未到点", "Not due yet");
+        EN.put("目标:", "Target: ");
+        EN.put("自诊断", "Self-check");
+        EN.put("诊断包", "Diagnostics bundle");
+        EN.put("账号1", "Account 1");
+        EN.put("账号2", "Account 2");
+        EN.put("账号3", "Account 3");
+        EN.put("账号4", "Account 4");
+        EN.put("账号5", "Account 5");
+        EN.put("退避中", "Retrying later");
+        EN.put("重试中", "Retrying");
+        EN.put(" 已停用", " Disabled");
+        EN.put(" 已排除", " Blocked");
+        EN.put(" 已放弃", " Gave up");
+        EN.put(" 重试中", " Retrying");
+        EN.put("[回调]", "[Callback]");
+        EN.put("[指令]", "[Command]");
+        EN.put("▍待确认", "PENDING");
+        EN.put("一键添加", "Quick add");
+        EN.put("三项齐全", "all three present");
+        EN.put("个条目）", " entries)");
+        EN.put("今日已签", "Signed today");
+        EN.put("今日待补", "To make up today");
+        EN.put("今日计划", "Today's plan");
+        EN.put("使用教程", "Guide");
+        EN.put("保存设置", "Save settings");
+        EN.put("全部功能", "All features");
+        EN.put("全部目标", "All targets");
+        EN.put("删除目标", "Remove target");
+        EN.put("加入失败", "Could not add");
+        EN.put("加入群组", "Join group");
+        EN.put("加载更多", "Load more");
+        EN.put("只看重要", "Important only");
+        EN.put("只看错误", "Errors only");
+        EN.put("回到最新", "Back to latest");
+        EN.put("回调按钮", "Callback button");
+        EN.put("复制文案", "Copy text");
+        EN.put("复制目标", "Copy targets");
+        EN.put("学习行为", "Learning");
+        EN.put("定时未开", "Timer off");
+        EN.put("定时签到", "Timer");
+        EN.put("宿主包 ", "Host package ");
+        EN.put("导入配置", "Import config");
+        EN.put("导出日志", "Export logs");
+        EN.put("导出配置", "Export config");
+        EN.put("当前账号", "Current account");
+        EN.put("待确认（", "Pending (");
+        EN.put("快速上手", "Quick start");
+        EN.put("忽略今天", "Skip today");
+        EN.put("怎么导入", "How to import");
+        EN.put("按钮学习", "Button learning");
+        EN.put("捕获目标", "Capture target");
+        EN.put("排除管理", "Blocklist");
+        EN.put("数据备份", "Data & backup");
+        EN.put("时间倒序", "Newest first");
+        EN.put("时间正序", "Oldest first");
+        EN.put("暂无目标", "No targets");
+        EN.put("未签置顶", "Unsigned first");
+        EN.put("条目操作", "Entry actions");
+        EN.put("检查更新", "Check updates");
+        EN.put("模拟已关", "Simulation off");
+        EN.put("添加目标", "Add target");
+        EN.put("清空配置", "Clear config");
+        EN.put("目标 {0} 渲染失败（可删除后重新添加）", "Target {0} failed to render (delete and re-add)");
+        EN.put("忽略导航", "Ignore nav");
+        EN.put("需确认", "Confirm");
+        EN.put("全部已关", "All off");
+        EN.put("已发送测试: {0}", "Test sent: {0}");
+        EN.put("已添加 {0} → {1}", "Added {0} → {1}");
+        EN.put("已添加回调签到目标: {0}", "Added callback target: {0}");
+        EN.put("已添加新签到目标: {0}", "Added new target: {0}");
+        EN.put("已绑定回调: {0}（当前共 {1} 个目标）", "Callback bound: {0} ({1} targets)");
+        EN.put("目标列表", "Targets");
+        EN.put("目标管理", "Target manager");
+        EN.put("目标过滤", "Target filter");
+        EN.put("直接清空", "Clear now");
+        EN.put("确认已签", "Confirm signed");
+        EN.put("确认模板", "Confirm preset");
+        EN.put("移除条目", "Delete entry");
+        EN.put("立即签到", "Sign now");
+        EN.put("签到指令", "Sign-in command");
+        EN.put("签到时间", "Signing window");
+        EN.put("编辑目标", "Edit target");
+        EN.put("网络学习", "Network learning");
+        EN.put("补签列表", "Make-up signs");
+        EN.put("补签截止", "Make-up deadline");
+        EN.put("补签未开", "Make-up off");
+        EN.put("账号一览", "Accounts");
+        EN.put("学习判定", "Learning");
+        // 排除管理重设计（2026-10-04）：四步工作流 + 状态文案
+        EN.put("① 排除规则", "1. Block rules");
+        EN.put("② 试一下", "2. Try it");
+        EN.put("③ 排除整只 bot", "3. Block a whole bot");
+        EN.put("④ 待确认的目标", "4. Pending targets");
+        EN.put("命中即不学习（正文 / 按钮文案），一行一条", "A match stops learning (reply text / button labels), one per line");
+        EN.put("粘一段 bot 回复，看它会不会被拦", "Paste a bot reply to see whether it gets blocked");
+        EN.put("被排除的 bot 完全不再学习、不再签到", "A blocked bot is never learned from and never signed");
+        EN.put("网络学习命中、等你点头的目标", "Targets found by network learning, waiting for your OK");
+        EN.put("用 /xxx/ 当正则 · # 开头是注释", "Wrap in /xxx/ for regex · lines starting with # are comments");
+        EN.put("还没有规则", "No rules yet");
+        EN.put("共 {0} 条规则", "{0} rule(s)");
+        EN.put("尚未排除任何 bot", "No bots blocked yet");
+        EN.put("从目标列表选 bot", "Pick a bot from targets");
+        EN.put("去处理", "Review");
+        EN.put("有 {0} 个等你确认", "{0} waiting for your OK");
+        EN.put("暂无待添加", "Nothing pending");
+        // 编辑目标重排新增的外置标签与说明（2026-10-04）
+        EN.put("备注名", "Label");
+        EN.put("前置命令序列", "Pre-command sequence");
+        EN.put("按钮定位文案", "Button locator text");
+        EN.put("点一下追加：", "Tap to append:");
+        EN.put("显示用，可空。如「每日签到」「查档」", "Display only, optional. e.g. \"Daily check-in\"");
+        EN.put("逗号或换行分隔。发送后拉面板再点按钮", "Comma- or newline-separated. Sent first to pull up the panel.");
+        EN.put("重开面板按此找回按钮，默认 = 标签", "Used to find the button again when the panel reopens. Defaults to the label.");
+        // 条目操作菜单重设计（2026-10-04）：分组标题 + 副标题
+        EN.put("危险", "Danger");
+        EN.put("测试签到", "Test sign-in");
+        EN.put("重绑为回调", "Rebind as callback");
+        EN.put("删除该目标", "Delete this target");
+        EN.put("重试一次", "Retry once");
+        EN.put("先跑前置命令 → 点按钮 → 看返回", "pre-commands → tap button → inspect reply");
+        EN.put("标签 / 前置命令 / 定位", "label / pre-commands / locator");
+        EN.put("去点它的按钮", "tap its button in the chat");
+        EN.put("不再签到（与暂停区分）", "stop signing for good (unlike pause)");
+        // 账号一览面板内文案（2026-10-04）—— 这些键在 TGAutoSignCore 里用 Unicode 转义书写，
+        // check-ui-i18n.py 静态扫描只看真 CJK，扫不到它们，故运行时靠这里兜底。
+        EN.put("全部完成", "All complete");
+        EN.put("正在签到…", "Signing…");
+        EN.put("排队等待", "Queued");
+        EN.put("待签 {0} 个", "{0} pending");
+        EN.put("已停用（不参与自动签到）", "Disabled (excluded from auto-sign-in)");
+        EN.put("点下方按钮后这里会实时走进度；定时签到跟随当前账号。", "Progress appears here after you tap the button below. Scheduled signing follows the current account.");
+        EN.put("全部账号今天已签完，无需重复签到", "All accounts are signed in today — nothing to repeat");
+        EN.put("总 {0}/{1}", "Total {0}/{1}");
+        EN.put("跟随系统", "System");
+        EN.put("运行日志", "Logs");
+        EN.put("错开间隔", "Spacing interval");
+        EN.put("错过补签", "Missed make-up");
+        EN.put("预设模板", "Presets");
+        EN.put("（当前）", " (current)");
+        EN.put("  间隔=", "  interval=");
+        EN.put(" 使用教程", " Guide");
+        EN.put("⑧ 多账号", "8. Multiple accounts");
+        EN.put("▍全部功能", "ALL FEATURES");
+        EN.put("▍学习行为", "LEARNING");
+        EN.put("▍捕获目标", "▍ Capture target");
+        EN.put("▍排除规则", "BLOCK RULES");
+        EN.put("▍签到核心", "CORE");
+        EN.put("上手·排障", "Getting started · fixes");
+        EN.put("全部签到（", "Sign all (");
+        EN.put("分享本模块", "Share module");
+        EN.put("到下载目录", "To Downloads");
+        EN.put("只通知失败", "Failures only");
+        EN.put("合并或覆盖", "Merge or replace");
+        EN.put("启用该账号", "Enable this account");
+        EN.put("回调调试台", "Callback console");
+        EN.put("已全部加载", "All loaded");
+        EN.put("已忽略今天", "Skipped today");
+        EN.put("已重新发送", "Resent");
+        EN.put("当前账号：", "Current account: ");
+        EN.put("推荐给朋友", "Tell a friend");
+        EN.put("日志已清空", "Logs cleared");
+        EN.put("目标不存在", "Target not found");
+        EN.put("目标列表（", "Targets (");
+        EN.put("目标：全部", "Target: all");
+        EN.put("签全部账号", "Sign all accounts");
+        EN.put("给其它账号", "To other accounts");
+        EN.put("群 {0}", "Group {0}");
+        EN.put("设置已保存", "Settings saved");
+        EN.put("诊断与更新", "Diagnostics & updates");
+        EN.put("账号{0}", "Account {0}");
+        EN.put("账号一览（", "Accounts (");
+        EN.put(" · 定时关", " · timer off");
+        EN.put(" · 补签关", " · make-up off");
+        EN.put("[更多日志]", "[More logs]");
+        EN.put("{0} 出品", "Made by {0}");
+        EN.put("① 打开面板", "1. Open the panel");
+        EN.put("保存失败: ", "Save failed: ");
+        EN.put("保存排除规则", "Save block rules");
+        EN.put("关键词与策略", "Keywords & strategy");
+        EN.put("反射锚点检查", "Reflection anchors");
+        EN.put("复制失败: ", "Copy failed: ");
+        EN.put("实际 {0}", "Actual {0}");
+        EN.put("已复制这一行", "Line copied");
+        EN.put("我有签到指令", "I have a check-in command");
+        EN.put("打开失败: ", "Could not open: ");
+        EN.put("指令不能为空", "Command cannot be empty");
+        EN.put("捕获回调按钮", "Capture callback button");
+        EN.put("新手只看这段", "Start here");
+        EN.put("查看今日计划", "Today's plan");
+        EN.put("每日重试上限", "Daily retry limit");
+        EN.put("添加签到目标", "Add signing target");
+        EN.put("添加群聊签到", "Add group sign-in");
+        EN.put("清空所有配置", "Clear all config");
+        EN.put("清空运行日志", "Clear logs");
+        EN.put("点选立即签到", "Tap to sign now");
+        EN.put("目标已不存在", "This target no longer exists");
+        EN.put("目标：{0}", "Target: {0}");
+        EN.put("签到结果通知", "Sign-in result notification");
+        EN.put("请填签到指令", "Enter the sign-in command");
+        EN.put("请填群 ID", "Enter the group ID");
+        EN.put("跨账号彻底清", "Wipe all accounts");
+        EN.put("English", "English");
+        EN.put("bot {0}", "bot {0}");
+        EN.put("bot {0}（本地无资料）", "bot {0} (no local profile)");
+        EN.put("json 备份", "JSON backup");
+        EN.put("{0} 个目标", "{0} targets");
+        EN.put("{0} 个账号", "{0} accounts");
+        EN.put("{0}（待签）", "{0} (pending)");
+        EN.put("{0}（明日）", "{0} (tomorrow)");
+        EN.put("{0}：{1}", "{0}: {1}");
+        EN.put("⑤ 临时不想签", "5. Pause a target");
+        EN.put("⑥ 怎么看结果", "6. Where to see results");
+        EN.put("⑩ 外观与主题", "10. Look & theme");
+        EN.put("⑬ 日志怎么读", "13. Reading logs");
+        EN.put("⑭ 更新与反馈", "14. Updates & feedback");
+        EN.put("▍关键词与策略", "KEYWORDS & STRATEGY");
+        EN.put("判定机器人回复", "Judging bot replies");
+        EN.put("原计划 {0}", "Planned {0}");
+        EN.put("宿主包 {0}", "Host package {0}");
+        EN.put("已停用 {0}", "Disabled {0}");
+        EN.put("已冻结：{0}", "Frozen: {0}");
+        EN.put("已删除 {0}", "Deleted {0}");
+        EN.put("已启用 {0}", "Enabled {0}");
+        EN.put("已恢复：{0}", "Resumed: {0}");
+        EN.put("已清空排除列表", "Blocklist cleared");
+        EN.put("已解冻：{0}", "Unfrozen: {0}");
+        EN.put("已记为今日已签", "Marked as signed today");
+        EN.put("已载入 {0}", "Loaded {0}");
+        EN.put("排除的 bot", "Blocked bots");
+        EN.put("排除规则已保存", "Block rules saved");
+        EN.put("日志目录不可用", "Log directory unavailable");
+        EN.put("暂无日志可导出", "No logs to export");
+        EN.put("标签 / 指令", "Label / command");
+        EN.put("正在检查更新…", "Checking for updates…");
+        EN.put("添加并立即签到", "Add and sign now");
+        EN.put("添加失败：请检查机器人 ID 是否正确（数字）", "Add failed: check that the bot ID is numeric");
+        EN.put(" 重复?", " dup?");
+        EN.put("bot 没回", "no reply");
+        EN.put("▍今日结果", "▍Today");
+        EN.put("▍需要处理（{0}）", "▍Needs attention ({0})");
+        EN.put("判不出", "unclear");
+        EN.put("判为失败", "failed");
+        EN.put("回复认不出", "reply unrecognized");
+        EN.put("失败", "failed");
+        EN.put("已清空（删除 {0} 个文件）", "Cleared ({0} file(s) removed)");
+        EN.put("没回复", "no reply");
+        EN.put("清理「目标已删除、状态却还留着」的残留键。\n不会动你现有的目标与签到记录。",
+               "Remove leftover state keys for targets that no longer exist.\nYour targets and records are untouched.");
+        EN.put("清理完成：删除 {0} 个残留键", "Done: removed {0} leftover key(s)");
+        EN.put("立即发送 · {0} 个账号", "Send now · {0} account(s)");
+        EN.put("累计签到 · 连续 {0} · 近 7 天 {1} · 近 30 天 {2}",
+               "Total · streak {0} · last 7d {1} · last 30d {2}");
+        EN.put("统计基于本地记录；「判不出」可在 设置 → 回复判定词 补词。",
+               "Based on local records. For 'unclear', add words in Settings → Reply keywords.");
+        EN.put("统计失败: {0}", "Stats failed: {0}");
+        EN.put("▍执行", "▍Run");
+        EN.put("▍配置", "▍Config");
+        EN.put("先选「在哪里签」，下一步再选它要什么。", "Pick where first, then what it expects.");
+        EN.put("它平时让你怎么签？", "How does it usually ask you to sign?");
+        EN.put("立即对 {0} 个账号发送", "Send now for {0} account(s)");
+        EN.put("私聊机器人", "Private chat with a bot");
+        EN.put("群 / 频道", "Group / channel");
+        EN.put("添加签到目标 · 1/2", "Add target · 1/2");
+        EN.put("添加签到目标 · 2/2", "Add target · 2/2");
+        EN.put("点一下按钮", "Tap a button");
+        EN.put("发一条指令", "Send a command");
+        EN.put("返回上一步", "Back");
+        EN.put("例如：点「每日签到」按钮就完事（推荐，会自动记忆）", "e.g. just tap the Check in button (recommended, auto-remembered)");
+        EN.put("例如：发送 /qd 给它（需要你知道 bot ID 和指令）", "e.g. send /qd to it (you need its ID and the command)");
+        EN.put("和它单聊，每天私信签（最常见）", "DM the bot every day (most common)");
+        EN.put("在群里@它或发指令签（不是私聊）", "Sign inside a group by command (not a DM)");
+        EN.put("移除条目（不可撤销）", "Remove the entry (cannot be undone)");
+        EN.put("当前账号的全部目标 → 其它账号", "Copy all targets of this account to others");
+        EN.put("一键添加常用 bot", "Quick-add common bots");
+        EN.put("该群已存在相同指令的目标", "This group already has a target with the same command");
+        EN.put("该 bot 已存在相同指令", "This bot already has the same command");
+        EN.put("添加群签到目标", "Add group sign-in target");
+        EN.put("界面语言：中文", "Language: 中文");
+        EN.put("确认框失败: ", "Confirmation dialog failed: ");
+        EN.put("示例 · 领取", "Example · claim");
+        EN.put("网络学习需确认", "Confirm network learning");
+        EN.put("还没有日志文件", "No log files yet");
+        EN.put("还没有签到目标", "No targets yet");
+        EN.put("（还没有目标）", "(no targets yet)");
+        EN.put("UID 格式错误", "Invalid UID");
+        EN.put("⑫ 出问题怎么办", "12. Troubleshooting");
+        EN.put("▍排除的 bot", "BLOCKED BOTS");
+        EN.put("下次签到 {0}", "Next sign-in {0}");
+        EN.put("下载失败：{0}", "Download failed: {0}");
+        EN.put("今天已经签到过了", "Already signed today");
+        EN.put("全局默认唤醒命令", "Default wake command");
+        EN.put("冻结（不再签到）", "Freeze (never sign)");
+        EN.put("反馈·交流·帮助", "Feedback · chat · help");
+        EN.put("始终日间（浅色）", "Always light");
+        EN.put("定时·窗口·间隔", "Timer · window · interval");
+        EN.put("导入失败：{0}", "Import failed: {0}");
+        EN.put("导出失败：{0}", "Export failed: {0}");
+        EN.put("已保存到 {0}", "Saved to {0}");
+        EN.put("已填入: {0}", "Filled in: {0}");
+        EN.put("已复制到 {0}", "Copied to {0}");
+        EN.put("已导出「{0}」", "Exported \"{0}\"");
+        EN.put("已添加群签到目标", "Group sign-in target added");
+        EN.put("已跳过（{0}）", "Skipped ({0})");
+        EN.put("待确认：忽略今天", "Pending: skip today");
+        EN.put("待确认：确认已签", "Pending: confirm signed");
+        EN.put("待确认：重试一次", "Pending: retry once");
+        EN.put("按钮·发射·绑定", "Button · fire · bind");
+        EN.put("排除整只 bot", "Block this bot");
+        EN.put("搜索·筛选·清空", "Search · filter · clear");
+        EN.put("未排进今日时刻表", "Not in today's schedule");
+        EN.put("查看·测试·编辑", "View · test · edit");
+        EN.put("点选要删除的目标", "Tap a target to delete");
+        EN.put("确认清空全部配置", "Clear all config");
+        EN.put("示例 · 群打卡", "Example · group check-in");
+        EN.put("群 / 频道签到", "Group / channel check-in");
+        EN.put("自动识别（推荐）", "Auto-detect (recommended)");
+        EN.put("补签截止 {0}", "Make-up deadline {0}");
+        EN.put("解冻（恢复签到）", "Unfreeze (resume)");
+        EN.put("该按钮无回调数据", "This button has no callback data");
+        EN.put("选择群 / 频道", "Choose group / channel");
+        EN.put("（窗口外·省电）", "(outside window · saving power)");
+        EN.put(" {0} 成功", " {0} succeeded");
+        EN.put(" · 错过 {0}", " · missed {0}");
+        EN.put(" 绑定刚点按钮: ", " Bind that button: ");
+        EN.put("⑦ 签到通知在哪看", "7. Where notifications go");
+        EN.put("保存失败: {0}", "Save failed: {0}");
+        EN.put("先导出一份，再清空", "Export a copy first, then clear");
+        EN.put("全账号签到\n{0}", "All-account signing\n{0}");
+        EN.put("取消排除该 bot", "Unblock this bot");
+        EN.put("复制失败: {0}", "Copy failed: {0}");
+        EN.put("复制目标到其它账号", "Copy targets to another account");
+        EN.put("始终夜间（终端风）", "Always dark (terminal)");
+        EN.put("已发起补签：{0}", "Make-up sign started: {0}");
+        EN.put("已命令签到 {0}", "Sign-in requested for {0}");
+        EN.put("已是最新 v{0}", "Up to date (v{0})");
+        EN.put("应用失败: {0}", "Apply failed: {0}");
+        EN.put("当前账号还没有目标", "This account has no targets yet");
+        EN.put("打开失败: {0}", "Could not open: {0}");
+        EN.put("指令 / 捕获按钮", "Command / capture button");
+        EN.put("操作失败: {0}", "Action failed: {0}");
+        EN.put("暂停一周 / 恢复", "Pause 1 week / Resume");
+        EN.put("测试异常: {0}", "Test error: {0}");
+        EN.put("添加失败: {0}", "Add failed: {0}");
+        EN.put("界面语言：跟随系统", "Language: system");
+        EN.put("目标列表（{0}）", "Targets ({0})");
+        EN.put("示例 · 每日签到", "Example · daily sign-in");
+        EN.put("系统分享（选应用）", "Share via…");
+        EN.put("自动（跟宿主主题）", "Auto (follow host theme)");
+        EN.put("账号一览（{0}）", "Accounts ({0})");
+        EN.put("预览失败: {0}", "Preview failed: {0}");
+        EN.put("（点下方按钮继续）", " (tap the button below for more)");
+        EN.put("（窗口内·已签完）", "(inside window · all signed)");
+        EN.put("（窗口内·有未签）", "(inside window · pending)");
+        EN.put("，请在安装界面确认", " — confirm in the installer");
+        EN.put("⑨ 换手机 / 备份", "9. New phone / backup");
+        EN.put("⑪ 关键词与自动学习", "11. Keywords & auto-learn");
+        EN.put("今日待补·已补·跳过", "Pending · done · skipped");
+        EN.put("宽松模式（来者不拒）", "Loose mode (accept anything)");
+        EN.put("导入配置 · 选备份", "Import config · pick backup");
+        EN.put("已取消排除该 bot", "Bot unblocked");
+        EN.put("开始下载 v{0}…", "Downloading v{0}…");
+        EN.put("搜索日志，边输边过滤", "Search logs — filters as you type");
+        EN.put("日志导出失败：{0}", "Log export failed: {0}");
+        EN.put("确认框失败: {0}", "Confirm dialog failed: {0}");
+        EN.put("选择要排除的 bot", "Choose bots to block");
+        EN.put("（{0} 个不参与）", "({0} not counted)");
+        EN.put("(未排除任何 bot)", "(no blocked bots)");
+        EN.put("③ 前置命令（拉面板）", "3. Pre-commands (pull the panel)");
+        EN.put("下载 v{0} 安装包", "Download v{0}");
+        EN.put("冻结操作失败: {0}", "Freeze failed: {0}");
+        EN.put("合并导入（保留现有的）", "Merge (keep existing)");
+        EN.put("命中排除规则「{0}」", "Matched block rule \"{0}\"");
+        EN.put("备注名（显示用，可空）", "Label (display only, optional)");
+        EN.put("复制日志失败: {0}", "Copying logs failed: {0}");
+        EN.put("复制本账号目标到该账号", "Copy my targets here");
+        EN.put("学习关键词（逗号分隔）", "Learning keywords (comma-separated)");
+        EN.put("学习关键词（逗号分隔，用于识别签到文本）", "Learning keywords (comma-separated; used to recognise sign-in texts)");
+        EN.put("导出失败：打不开写入流", "Export failed: cannot open the output stream");
+        EN.put("已清空 {0} 项配置", "Cleared {0} config entries");
+        EN.put("无法打开分享: {0}", "Could not open the share sheet: {0}");
+        EN.put("暂停操作失败: {0}", "Pause failed: {0}");
+        EN.put("检查更新失败: {0}", "Update check failed: {0}");
+        EN.put("没等到 bot 回复：", "No reply from the bot:");
+        EN.put("绑定失败：会话ID无效", "Bind failed: invalid chat ID");
+        EN.put("自动判定成功 / 失败", "Auto-detect success / failure");
+        EN.put("设置打开失败: {0}", "Could not open settings: {0}");
+        EN.put("读取会话失败: {0}", "Could not read chats: {0}");
+        EN.put("页面已关闭，请重新打开", "The page was closed — open it again");
+        EN.put("② 添加目标（三种方式）", "2. Add targets (3 ways)");
+        EN.put("④ 用什么节奏签（设置）", "4. Signing pace (settings)");
+        EN.put(" 签到完成 {0} 个", " Signed {0}");
+        EN.put("「{0}」今天已经签过了", "\"{0}\" is already signed today");
+        EN.put("保存后生效，日志不翻译。", "Takes effect after saving. Logs are not translated.");
+        EN.put("如: 领取完毕,今日完成", "e.g. claimed, completed today");
+        EN.put("已复制，粘到任意聊天即可", "Copied — paste it into any chat");
+        EN.put("已导出到「下载」：{0}", "Exported to Downloads: {0}");
+        EN.put("当前只有 1 个登录账号", "Only 1 account signed in");
+        EN.put("检查更新未成功: {0}", "Update check failed: {0}");
+        EN.put("模拟已开：解析为 {0}", "Simulation on: parsed as {0}");
+        EN.put("没有匹配「{0}」的日志", "No logs matching \"{0}\"");
+        EN.put("生成诊断包失败: {0}", "Could not build the diagnostics bundle: {0}");
+        EN.put("界面语言：English", "Language: English");
+        EN.put("重新采样（去点一次按钮）", "Re-sample (tap the button once)");
+        EN.put("，请用文件管理器点开安装", " — open it with a file manager to install");
+        EN.put(" 已发送测试: {0}", " Test sent: {0}");
+        EN.put(" · 窗口 {0}-{1}", " · window {0}-{1}");
+        EN.put(" · 补签开(至 {0})", " · make-up on (until {0})");
+        EN.put("Telegram 标志类：", "Telegram flag classes:");
+        EN.put("[更多日志] → 运行日志", "[More logs] → Logs");
+        EN.put("{0}（失败 {1} 次）", "{0} (failed {1}×)");
+        EN.put("── 多账号串号排查 ──", "── Multi-account ID mixup check ──");
+        EN.put("主题：{0}（保存后生效）", "Theme: {0} (takes effect after saving)");
+        EN.put("今日补签 · {0} 目标", "Make-up today · {0} targets");
+        EN.put("全部签到（{0} 个条目）", "Sign all ({0} items)");
+        EN.put("分享 TGAutoSign", "Share TGAutoSign");
+        EN.put("刚刚已经检查过，请稍后再试", "Already checked just now — try again later");
+        EN.put("原计划 {0} · {1}", "Planned {0} · {1}");
+        EN.put("原计划 {0} · 已完成", "Planned {0} · done");
+        EN.put("只有一个登录账号，不用复制", "Only one account signed in — nothing to copy");
+        EN.put("如: 次数已用完,不可领取", "e.g. out of attempts, not claimable");
+        EN.put("已排除 {0} 个 bot", "{0} bots blocked");
+        EN.put("打开作者主页失败: {0}", "Could not open the author's page: {0}");
+        EN.put("TGAutoSign 一直免费维护，如果你觉得好用，去 GitHub 点个 \u2b50 就是最大的鼓励", "TGAutoSign is maintained for free. If it helps you, a \u2b50 on GitHub means a lot.");
+        EN.put("去 Star \u203a", "Star it \u203a");
+        EN.put("打开链接失败: {0}", "Could not open link: {0}");
+        EN.put("已发出 {0} 分钟仍未结案（bot 可能已回复但未被识别）", "Sent {0} min ago but still unresolved (bot may have replied but was not recognised)");
+        EN.put("{0} 条需要处理（点右侧按钮逐一处置）", "{0} need attention (handle each on the right)");
+        EN.put("{0}：已发起签到", "{0}: check-in started");
+        EN.put("今天不再处理它", "Skip it for today");
+        EN.put("卡住的目标 · {0}", "Stuck targets · {0}");
+        EN.put("发起失败: {0}", "Failed to start: {0}");
+        EN.put("发送失败", "Send failed");
+        EN.put("已记为已签", "Marked as signed");
+        EN.put("已重试", "Retried");
+        EN.put("排队中", "Queued");
+        EN.put("未回复", "No reply");
+        EN.put("等回复", "Awaiting reply");
+        EN.put("签到这个账号", "Sign in this account");
+        EN.put("补判定词（让下次能认出来）", "Add judge words (so next time it's recognised)");
+        EN.put(" · 现已学会 {0} 条", " · {0} learned so far");
+        EN.put("下面两行只对「所有目标」生效（全局）。",
+               "The two lines below apply to ALL targets (global).");
+        EN.put("我已经学会的词（成功 {0} · 失败 {1}）  ",
+               "Words I have learned ({0} ok · {1} fail)  ");
+        // 2026-10-19 未识别回复页重设计新增文案
+        EN.put("帮我认一认", "Help me judge");
+        EN.put("{0} 条待判", "{0} to judge");
+        EN.put("算成功", "Success");
+        EN.put("算失败", "Failure");
+        EN.put("先不管", "Skip");
+        EN.put("这条回复出现过 {0} 次", "This reply appeared {0} times");
+        EN.put("点这里自定义判定词", "Tap to customise the word");
+        EN.put("填这句话里固定出现的文字", "Text that always appears in this reply");
+        EN.put("仅此bot ▾", "this bot ▾");
+        EN.put("仅此条 ▾", "this target ▾");
+        EN.put("所有目标 ▾", "all targets ▾");
+        EN.put("删除「{0}」？", "Delete \"{0}\"?");
+        EN.put("删掉后，以后同类回复就认不出来了。",
+           "After deleting, similar replies will not be recognised.");
+        EN.put("操作失败：{0}", "Operation failed: {0}");
+        EN.put("下面两个框 = **全局词**（对所有目标生效）：成功 {0} 条 / 失败 {1} 条。\n另有各 bot 专属：成功 {2} 条 / 失败 {3} 条（避免互相污染）。\n合计 成功 {4} 条 / 失败 {5} 条 —— 与「未识别回复」页顶部数字一致。",
+               "The two boxes below = **global words** (apply to all targets): {0} ok / {1} fail.\n"
+             + "Plus per-bot words: {2} ok / {3} fail (kept separate to avoid cross-contamination).\n"
+             + "Total {4} ok / {5} fail — matches the number at the top of \"Unrecognised replies\".");
+        EN.put("下面两个框 = 全局词（对所有目标生效）。",
+               "The two boxes below = global words (apply to all targets).");
+        EN.put("查看并管理全部判定词", "View and manage all judge words");
+        EN.put("待添加已清空", "Pending list cleared");
+        // 2026-10-21 打开 TG 时补签
+        EN.put("打开 TG 时补签", "Catch up when Telegram opens");
+        // 2026-10-21 单目标固定时刻
+        EN.put("定时", "Schedule");
+        EN.put("定时签到", "Scheduled check-in");
+        EN.put("设定", "Set");
+        EN.put("更改", "Change");
+        EN.put("每天 {0} 执行", "Runs daily at {0}");
+        EN.put(" · 实际 {0}（超窗口）", " · actual {0} (outside window)");
+        EN.put("跟随全局窗口，自动随机安排", "Follows the global window (auto)");
+        EN.put("超出时间窗口，实际会在 {0} 执行", "Outside the window — will run at {0}");
+        EN.put("快捷时间", "Quick times");
+        EN.put("已指定", "Set");
+        EN.put("已命中 {0} 次", "Matched {0} times");
+        EN.put(" · 最近 {0}", " · last {0}");
+        EN.put("学了 {0} 天，还没命中过（可能学错了）", "Learned {0} days ago, never matched (may be wrong)");
+        EN.put("还没命中过", "No match yet");
+        EN.put("学了 {0} 天没命中", "Learned {0} days ago, no match");
+        EN.put("点一个词删除它", "Tap a word to delete it");
+        EN.put("这个页面加载出错了", "This page failed to load");
+        EN.put("数据没丢。请关掉重开一次；如果反复出现，把这条日志发给作者：",
+               "Your data is safe. Close and reopen; if it keeps happening, send this log to the author:");
+        EN.put("已设为每天 {0}，今日计划已更新", "Set to daily {0}; today's plan updated");
+        EN.put("已设为每天 {0}（今日未排期，明天起生效）", "Set to daily {0} (not scheduled today; takes effect tomorrow)");
+        EN.put("已恢复跟随全局，今日计划将重新安排", "Back to global; today's plan will be rearranged");
+        EN.put("带时钟图标的「已指定」= 你为这个目标单独设的固定时间",
+               "The clock-marked \"Set\" means you pinned a fixed time for that target");
+        EN.put("跟随全局", "Use global");
+        EN.put("每天 {0}", "Daily {0}");
+        EN.put("（超窗口→{0}）", " (outside window → {0})");
+        EN.put("不设置 = 跟随全局窗口随机安排。点了可改时刻或恢复跟随。",
+               "Unset = follow the global window (random). Tap to pick a time or reset.");
+        EN.put("已设为每天 {0}", "Set to daily {0}");
+        EN.put("已恢复跟随全局", "Back to global");
+        EN.put("打开失败：{0}", "Open failed: {0}");
+        EN.put("开：只要今天还有没签的目标，打开 Telegram 就立刻签到一次，\n   不受时间窗口、目标固定时刻限制（即时模式）。\n关：只在设定的时间窗口内签到（旧行为）。\n只想拉起 TG 就签、不想管定时/窗口的用户，开这个就行，\n「定时签到」可以关掉，二者互不影响。",
+               "On: if any target is still unsigned today, sign immediately when Telegram opens,\n"
+             + "   ignoring the time window AND per-target fixed times (instant mode).\n"
+             + "Off: only sign inside the configured window (old behaviour).\n"
+             + "If you just want to sign the moment you open TG, turn this on and\n"
+             + "turn off scheduled signing \u2014 the two are independent.");
+        EN.put("下面两行只对「所有目标」生效（全局）。\n「未识别回复」里补的词默认只对那只机器人生效，不在这里显示。\n当前：全局 成功 {0} 条 / 失败 {1} 条；另有机型/目标专属 成功 {2} 条 / 失败 {3} 条。",
+               "The two lines below apply to ALL targets (global).\nWords learned under \"Unrecognised replies\" apply to that bot only and are not listed here.\nNow: global ok {0} / fail {1}; per-bot or per-target ok {2} / fail {3}.");
+        EN.put("记为已签", "Mark as signed");
+        EN.put("这一轮没有卡住的目标", "No stuck targets this round");
+        EN.put("重试失败: {0}", "Retry failed: {0}");
+        EN.put("面板过期", "Panel expired");
+        EN.put("（无更多信息）", "(no more detail)");
+        EN.put("打开目标选择失败: {0}", "Could not open the target picker: {0}");
+        EN.put("把本账号配置应用到全部账号", "Apply this account's settings to all");
+        EN.put("标记「仅测试」（不自动签）", "Mark \"test only\" (never auto-sign)");
+        EN.put("示例模板：群打卡指令，可改", "Example template: group check-in command, editable");
+        EN.put("规则·排除 bot·待确认", "Rules · blocked bots · pending");
+        EN.put("该 bot 已存在相同指令", "This command already exists");
+        EN.put("语言：{0}（保存后生效）", "Language: {0} (takes effect after saving)");
+        EN.put("请在 TG 界面内完成捕获", "Finish the capture inside Telegram");
+        EN.put("还没连续签到，今天去签一个", "No streak yet — sign in today to start one");
+        EN.put("重绑为回调（去点它的按钮）", "Rebind as callback (tap its button)");
+        EN.put(" {0} 失败: {1}", " {0} failed: {1}");
+        EN.put("{0}：签到完成 {1} 个", "{0}: signed {1}");
+        EN.put("「{0}」今日重试次数已用完", "\"{0}\" has used up today's retries");
+        EN.put("「{0}」已发出、正在等结果", "\"{0}\" sent; waiting for the result");
+        EN.put("「{0}」正在签到中，请稍候", "\"{0}\" is signing, please wait");
+        EN.put("停用该账号（不参与自动签到）", "Disable this account (skip auto sign)");
+        EN.put("加载更多（还有 {0} 条）", "Load more ({0} left)");
+        EN.put("取消「仅测试」（恢复自动签）", "Unmark \"test only\" (resume auto-sign)");
+        EN.put("导出失败：写不进「下载」目录", "Export failed: cannot write to Downloads");
+        EN.put("已入待确认：确认后才加入目标", "Added to pending — confirm it to add as a target");
+        EN.put("已发起签到，结果见提示/日志", "Sign-in started — see the toast / logs for the result");
+        EN.put("已命令全账号签到，结果见日志", "Signing on all accounts — check the logs for results");
+        EN.put("已应用到全部 {0} 个账号", "Applied to all {0} accounts");
+        EN.put("时间范围错误：结束需晚于开始", "Invalid time range: the end must be later than the start");
+        EN.put("编辑（标签/前置命令/定位）", "Edit (label / pre-commands / anchor)");
+        EN.put("覆盖导入（先清空目标和状态）", "Replace (clear targets and state first)");
+        EN.put("计划 {0} · 到时自动签", "Planned {0} · signs automatically when due");
+        EN.put("该版本没有可直接下载的安装包", "This release has no downloadable package");
+        EN.put("还没有签到目标，切过去学一个", "no targets yet — switch over and learn one");
+        EN.put("TGAutoSign · 管理", "TGAutoSign · Manager");
+        EN.put("→ {0}（现有 {1} 个）", "→ {0} ({1} now)");
+        EN.put(" 已添加 {0} → {1}", " Added {0} → {1}");
+        EN.put(" 已添加新签到目标: {0}", " Sign-in target added: {0}");
+        EN.put("从会话列表选群（自动填 ID）", "Pick a group from chats (fills ID)");
+        EN.put("判定为失败的附加词（逗号分隔）", "Extra words meaning FAILURE (comma separated)");
+        EN.put("判定为成功的附加词（逗号分隔）", "Extra words meaning SUCCESS (comma separated)");
+        EN.put("在群聊里发签到指令（不是私聊）", "Send the check-in command in a group chat (not a private chat)");
+        EN.put("备注名（可留空，如：某签到群）", "Label (optional, e.g. \"daily check-in group\")");
+        EN.put("如: 点击图中事物（一行一条）", "e.g. \"tap the item in the picture\" (one per line)");
+        EN.put("已命令全部签到，结果见运行日志", "Signing all targets — see the logs for results");
+        EN.put("已导出 {0} 项配置\n{1}", "Exported {0} config entries\n{1}");
+        EN.put("当前 v{0}\n正在检查更新…", "Current v{0}\nChecking for updates…");
+        EN.put("机器人 ID（数字，无需 @）", "Bot ID (numbers only, no @)");
+        EN.put("请在 TG 界面使用 /jmb", "Use /jmb inside Telegram");
+        EN.put("（还没有目标，去该账号学一个）", " (no targets yet — switch over and learn one)");
+        EN.put("Telegram 标志类：{0}", "Telegram flag classes: {0}");
+        EN.put(" 已添加回调签到目标: {0}", " Callback sign-in target added: {0}");
+        EN.put("命中「排除的 bot」({0})", "Blocked bot ({0})");
+        EN.put("如: 签到,打卡,checkin", "e.g. sign-in, checkin, daily");
+        EN.put("已暂停一周（至 {0}）：{1}", "Paused for a week (until {0}): {1}");
+        EN.put("已采样过按钮（捕获/调试台可用）", "Buttons sampled (capture / console available)");
+        EN.put("开始捕获（去点 bot 的按钮）", "Start capture (tap the bot's button)");
+        EN.put("排除规则（一行一条，命中不学习）", "Block rules (one per line)");
+        EN.put("模板（点一下追加；可自行输入）：", "Presets (tap to append; you can also type your own):");
+        EN.put("签到指令（如 /checkin）", "Sign-in command (e.g. /checkin)");
+        EN.put("（文本/链接按钮，不能绑定回调）", " (text/link button — cannot bind a callback)");
+        EN.put("\n确定删除？（只影响当前账号：{0}）", "\nDelete? (current account only: {0})");
+        EN.put("$ (暂无日志消息，稍后自动出现)", "$ (no log messages yet — they will appear shortly)");
+        EN.put("TGAutoSign · 检查更新", "TGAutoSign · Check for updates");
+        EN.put("{0}  ·  约 {1} 分钟后", "{0}  ·  in ~{1} min");
+        EN.put("「{0}」失败退避中，稍后自动重试", "\"{0}\" is backing off after failure; will retry later");
+        EN.put("使用我的自定义词（叠加在内置之上）", "Use my own words (on top of the built-ins)");
+        EN.put("已复制到 {0}：新增 {1} 个", "Copied to {0}: {1} added");
+        EN.put("已复制最近 {0} 行日志到剪贴板", "Copied the last {0} log lines to the clipboard");
+        EN.put("当前账号还没有目标，先学一个再复制", "This account has no targets yet — learn one first");
+        EN.put("点一下 bot 按钮就自动加到列表", "Tap a bot button and it's added to the list automatically");
+        EN.put("示例模板：通用领取指令，可改或删除", "Example template: generic claim command, edit or delete");
+        EN.put("签到指令，如：/qd 或  签到", "Sign-in command, e.g. /qd or  Check in");
+        EN.put("\n\n{0} 现在有 {1} 个目标。", "\n\n{0} currently has {1} targets.");
+        EN.put("▍已排除的 bot（取消勾选可解除）", "BLOCKED BOTS (uncheck to unblock)");
+        EN.put("「{0}」已停用 / 暂停 / 冻结", "\"{0}\" is disabled / paused / frozen");
+        EN.put("「{0}」所在账号已停用，未发送；如需签到请先在账号一览里启用", "\"{0}\" is in a disabled account — not sent. Enable it in the account overview first");
+        EN.put("时间 = 计划 → 实际签上；补签会额外标出补签时刻", "Time = planned → actually signed; late sign-ins also show when the retry ran");
+        EN.put("已签 {0} / {1} · 已签=实际签上时刻 / 待签=计划时刻", "{0} of {1} signed · signed = actual time, pending = planned time");
+        EN.put("计划 {0} → 实签 {1}", "Planned {0} → signed {1}");
+        EN.put("计划 {0} · 已完成", "Planned {0} · done");
+        EN.put("实签 {0}", "Signed {0}");
+        EN.put("补签 {0}", "retry {0}");
+        EN.put("（晚 {0}）", " ({0} late)");
+        EN.put("计划 {0} · 还有 {1}", "Planned {0} · in {1}");
+        EN.put("计划 {0} · 已过 {1} · {2}", "Planned {0} · {1} overdue · {2}");
+        EN.put("计划 {0} · 已过 {1} · 后台 1~5 分钟内补（截止 {2}）", "Planned {0} · {1} overdue · retrying within 1-5 min (deadline {2})");
+        EN.put("计划 {0} · 已过 {1} · 补签已于 {2} 排队", "Planned {0} · {1} overdue · retry queued at {2}");
+        EN.put("计划 {0} · 已过补签截止 {1}", "Planned {0} · past retry deadline {1}");
+        EN.put("已签 {0} · 待补 {1} · 已跳过 {2}", "Signed {0} · pending {1} · skipped {2}");
+        EN.put("已对全部启用账号发起签到，结果见日志", "Sign-in started for all enabled accounts; see the log");
+        EN.put("自动识别你在 bot 里发的签到文本", "Detects the sign-in text you type in bots automatically");
+        EN.put("错误 {0} · 警告 {1}{2}", "Errors {0} · Warnings {1}{2}");
+        EN.put("{0}：目标 {1} · 已签 {2}", "{0}: {1} targets · {2} signed");
+        EN.put(" {0} 连续 {1} 天签到失败", " {0} failed {1} days in a row");
+        EN.put(" 诊断包已复制，直接粘贴发给作者即可", " Diagnostics bundle copied — just paste it to the author");
+        EN.put("如 /start；条目自带前置命令优先", "e.g. /start; the entry's own pre-commands take priority");
+        EN.put("当前账号：{0}（共登录 {1} 个）", "Current account: {0} ({1} signed in)");
+        EN.put("目标 {0} · 已签 {1}/{2}", "{0} targets  ·  {1}/{2} signed");
+        EN.put("设置保存失败：写盘出错，请检查存储空间", "Failed to save settings: disk write error; check storage space");
+        EN.put("跟随系统：系统语言非中文时自动切英文。", "System: switches to English when your system language isn't Chinese.");
+        EN.put("选择要查看日志的目标（点「全部」恢复）", "Choose a target to filter logs (tap \"All\" to reset)");
+        EN.put(" · 已载入 {0} / 共 {1} 条", " · loaded {0} of {1}");
+        EN.put("▍目标列表里的 bot（勾选 = 排除）", "BOTS IN YOUR TARGETS (check to block)");
+        EN.put(" TGAutoSign 今日签到完成 ", " TGAutoSign — today's check-in complete ");
+        EN.put("分享给需要的人，文案已写好（含下载链接）", "Share it with someone who needs it — the text is ready, download link included.");
+        EN.put("原计划 {0} · 已过补签截止 {1}", "Planned {0} · past make-up deadline {1}");
+        EN.put("已排除该 bot：不再自动学习、不再签到", "Bot blocked: no more auto-learning, no more signing");
+        EN.put("每目标在窗口内各占一段随机时刻，互不重叠", "Each target gets its own non-overlapping random slot inside the window");
+        EN.put("没有需要复制的新目标（可能早就复制过了）", "No new targets to copy (they may already have been copied)");
+        EN.put("测试签到（先跑前置命令→点按钮→看返回）", "Test sign (pre-commands → tap button → see reply)");
+        EN.put("连续签到 {0} 天 · 最近 14 天", "{0}-day streak · last 14 days");
+        EN.put(" 已添加 {0} → {1}，立即签到…", " Added {0} → {1}, signing now…");
+        EN.put("今日计划 · {0} 个目标 · 随机错开", "Today's plan · {0} targets · randomly spread");
+        EN.put("导入完成：{0} 目标 {1} → {2}", "Import done: {0} targets {1} → {2}");
+        EN.put("请在 Telegram 界面使用 /jmb", "Please use /jmb inside Telegram");
+        EN.put(" 请在 Telegram 界面使用 /jmb", " Please use /jmb inside Telegram");
+        EN.put("{0} · 原计划 {1} · 实际 {2}", "{0} · planned {1} · actual {2}");
+        EN.put("原计划 {0} · 后台 1~5 分钟随机补", "Planned {0} · retries in the background within 1–5 min");
+        EN.put("回调按钮读取正常（按实例字段取，不依赖类名）", "Callback buttons readable (read from instance fields, no class names needed)");
+        EN.put("已对 {0} 个目标发起签到，结果见运行日志", "Sign-in started for {0} targets; see the run log");
+        EN.put("请在 Telegram 界面内使用 /jmb", "Use /jmb inside Telegram");
+        EN.put("{0}：目标 {1} · 已签 {2}/{3}", "{0}: {1} targets · {2}/{3} signed");
+        EN.put(" TGAutoSign 今日签到完成 {0}", " TGAutoSign — today's check-in complete ({0})");
+        EN.put("备注名（显示用，可空；如「每日签到」「查档」）", "Label (display only, optional; e.g. \"daily sign-in\")");
+        EN.put("没有可签的目标（都签过了 / 暂停 / 冻结）", "No targets to sign (all signed / paused / frozen)");
+        EN.put("知道它要求的文本指令（bot ID + 指令）", "I know the text command it expects (bot ID + command)");
+        EN.put("按钮定位文案（重开面板按此找回按钮，默认=标签）", "Button locator text (used to find the button again when the panel reopens; defaults to the label)");
+        EN.put("(没读到按钮，请在 bot 里点一下签到按钮再试)", "(No buttons found — tap the bot's check-in button first)");
+        EN.put(" 已绑定回调: {0}（当前共 {1} 个目标）", " Callback bound: {0} ({1} targets now)");
+        EN.put("勾选 = 排除该 bot（不自动学习、不自动签到）", "Checked = block this bot (no auto-learning, no auto-signing)");
+        EN.put("已补 {0} · 待补 {1} · 已跳过 {2}", "Made up {0} · pending {1} · skipped {2}");
+        EN.put("没找到群/频道。请先打开该群发一条消息，再回来试。", "No groups/channels found. Open one and send a message, then come back.");
+        EN.put("目标 {0} · 今日已签 {1} · 待签 {2}", "Targets {0} · signed today {1} · pending {2}");
+        EN.put("缺 {0}（该客户端自研了这层，模块不注入也不误伤）", "missing {0} (this client rolled its own layer — module neither injects nor interferes)");
+        EN.put("群 ID 应为负数，如 -1001234567890", "The group ID should be negative, e.g. -1001234567890");
+        EN.put(" TGAutoSign 今日签到完成 {0}/{1}", " TGAutoSign — {0}/{1} signed today");
+        EN.put("今日待补 {0} · 已补 {1} · 已跳过 {2}", "To make up {0} · done {1} · skipped {2}");
+        EN.put("会话列表为空：先打开一次 TG 主界面（会话列表）再试", "Chat list is empty — open Telegram's main chat list once, then retry");
+        EN.put("已存在该回调，已刷新消息/指纹（msg_id={0}）", "Callback already exists — message/fingerprint refreshed (msg_id={0})");
+        EN.put("打开群链接失败，请确认已装 Telegram: {0}", "Could not open the group link — make sure Telegram is installed: {0}");
+        EN.put("群 ID（形如 -1001234567890，含负号）", "Group ID (like -1001234567890, minus sign included)");
+        EN.put("输入 /jmb 打开管理面板 · /help 查看教程", "Send /jmb to open the panel · /help for the guide");
+        EN.put("1 = 13 天前 · 14 = 今天（绿 = 已签到）", "1 = 13 days ago · 14 = today (green = signed)");
+        EN.put("「{0}」发送失败：取不到会话数据，先进该会话发一条消息", "\"{0}\" send failed: cannot read the chat data; send a message there first");
+        EN.put("下面是最近会话里的群 / 频道。点一条即可填入群 ID。", "Recent groups / channels are listed below. Tap one to fill in the group ID.");
+        EN.put("去 bot 会话点一下它的签到按钮，会自动记忆并每天跟进", "Tap its check-in button in the bot chat; it will be remembered and followed daily");
+        EN.put("取 InputPeer 失败，先在会话里点一下该 bot", "Could not get InputPeer — tap the bot in your chat list first");
+        EN.put("前置命令序列（逗号或换行分隔，可空；发送后拉面板再点按钮）", "Pre-command sequence (comma- or newline-separated, optional; sent first to pull up the panel before tapping)");
+        EN.put("去该 bot 会话点一下要绑的签到按钮，会自动作为回调新增", "Open that bot's chat and tap the sign-in button you want to bind — it will be added as a callback automatically.");
+        EN.put("真实读取：selectedAccount={0} → {1}", "Actual read: selectedAccount={0} -> {1}");
+        EN.put("(暂无可调试按钮：先在目标 bot 会话里点一次它的签到按钮)", "(No buttons to debug yet — tap the target bot's check-in button first)");
+        EN.put("0=按目标数自动均分；如设 30，则相邻目标至少隔 30 分钟", "0 = spread evenly by target count; set 30 to force at least 30 minutes between targets");
+        EN.put("已签 {0} / {1} · 时间=已签时刻 / 待签计划时刻", "Signed {0} / {1} · time = when it was signed / when it is planned");
+        EN.put("群 ID 必须是数字（负数），例：-1001234567890", "The group ID must be a number (negative), e.g. -1001234567890");
+        EN.put("越界模拟（强制 selectedAccount = 已登录数）", "Overflow simulation (force selectedAccount = logged-in count)");
+        EN.put("(暂无目标，点「添加目标」，或直接点 bot 的签到按钮自动学习)", "(no targets — tap \"Add target\", or just tap the bot's sign-in button to learn it)");
+        EN.put("共 {0} 个登录账号（切换 Telegram 账号即切换目标集）", "{0} accounts signed in (switching Telegram accounts switches the target set)");
+        EN.put("自动判定已关闭：机器人回复不会被判成败（设置 → 判定机器人回复）", "Auto-detection is off: bot replies won't be judged (Settings → Judging bot replies)");
+        EN.put("发现新版本 v{0}（当前 v{1}）：发 /jmb →  检查更新", "New version v{0} available (current v{1}): send /jmb →  Check updates");
+        EN.put("命中后先进「待确认」列表，你手动确认才加入（防验证码类 bot 误加）", "Hits go to the pending list and are only added after you confirm (prevents adding captcha-style bots by mistake)");
+        EN.put("拿不到 MessagesController，请回到 TG 主界面再试", "Could not get MessagesController — go back to Telegram's main screen and retry");
+        EN.put("(待确认列表为空)\n网络学习命中且「需确认」开启时，这里会出现候选目标。", "(nothing pending)\nCandidates appear here when network learning hits and \"confirm first\" is on.");
+        EN.put("TGAutoSign 有新版本 v{0}：发 /jmb →  检查更新", "TGAutoSign v{0} is available: send /jmb →  Check updates");
+        EN.put(" TGAutoSign 今日 {0}/{1} 已签，{2} 个未完成", " TGAutoSign — {0}/{1} signed today, {2} incomplete");
+        EN.put(" {0} 已连续 {1} 天签到失败\n原因: {2}\n账号: {3}", " {0} failed {1} days in a row\nReason: {2}\nAccount: {3}");
+        EN.put("内置为通用示例模板，点选后把 bot ID 和指令改成你的签到 bot。", "These are generic example presets — after picking one, replace the bot ID and command with your own.");
+        EN.put("这类按钮无法用回调模拟；文本键盘类请用「文本指令」目标（文本=按钮文字）", "This kind of button cannot be simulated with a callback. For text keyboards use a \"Text command\" target (text = the button label).");
+        EN.put("匹配 bot 回复正文 + 按钮文案。用 / 包裹当正则，# 开头为注释。", "Matches the bot's reply text and button labels. Wrap in / to use a regex; lines starting with # are comments.");
+        EN.put("模拟生效：{0} 个账号 → 解析 {1}（acc{2}_，目标 {3} 个）", "Simulation active: {0} accounts -> parsed {1} (acc{2}_, {3} targets)");
+        EN.put("示例模板：改成你的 bot（数字 ID 在 bot 里发 /start 可得）", "Example template: replace with your own bot (send /start to the bot to get its numeric ID)");
+        EN.put("签到完成 {0} 个，{1} 个没成功（/jmb →  运行日志 里有原因）", "Signed {0}, {1} failed (see /jmb →  Logs for reasons)");
+        EN.put("捕获模式已开启：去 bot 会话里点一次它的按钮，我会列出该消息所有按钮供你绑定", "Capture mode is on: open the bot's chat and tap its button once — all buttons in that message will be listed for binding.");
+        EN.put("以下目标来自「网络学习」，确认后才会加入自动签到。点「加入」确认，点「忽略」丢弃。", "These targets came from \"network learning\" and are only added after you confirm. Tap Add to accept or Skip to discard.");
+        EN.put("当前共 {0} 个账号。默认只改本账号（{1}…），点上面按钮才会同步到其它账号。", "{0} accounts in total. By default only this account ({1}…) is changed; use the button above to sync to the others.");
+        EN.put("{0}：签到完成 {1} 个，{2} 个没成功（/jmb →  运行日志 里有原因）", "{0}: signed {1}, {2} failed (see /jmb →  Logs for reasons)");
+        EN.put("开 = 窗口内按随机时刻逐个签（防风控，推荐）；关 = 检测到未签就马上签（不看时间）", "On = sign each target at a random time inside the window (recommended, avoids rate limits); Off = sign as soon as an unsigned target is detected (regardless of time)");
+        EN.put("清空会同时删掉当前列表和落盘的历史日志文件。\n建议先「导出再清空」留一份，方便之后对账。", "Clearing removes both the current list and the log files on disk.\nExport a copy first so you still have it for reference.");
+        EN.put("自动 = 读宿主当前配色（取不到再看系统深色）；识别不准时可手动锁定，保存后重开界面生效", "Auto = read the host's current colours (falls back to the system dark setting). If it's wrong, lock it manually — takes effect after saving and reopening.");
+        EN.put("每账号每天一条摘要，发到自己的「收藏夹」（不弹系统通知）。目标连续 3 天失败会额外提醒。", "One summary per account per day, sent to your own Saved Messages (no system notification). A target failing 3 days in a row triggers an extra alert.");
+        EN.put("窗口结束后仍会补签到到这个时间（如 23:00），过了才真正放弃；仅「错过补签」开启时生效", "Missed targets can still be signed up to this time (e.g. 23:00) before being given up; only applies when \"Missed make-up\" is on");
+        EN.put(" 已添加: {0}（这个 bot 已有 {1} 个目标；若是点着玩，建议长按设「仅测试」）", "Added: {0} (this bot already has {1} targets — if you're just tapping around, consider \"test only\")");
+        EN.put("关掉 TG 期间错过的签到点：开=错过后随机延迟 1~5 分钟自动补；关=错过即跳过（默认）", "Sign-ins missed while Telegram was closed: On = retry automatically 1–5 minutes late; Off = simply skip them (default)");
+        EN.put("把 {0} 的 {1} 个目标复制到其它账号。\n只复制目标本身，不带「今天已签」和重试记录。", "Copy {0}'s {1} targets to another account.\nOnly the targets are copied — not today's sign-ins or retry history.");
+        EN.put("点下面的按钮武装捕获，然后去 bot 会话点一下它的按钮，\n会列出该消息的所有按钮供你添加。", "Tap the button below to arm capture, then tap the bot's button in its chat.\nAll buttons on that message will be listed for you to add.");
+        EN.put("会话 uid={0}  msg={1}  回调按钮 {2}/{3}；点一个即绑定（可连点多个）", "Chat uid={0}  msg={1}  callback buttons {2}/{3}; tap one to bind (you can bind several in a row)");
+        EN.put("开着：按内置词表判断机器人回复是成功还是失败。\n关掉：只记录回复、不判成败（目标需要你自己确认）。", "On: uses the built-in word list to decide whether a reply means success or failure.\nOff: replies are only logged, never judged — you confirm targets yourself.");
+        EN.put("当前没有可排除的对象。\n先在目标列表长按某个 bot 选「排除整只 bot」，\n或先添加目标，再来这里勾选。", "Nothing to block right now.\nLong-press a bot in the target list and choose \"Block this bot\",\nor add a target first and come back here.");
+        EN.put("「检查更新」走官方 GitHub 发布，检测到新版本可直接下载安装包。遇到问题或想提需求，用「加入群组」反馈。", "\"Check updates\" uses the official GitHub releases; if a newer version exists you can download the package directly. For problems or feature requests, use \"Join group\".");
+        EN.put("不用管类型：去 bot 会话点一下它的签到按钮，选「自动识别」即可。\n如果它要的是发指令，用「我有签到指令」。", "Don't worry about the type: open the bot's chat, tap its sign-in button once and choose \"auto-detect\".\nIf it expects a command instead, use \"I have a command\".");
+        EN.put("多账号用户的省事入口：把当前账号的目标整体复制给其它账号，不用一条条重新添加。入口在「全部功能 → 目标」里。", "The easy path for multi-account users: copy this account's targets to another account in one go instead of re-adding them one by one. Find it under \"All features → Targets\".");
+        EN.put(" 多账号用户的省事入口：把当前账号的目标整体复制给其它账号，不用一条条重新添加。入口在「全部功能 → 目标」里。", " The easy path for multi-account users: copy this account's targets to another account in one go instead of re-adding them one by one. Find it under \"All features → Targets\".");
+        EN.put("已发出但 bot 始终没回复：{0} 标记为「待确认」（不计成功也不计失败，已停止自动重试；想再试可手动点一次）", "Sent but the bot never replied: {0} marked \"unconfirmed\" (not counted as success or failure; auto-retry stopped — retry manually if you like)");
+        EN.put("最新在最上 ｜ 现在看：{0} · {1} ｜ 红=错误 黄=警告 绿=成功 灰=普通 暗灰=调试 ｜ 长按行复制", "Newest first ｜ showing: {0} · {1} ｜ red=error amber=warning green=success grey=normal dark grey=debug ｜ long-press a line to copy");
+        EN.put("「签全部账号」会依次签每个账号；定时签到跟随当前账号。切换 Telegram 账号后，本面板显示的目标集会随之切换。", "\"Sign all accounts\" signs each account in turn; the timer follows the current account. After you switch Telegram accounts, the target set shown here switches with it.");
+        EN.put("回调调试台 · uid={0} msg={1} 按钮 {2} 个\n点任意按钮=实时发一次该回调并看返回；不放心先「重新采样」", "Callback console · uid={0} msg={1} · {2} buttons\nTap any button to fire that callback once and see the reply; if unsure, tap \"Re-sample\" first.");
+        EN.put("将删除【所有账号】的全部签到目标与已签/重试状态，仅保留关键词/重试上限/唤醒命令设置。此操作不可撤销，建议先导出配置备份。", "This deletes every signing target and all signed/retry state on ALL accounts, keeping only keyword, retry-limit and wake-command settings. It cannot be undone — export a config backup first.");
+        EN.put("判断 bot 回复成功/失败用的词。内置了一批常见词；认不出来的回复会记进诊断包，\n见到「未识别回复」就在这加上对应措辞即可。", "Words used to tell whether the bot reply means success or failure. Common ones are built in; unrecognized replies are recorded in the diagnostics package — when you see one, add its wording here.");
+        EN.put("开：点什么学什么，且**只要机器人有回复就算成功**。\n适合判定词千奇百怪的机器人。关：按下面的规则判定。", "On: learn whatever you tap (no keyword filter) and treat **any reply as success**.\\nFor bots with unpredictable wording. Off: judge using the rules below.");
+        EN.put("开：点什么学什么，且**只要机器人有回复就算成功**。\\n适合判定词千奇百怪的机器人。关：按下面的规则判定。", "On: learn whatever you tap (no keyword filter) and treat **any reply as success**.\\nFor bots with unpredictable wording. Off: judge using the rules below.");
+        EN.put("提示：同一 bot 可添加多条指令（多指令自动签到）；\n回调按钮型签到无需手动添加——直接点一次 bot 的签到按钮即可自动学习。", "Tip: one bot can have several commands (all signed automatically);\ncallback-style sign-ins need no manual setup — just tap the bot's sign-in button once and it is learned.");
+        EN.put("匹配 bot 回复正文 + 按钮文案。普通关键词按子串（不分大小写）；\n用 / 包裹当正则，如 /^每日.*点击/ 。# 开头为注释。", "Matches the bot's reply text and button labels. Plain keywords match as substrings (case-insensitive);\nwrap in / for a regex, e.g. /^daily.*tap/ . Lines starting with # are comments.");
+        EN.put("条目操作里有「暂停一周 / 恢复」：暂停后该目标一周内不动作，到期自动恢复。适合出差、bot 维护、或暂时不想被签的场合，不用删掉再加回来。", "Under \"Entry actions\" there is \"Pause 1 week / Resume\": a paused target does nothing for a week and resumes automatically. Useful when travelling, when a bot is under maintenance, or when you simply don't want it signed for now — no need to delete and re-add it.");
+        EN.put("选一份备份导入。导入前会显示它的内容，导入后会告诉你目标数有没有变化。\n合并 = 只覆盖文件里有的键；覆盖 = 先清掉现有目标和状态再导入。", "Pick a backup to import. Its contents are shown first, and afterwards you'll see whether the target count changed.\nMerge = only overwrite keys present in the file; Replace = clear existing targets and state first.");
+        EN.put("设置里可选主题：自动（跟随 Telegram 主题，推荐）/ 始终日间 / 始终夜间。界面配色由 TG 当前主题决定，切换 TG 主题面板会跟着变。", "In Settings you can choose a theme: Auto (follows Telegram, recommended) / Always light / Always dark. The panel colours follow Telegram's current theme and update when you switch it.");
+        EN.put("有的 bot 不主动发签到面板。在该条目的「编辑」里填“前置命令序列”（逗号或换行分隔，可多条，如 /start, 菜单）。签到或测试时会先依次发送把面板拉出来，再点按钮。", "Some bots won't show the sign-in panel on their own. In that entry's \"Edit\", fill in a pre-command sequence (comma- or newline-separated, e.g. /start, menu). When signing or testing, these are sent first to pull up the panel, then the button is tapped.");
+        EN.put("每个账号的目标和“今天是否已签”各自独立。Telegram 里切到哪个账号，面板就是那个账号的目标，发送签到也跟随当前账号，不会替后台账号乱发。首页会显示其它账号各有几个目标。", "Each account keeps its own targets and its own \"signed today\" state. Whichever account you switch to in Telegram, the panel shows that account's targets and signing follows the current account — no stray sends on behalf of background accounts. The home screen also shows how many targets the other accounts have.");
+        EN.put("没有找到备份文件。\n\n备份放在这里：\nAndroid/data/{0}/files/tgautosign/\n（在 /jmb →  导出配置 里生成，也可以手动把 json 拷进去）", "No backup files found.\n\nBackups live here:\nAndroid/data/{0}/files/tgautosign/\n(created via /jmb →  Export config; you can also copy a JSON file in manually)");
+        EN.put("任意聊天（含收藏夹）输入框发 /jmb 即可。面板顶部是今日进度与最近日志，中间 6 个高频入口，最下一行「全部功能」是分类直达：目标 / 数据 / 系统 / 帮助 / 维护，横滑点一下直接进对应分组。", "Type /jmb in any chat (Saved Messages works too). The top shows today's progress and recent logs, the middle row holds 6 frequently used entries, and the bottom \"All features\" row jumps straight to each category: Targets / Data / System / Help / Maintenance. Swipe sideways and tap to open a group.");
+        EN.put("① 任意聊天输入框发 /jmb 打开面板 → ② 点「添加目标」加一个你要签的 bot → ③ 剩下的它自己办：每天在设定时段内自动签，失败自动重试，结果发到你自己的收藏夹。不需要开着 Telegram。", "1. Type /jmb in any chat to open the panel. 2. Tap \"Add target\" to add a bot you want to sign in for. 3. The module handles the rest: it signs automatically during your chosen window, retries on failure, and sends the result to your own Saved Messages. Telegram does not need to stay open.");
+        EN.put("开：点什么学什么；判定时**只要机器人有回复就算成功**，\n但命中明确失败词（活动已结束 / 请先关注 / 未绑定 等）仍判失败。\n适合判定词千奇百怪的机器人。关：完全按下面的规则判定。", "On: learn whatever you tap (no keyword filter), and **treat any reply as success** when judging — except replies that clearly mean failure (event ended / follow first / not linked, etc.), which still fail.\nFor bots with unpredictable wording. Off: judge purely by the rules below.");
+        EN.put("设置 → 学习行为：「按钮学习」开启后，你在 bot 里点过的按钮会自动加进目标（点什么都学，不做过滤）；「网络学习」自动识别你发的签到文本。", "Settings → Learning: with \"Button learning\" on, buttons you tap in a bot are added to targets automatically (whatever you tap gets learned, no filtering); \"Network learning\" detects sign-in texts you send.");
+        EN.put("设置 →「签到结果通知」开启后，每天的签到摘要会静默发到你自己的 Telegram 收藏夹（不弹系统通知、不需要通知权限）。只想出问题时被打扰，就打开「只通知失败」。\n连续 3 天签到失败会额外告警一次，不会天天刷屏。", "With Settings → \"Sign-in result notification\" on, a daily summary is quietly sent to your own Saved Messages (no system notification, no permission needed). Turn on \"Failures only\" if you only want to hear about problems.\nA target failing 3 days in a row triggers one extra alert — it won't spam you daily.");
+        EN.put("「导出配置」生成 json 到下载目录，新设备用「导入配置」还原（导入是合并，不是覆盖）。配置里不含任何登录凭据。\n「导出日志」把运行日志导出到下载目录，方便留档或发给作者。\n删不干净时用「清空配置」，会跨全部账号彻底清。", "\"Export config\" writes a JSON file to Downloads; on a new device use \"Import config\" to restore it (import merges, it does not overwrite). The file contains no credentials.\n\"Export logs\" writes the run log to Downloads for archiving or sending to the author.\nIf removal isn't clean, \"Clear config\" wipes everything across all accounts.");
+        EN.put("用于在「群 / 频道」里发签到指令（不是私聊 bot）。\n\n群 ID 怎么拿？三种办法：\n① 点下面「从会话列表选群」→ 自动填 ID（推荐）\n② 直接去那个群点一次签到按钮 → 自动识别添加\n③ 群里长按任意消息转发给 @userinfobot 也可查（备用）", "For sending a sign-in command in a group / channel (not a private bot chat).\n\nHow to get the group ID — three ways:\n1. Tap \"Pick a group from chats\" below → the ID is filled in for you (recommended)\n2. Just go to that group and tap its sign-in button once → added automatically\n3. Long-press any message there and forward it to @userinfobot (fallback)");
+        EN.put("· 首页进度：当前账号今天签了几个。\n· 今日计划：设置 →「查看今日计划」，每个目标一行，已签显示实际时刻（绿），待签显示计划时刻（琥珀）。\n· 补签列表：今日待补 / 已补 / 已跳过 / 错过，以及窗口与补签状态。\n· 运行日志：每次动作的完整记录，可按级别和目标筛选。", "· Home progress: how many targets were signed today for the current account.\n· Today's plan: Settings → \"Today's plan\". One row per target; signed ones show the actual time (green), pending ones show the planned time (amber).\n· Make-up list: pending / done / skipped / missed today, plus window and make-up status.\n· Logs: the full record of every action, filterable by level and target.");
+        EN.put("运行日志固定「最新在最上」，打开即定位到最新那条；往下滑看更早的，「加载更多」每次多取 300 条。\n顶部芯片可按级别（全部 / 只看重要 / 只看错误）和目标过滤；「回到最新」一键回顶。\n颜色：红 = 错误，黄 = 警告，绿 = 成功，灰 = 普通，暗灰 = 调试。长按某行可复制。", "Logs always show the newest line at the top. Swipe down for older entries; \"Load more\" fetches 300 more each time.\nChips at the top filter by level (all / important / errors) and by target; \"Back to latest\" jumps to the top.\nColours: red = error, amber = warning, green = success, grey = normal, dark grey = debug. Long-press a line to copy it.");
+        EN.put("· 定时签到：开启后只在「签到时间」窗口内动作，窗口外所有自动触发一律不响应。\n· 签到时间：两端可点，例如 08:30-20:30。\n· 错开间隔：0 = 按目标数自动均分；设 N 分钟则相邻目标至少隔 N 分钟再随机，防风控节奏自己定。\n· 错过补签 + 补签截止：当天错过仍可补到该时刻（默认 23:00），避免白白作废。", "· Timer: when on, the module only acts inside your \"signing window\"; nothing triggers outside it.\n· Signing window: tap either end to set, e.g. 08:30-20:30.\n· Spacing interval: 0 = spread evenly by target count; set N minutes to force at least N minutes between targets, then randomize.\n· Missed make-up + deadline: missed targets can still be signed up to the deadline (default 23:00) instead of being skipped for the day.");
+        EN.put("· 文本指令：知道 bot 要求的签到文本（如 /checkin）时用，填机器人数字 ID + 指令，到点自动发。\n· 回调按钮（推荐）：这类要“点按钮”。去那个 bot 会话点一次它的签到按钮，模块会自动认出并记住，以后每天替你点。绑定不受关键词限制。\n· 群 / 频道：签到在群里发指令时用，填群 ID（形如 -1001234567890）。\n不确定 bot ID 时，用「从会话列表选群」直接挑。", "· Text command: use this when the bot expects a command such as /checkin. Enter the bot's numeric ID and the command; it is sent automatically at the scheduled time.\n· Callback button (recommended): for bots that need a button tapped. Open that bot's chat and tap its sign-in button once — the module learns it and taps it for you every day. Binding is not limited by keywords.\n· Group / channel: for sign-ins you trigger from a group. Enter the group ID (like -1001234567890).\nIf you don't know the bot ID, use \"Pick a group from chats\".");
+        EN.put("①「自诊断」：列出宿主反射锚点是否正常，第三方客户端（Nagram XF / Nagram / ExteraLess）适配先看这里。\n②「回调调试台」：列出面板全部按钮，点任意一个实时发一次看机器人返回，用来确认哪个按钮才对。\n③「运行日志」：点「诊断包」一键复制（错误 + 警告 + 最近 50 条 + 配置摘要），粘贴给作者最省事。\n④ 签到没反应：先看通知开关、是否在签到窗口内、该目标是否被暂停。", "1. \"Self-check\": lists whether the host reflection anchors are healthy. Check here first for third-party clients (Nagram XF / Nagram / ExteraLess).\n2. \"Callback console\": lists every button on the panel; tap one to fire it once and see the bot's reply — use it to confirm which button is correct.\n3. \"Logs\": tap \"Diagnostics bundle\" to copy errors + warnings + the last 50 lines + a config summary in one go, then paste it to the author.\n4. No response when signing: check the notification toggle, whether you're inside the signing window, and whether the target is paused.");
+        EN.put("结果未知", "Result unknown");
+        EN.put("以下目标发出后未得到明确结论，需要你判断。", "The following targets have been sent but no conclusion received. Please review.");
+        EN.put("以下目标来自网络学习，确认后加入自动签到。点「加入」确认，点「忽略」丢弃。", "The following targets are from network learning. Tap 'Add' to confirm, 'Ignore' to discard.");
+        EN.put("未自动学习：{0}", "Not learned automatically: {0}");
+        EN.put("你手动发过的签到口令", "a check-in command you sent by hand");
+        EN.put("群里发过的签到口令", "a check-in command sent in this group");
+        EN.put("发布页里没有找到与这个安装包同名的 sha256 校验行，因此无法核对文件是否完整。\n校验和与安装包来自同一个发布页，它本身不能防止发布端被篡改；真正的保护是系统要求同签名的包才能覆盖安装。",
+               "The release page has no sha256 line matching this APK's name, so I can't verify the file is complete.\nThe checksum and the APK come from the same page, so it can't protect against a tampered publisher — the real protection is that Android only allows an update signed with the same key.");
+        EN.put("已清空", "Cleared");
+        EN.put("诊断包已复制，直接粘贴发给作者即可", "Diagnostic bundle copied — just paste it to the author");
+        EN.put("输入 /jmb 打开管理面板 · /jmb help 查看教程",
+               "Type /jmb to open the panel · /jmb help for the tutorial");
+        EN.put("近 30 天 {0}%", "Last 30 days {0}%");
+        EN.put("帮我认一认这些回复", "Help me make sense of these replies");
+        EN.put("还有 {0} 条等你判断", "{0} reply(ies) need your call");
+        EN.put("都处理完了", "All caught up");
+        EN.put("机器人回复了、但我认不出结果的消息会攒在这里。你只要告诉我「这样的话算不算签到成功」，以后同类回复我就能自动认出来。", "Replies I can't make sense of pile up here. Just tell me whether this counts as a successful check-in, and I'll recognise the same wording next time.");
+        EN.put("等你判断（{0}）", "Waiting for you ({0})");
+        EN.put("看到这样的话，算签到成功吗？", "Does this wording mean the check-in succeeded?");
+        EN.put("填一段这句话里固定出现的文字", "Type a phrase that always appears in this reply");
+        EN.put("以后回复里出现这段文字，就按你的判断算。改一改也行。", "Next time this phrase shows up, I'll follow your call. Editing it is fine.");
+        EN.put("✓ 这个词已经帮你认出 {0} 次", "✓ This phrase has already recognised {0} time(s) for you");
+        EN.put("展开全文 ▾", "Show full text ▾");
+        EN.put("收起 ▴", "Collapse ▴");
+        EN.put("出现过 {0} 次", "Seen {0} time(s)");
+        EN.put("适用范围： {0}   ▾", "Applies to: {0}   ▾");
+        EN.put("只对这只机器人生效（推荐）", "Only this bot (recommended)");
+        EN.put("对所有目标生效", "All of my targets");
+        EN.put("只对这一条目标生效", "Only this one target");
+        EN.put("只对这只机器人生效（推荐）", "Only this bot (recommended)");
+        EN.put("对所有目标生效（影响最大）", "All of my targets (biggest impact)");
+        EN.put("只对这一条目标生效（最保守）", "Only this one target (safest)");
+        EN.put("这个词对谁生效？", "Who should this apply to?");
+        EN.put("打不开选择器", "Can't open the picker");
+        EN.put("算成功，记住它", "Counts as success — remember it");
+        EN.put("其实是失败", "Actually a failure");
+        EN.put("先不管（以后想起来可以在「已忽略」里找回）", "Skip for now (you can find it later under Ignored)");
+        EN.put("先填一段这句话里固定出现的文字", "Please type a phrase that always appears in this reply");
+        EN.put("所有目标", "All targets");
+        EN.put("这一条目标", "This target");
+        EN.put("这只机器人", "This bot");
+        EN.put("记住了「", "Remembered \"");
+        EN.put("记下了「", "Noted \"");
+        EN.put("」（", "\" (");
+        EN.put("）", ")");
+        EN.put("保存失败：{0}", "Save failed: {0}");
+        EN.put("如：签到成功", "e.g. check-in succeeded");
+        EN.put("如：次数已用完", "e.g. quota used up");
+        EN.put("加一个", "Add");
+        EN.put("请输入词", "Please enter a phrase");
+        EN.put("已添加「{0}」", "Added \"{0}\"");
+        EN.put("恢复，让我重新判断", "Restore and let me decide again");
+        EN.put("已恢复", "Restored");
+        EN.put("还有 {0} 条 · 点此展开", "{0} more · tap to expand");
+        EN.put("已签到  {0}/{1}", "Signed in  {0}/{1}");
+        EN.put("立即签到  {0}/{1}", "Sign in now  {0}/{1}");
+        EN.put("在上面填一段「这句话里固定会出现」的文字，以后看到它就算成功", "Type a phrase that always appears here — it will count as success next time");
+        EN.put("在上面填一段「这句话里固定会出现」的文字，以后看到它就算失败", "Type a phrase that always appears here — it will count as failure next time");
+        EN.put("（实在找不到就用「先不管」）", " (if you can't find one, just tap \"Skip for now\")");
+        EN.put("已有判定词都在页面底部「我已经学会的词」里，可以随时加一个、删一个。", "All your learned phrases live under \"Phrases I've learned\" at the bottom — add or remove any time.");
+        EN.put("判为成功后，撤掉模块自己发出的那条签到指令，群里不留痕。只删自己发的，失败或判不出时保留现场。", "Once a check-in is judged successful, delete the command this module sent, leaving no trace in the group. Only its own messages are removed; on failure or unknown, everything stays for inspection.");
+        EN.put("签到成功后删除指令", "Delete the command after a successful check-in");
+        // ── 手动撤销今日已签（2026-11-01）──
+        EN.put("标记未签", "Mark as unsigned");
+        EN.put("标记未签并暂停", "Mark unsigned & pause");
+        EN.put("已标记为未签：{0}", "Marked as unsigned: {0}");
+        EN.put("已标记为未签并暂停：{0}", "Marked unsigned and paused: {0}");
+        EN.put("该目标今天本来就不是已签状态", "This target wasn't marked signed today");
+        EN.put("今天已签（{0} 条 · 判错了可以撤销）", "Signed today ({0}) \u00b7 undo if misjudged");
+        // ── 撤销/暂停 v2（2026-11-01）──
+        EN.put("收起", "Collapse");
+        EN.put("暂停一周", "Pause for a week");
+        EN.put("暂停的目标会留在「已暂停」列表里，随时可以恢复。", "Paused targets stay in the \"Paused\" list and can be resumed anytime.");
+        EN.put("暂停至 {0}", "Paused until {0}");
+        EN.put("标记为未签", "Mark as unsigned");
+        EN.put("撤销", "Undo");
+        EN.put("撤销，今天重新签", "Undo \u2014 sign again today");
+        EN.put("撤销，今天不再自动签它", "Undo \u2014 stop auto sign-in for today");
+        EN.put("已暂停（{0} 条 · 暂停期间不会自动签）", "Paused ({0}) \u00b7 not auto-signed while paused");
+        EN.put("恢复（当前暂停至 {0}）", "Resume (paused until {0})");
+        EN.put("今天已签（{0} 条 · 判错了可撤销）", "Signed today ({0}) \u00b7 undo if misjudged");
+        // ── 规则测试器双模式（2026-11-01 P1）──
+        EN.put("命中「{0}」{1} -> 判定：已签 · {2}", "Matched \"{0}\" {1} -> verdict: SIGNED \u00b7 {2}");
+        EN.put("目标不存在：{0}（未加载任何目标级词表，也未回退公共模式）", "Target not found: {0} (no target-level words loaded; no fallback to public mode)");
+        EN.put("词表来源：公共（目标级词表未加载）", "Word source: public (target-level words NOT loaded)");
+        EN.put("词表来源：目标 {0}（{1}）+ 公共", "Word source: target {0} ({1}) + public");
+        EN.put("公共规则预览 · 目标级词表未加载（仅测试全局/Bot 级词表）", "Public rule preview \u00b7 target-level words NOT loaded (tests global/bot words only)");
+        EN.put("测试对象", "Test scope");
+        EN.put("选择目标（可选）", "Pick a target (optional)");
+        EN.put("改为公共预览", "Back to public preview");
+        EN.put("当前账号没有目标", "No targets in the current account");
+        EN.put("选择目标", "Pick a target");
+        EN.put("展开全部 {0} 条", "Show all {0}");
+        EN.put("「{0}」当前记为今天已签。", "\"{0}\" is currently marked signed today.");
+        EN.put("已撤销并暂停：{0}", "Undone and paused: {0}");
+        EN.put("判错了？撤销今天的已签记录", "Misjudged? Undo today's sign-in");
+        EN.put("（今天本来就不是已签状态）", " (wasn't signed today to begin with)");
+        EN.put("机器人说今日次数已用尽（通常表示今天已经签过了）",
+               "The bot says today's quota is used up (usually means you already checked in today)");
+        EN.put("我已经学会的词（成功 {0} · 失败 {1}）  ▾", "Phrases I've learned (ok {0} · fail {1})  ▾");
+        EN.put("遇到就说「成功了」的词", "Phrases that mean success");
+        EN.put("遇到就说「没成功」的词", "Phrases that mean failure");
+        EN.put("（还没有）", "(none yet)");
+        EN.put("出现过 {0} 次 · 已跳过", "Seen {0} time(s) · skipped");
+        EN.put("暂时没有要我认的", "Nothing needs my attention");
+        EN.put("签到时如果机器人回了句我看不懂的话，会自动攒到这里，到时候你只要点一下「算成功」就行。\n\n识别得越准，你越不用管它。", "If a bot replies with something I can't read, it will pile up here — then you only need to tap \"Counts as success\".\n\nThe better I recognise, the less you need to bother.");
+        EN.put("已忽略 {0} 条  ▾ 点开可恢复", "Ignored {0} item(s)  ▾ tap to restore");
+        EN.put("已忽略 {0} 条  ▴ 点此收起", "Ignored {0} item(s)  ▴ tap to collapse");
+        EN.put("另有 {0} 条被自动过滤  ▾", "{0} more were auto-filtered  ▾");
+        EN.put("另有 {0} 条被自动过滤  ", "{0} more were auto-filtered  ");
+        EN.put("全部收回，我来判断", "Bring them all back — I'll decide");
+        EN.put("已收回 {0} 条", "Brought back {0} item(s)");
+        EN.put("这些回复因为「像广告 / 太长 / 不是本轮交互」被跳过了。如果你觉得其中有该认的，可以全部收回来。", "These were skipped as ads / too long / unrelated to this round. If you think some deserve attention, bring them all back.");
+        EN.put("(这里还没有内容)\n遇到拿不准的按钮，我会先放到这里问你。",
+               "(nothing here yet)\nIf a button is unclear, I'll drop it here and ask you first.");
+        EN.put("暂时没有等你确认的", "Nothing waiting for your confirmation");
+        EN.put("这些我拿不准是不是签到目标。点「加入」我就记住它，点「忽略」就当没见过。",
+               "I'm not sure these are check-in targets. Tap Add and I'll remember it; tap Ignore and I'll forget it.");
+        EN.put("已发送", "Sent");
+        EN.put("已发送 \u2713", "Sent \u2713");
+
+        // ── 2026-09-30 补齐（由新增的 check-ui-i18n.py 门禁扫出）──
+        // 其中 4 条是本次日历/日志改造新增，另 5 条为历史遗留。
+        EN.put("(待添加列表为空)\n网络学习命中且「需确认」开启时，这里会出现候选目标。",
+               "(nothing pending)\nCandidates appear here when network learning hits and 'confirm first' is on.");
+        EN.put("(没有需要处理的目标)\n按钮失效、回复判不出、bot 未回复时，这里会出现条目。",
+               "(nothing needs attention)\nEntries appear here when a button expires, a reply is unreadable, or the bot stays silent.");
+        EN.put("仅失败", "Failures only");
+        EN.put("忽略导航按钮", "Ignore navigation buttons");
+        EN.put("今日已全部完成", "All done today");
+        EN.put("「主菜单 / 返回 / 关闭」这类导航按钮不学。只按文案判断，不会误挡签到按钮；关掉即「点什么学什么」",
+               "Skip buttons whose text is clearly navigation (main menu / back / close). Text-based, so real check-in buttons are never blocked. Turn off to learn everything you tap.");
+        EN.put("像是导航按钮（{0}）", "Looks like a navigation button ({0})");
+        EN.put("已开 {0}/4", "{0}/4 on");
+        EN.put("日历样式：", "Calendar style: ");
+        EN.put("未开定时", "timer off");
+        EN.put("用于在「群 / 频道」里发签到指令（不是私聊 bot）。\n\n",
+               "For sending a check-in command inside a group or channel (not a private bot).\n\n");
+        EN.put("选一份备份导入。导入前会显示它的内容，导入后会告诉你目标数有没有变化。\n",
+               "Pick a backup to import. You will see its contents first, and after importing you will be told whether the target count changed.\n");
+        EN.put("（最近没有需要你知道的事情）", "(nothing you need to know recently)");
+
+        // ── 2026-09-30 补齐：日志易懂档 / 日历摘要 / 导入提示 等新增文案 ──
+        // 这些文字本次随日志改造一起加入，此前漏了英文映射，英文设备上会直接显示中文。
+        EN.put("签到成功", "Signed in");
+        EN.put("指令已发出，等机器人回复", "Command sent, waiting for the bot");
+        EN.put("已发出，等机器人回复", "Sent, waiting for the bot");
+        EN.put("按钮已失效，稍后自动重试", "Button expired, will retry later");
+        EN.put("机器人没回复，稍后自动重试", "Bot did not reply, will retry later");
+        EN.put("看不懂机器人的回复，已记下待处理", "Reply not understood, marked for review");
+        EN.put("等待超时，稍后重试", "Timed out, will retry");
+        EN.put("签到失败，详见详细日志", "Sign-in failed — see detailed log");
+        EN.put("补签已执行", "Make-up sign-in done");
+        EN.put("本次跳过", "Skipped this time");
+        EN.put("已冻结，不再签到", "Frozen — no more sign-ins");
+        EN.put("已排除该机器人", "Bot excluded");
+        EN.put("发现新的签到目标", "New target found");
+        EN.put("有新的待添加目标", "New target waiting to be added");
+        EN.put("设置已更新", "Settings updated");
+
+        // 易懂 / 详细 切换
+        EN.put("易懂", "Plain");
+        EN.put("详细", "Detailed");
+        EN.put("易懂：只显示结果与下一步", "Plain mode: results and next steps only");
+        EN.put("详细：显示原始日志", "Detailed mode: raw log");
+        EN.put("已切到易懂模式：只显示结果与下一步", "Plain mode: results and next steps only");
+        EN.put("已切到详细模式：显示原始日志", "Detailed mode: raw log");
+        EN.put("最近动态", "Recent activity");
+        EN.put("（暂无动态，签到后会在这里显示）", "(nothing yet — activity appears here after a sign-in)");
+        EN.put("查看全部记录 →", "View full log →");
+
+        // 日历摘要
+        EN.put("连续 {0} 天", "{0}-day streak");
+        EN.put("本月 {0} 天", "{0} this month");
+        EN.put("今", "Today");
+
+        // 账号异常告警
+        EN.put("{0} 天", "{0} days");
+        EN.put("账号异常", "Account mismatch");
+
+        // 导入提示
+        EN.put("导入完成。当前账号（{0}）没有目标，但 {1} 有 —— 切过去看看",
+               "Import done. This account ({0}) has no targets, but {1} does — switch over to check.");
+        EN.put("导入完成：写入 {0} 个键", "Import done: {0} keys written");
+
+        // 导入异常与提示
+        EN.put("文件不存在", "File not found");
+        EN.put("配置文件里没有 prefs 段", "Config file has no prefs section");
+        EN.put("配置文件格式不支持（format={0}）", "Unsupported config format (format={0})");
+        EN.put("配置文件里没有可写入的键", "No writable keys in the config file");
+        EN.put("没有可导出的数据（还没有签到目标）", "Nothing to export yet (no targets)");
+        EN.put("按钮失效", "Button expired");
+        // ── 发送失败细分（2026-10-30）：以前三种失败共用一句「取不到会话数据」，见 SignLogic 的说明。
+        EN.put("「{0}」取不到会话数据：先用这个账号打开它发一条消息，再重试", "\"{0}\" has no local chat data: open it with this account and send a message there first, then retry");
+        EN.put("「{0}」等不到带按钮的新消息：在该目标「编辑」里填一条前置命令（如 /menu）", "\"{0}\": no new message with buttons arrived; add a pre-command (e.g. /menu) in this target's Edit dialog");
+        EN.put("「{0}」发送时出错，详见日志", "\"{0}\": send error, see the log");
+        EN.put("「{0}」已发前置命令，正在等面板刷新…", "\"{0}\": pre-command sent, waiting for the panel to refresh…");
+        EN.put("面板未就绪：给该目标填一条前置命令（如 /menu），模块会自动拉面板", "Panel not ready: add a pre-command (e.g. /menu) to this target and the module will pull the panel for you");
+        EN.put("等不到带按钮的新消息：在条目「编辑」里填一条前置命令（如 /menu）", "No new message with buttons arrived: add a pre-command (e.g. /menu) in the entry's Edit dialog");
+        EN.put("填前置命令（让模块自动拉面板）", "Add pre-command (pull the panel automatically)");
+        EN.put("目标已不存在", "Target no longer exists");
+        EN.put("回复判不出", "Reply unreadable");
+        // 「今日已用尽」——bot 明确表示今天不能再操作（次数上限/请明日再试）。
+        // 归入今日了结：不标已签、不计失败、不再重发。
+        EN.put("今日已用尽", "Daily quota used up");
+        // 日历摘要行的今日状态（2026-10-01）
+        EN.put("今天已签", "Signed today");
+        EN.put("今天待签", "Due today");
+        EN.put("今天未签", "Missed today");
+        EN.put("今天未参与", "Not active today");
+        EN.put("近 14 天", "Last 14 days");
+        EN.put("近 14 天 {0}", "Last 14 days {0}");
+        // ── 易懂模式（2026-10-03）：日志顶部状态条 + 补签语义 ──
+        EN.put("已启动", "Started");
+        EN.put("今日已签 {0}/{1}", "Signed today {0}/{1}");
+        EN.put("今日未签 {0}/{1}", "Missed today {0}/{1}");
+        EN.put("今日 {0}/{1}（无启用目标）", "Today {0}/{1} (no active targets)");
+        EN.put("连续 {0} 天", "{0}-day streak");
+        EN.put("窗口 {0}-{1}", "Window {0}-{1}");
+        EN.put("不限窗口", "Any time");
+        EN.put("补签至 {0}", "Make-up until {0}");
+        EN.put("还没有签到目标", "No targets yet");
+        EN.put("补签 · 原定 {0} · 稍后执行", "Make-up / planned {0} / queued");
+        EN.put("补了一次", "Make-up sent");
+        EN.put("不在签到时间，稍后自动执行", "Outside the signing window; will run later");
+        // ── 使用教程卡片标题（2026-10-03 重写教程；正文同旧版保持中文）──
+        EN.put("新手只看这段（30 秒）", "Start here (30 seconds)");
+        EN.put("1 · 面板怎么用", "1 - Using the panel");
+        EN.put("2 · 添加目标（三种方式）", "2 - Adding targets (three ways)");
+        EN.put("3 · bot 要先发指令才给面板？", "3 - Bot needs a command to show its panel?");
+        EN.put("4 · 用什么节奏签（设置）", "4 - Signing pace (Settings)");
+        EN.put("5 · 状态怎么看懂", "5 - Reading the status");
+        EN.put("6 · 补签列表", "6 - Make-up list");
+        EN.put("7 · 结果通知在哪看", "7 - Where results are sent");
+        EN.put("8 · 日志怎么读", "8 - Reading the log");
+        EN.put("9 · 多账号", "9 - Multiple accounts");
+        EN.put("10 · 自动学习是怎么工作的", "10 - How auto-learning works");
+        EN.put("11 · 临时不想签，或某个目标卡住了", "11 - Pausing, or a stuck target");
+        EN.put("12 · 出问题怎么办", "12 - Troubleshooting");
+        EN.put("13 · 换手机 / 备份", "13 - New phone / backup");
+        EN.put("14 · 更新与反馈", "14 - Updates & feedback");
+
+        EN.put("该目标今天已签过，未重复发送", "Already signed today; not sent again");
+        EN.put("该目标已发出，正在等回复", "Already sent; waiting for a reply");
+        EN.put("该目标正在发送中，未重复发送", "Sending in progress; not sent again");
+        EN.put("该目标稍后自动重试", "Will retry automatically later");
+        EN.put("某目标", "a target");
+        // ── 未识别回复重构（2026-10-06）──
+        EN.put("{0} 条待学习", "{0} to learn");
+        EN.put("{0} 条未识别回复待学习", "{0} unrecognized replies to learn");
+        EN.put("去学习", "Learn");
+        EN.put("已学会判定词「{0}」", "Learned judge word \"{0}\"");
+        EN.put("判定词已更新", "Judge words updated");
+        EN.put("全局", "Global");
+        EN.put("删除", "Delete");
+        EN.put("已删除「{0}」", "Deleted \"{0}\"");
+        EN.put("删除失败：{0}", "Delete failed: {0}");
+        EN.put("判不出结果时怎么办", "When the result can't be judged");
+        EN.put("严格", "Strict");
+        EN.put("放行(算成功)", "Allow (treat as OK)");
+        EN.put("拦截(算失败)", "Block (treat as fail)");
+        EN.put("判不出时：{0}", "When unjudgeable: {0}");
+        EN.put("严格：判不出就攒到「未识别回复」等你学词。\n放行：只要机器人回了就算成功（失败词仍判失败）。\n拦截：判不出就当失败，撤销已签并重试。",
+               "Strict: collect into Unrecognized replies for you to learn.\nAllow: any reply counts as OK (fail words still fail).\nBlock: unjudgeable counts as fail; undo and retry.");
+        EN.put("恢复", "Restore");
+        EN.put("已恢复：「{0}」回到待确认", "Restored: \"{0}\" is back to pending");
+        EN.put("已忽略（可在下方「已忽略」里恢复）", "Ignored (restore it under \"Ignored\" below)");
+        EN.put("  /  补签至 {0}", "  /  make-up until {0}");
+        EN.put("  /  补签 {0}", "  /  make-up {0}");
+        EN.put("昨天 {0}/{1} 完成", "Yesterday {0}/{1} done");
+        // ── 目标列表：相对时间 / 搜索 / 筛选（2026-10-03）──
+        EN.put("今天", "today");
+        EN.put("昨天", "yesterday");
+        EN.put("{0} 天前", "{0}d ago");
+        EN.put("上次 {0}", "Last {0}");
+        EN.put("失败 {0} 次", "{0} failures");
+        EN.put("搜索目标（名称 / 指令 / @用户名）", "Search targets (name / command / @username)");
+        EN.put("当前筛选（{0}）下没有目标", "No targets match the \"{0}\" filter");
+        EN.put("全部", "All");
+        EN.put("待签", "Due");
+        EN.put("已签", "Signed");
+        EN.put("需处理", "Needs attention");
+        EN.put("冻结", "Frozen");
+        EN.put("最近失败", "Recent failures");
+        EN.put("已签 {0}/{1}", "Signed {0}/{1}");
+        EN.put("目标 {0}", "{0} targets");
+        EN.put("待签 {0}", "{0} due");
+        // ── 规则测试器（2026-10-03）──
+        EN.put("▍规则测试", "RULE TESTER");
+        EN.put("规则测试", "Rule tester");
+        EN.put("测试", "Test");
+        EN.put("把机器人回复粘到这里…", "Paste the bot's reply here...");
+        EN.put("粘贴一段机器人回复，看它会被判成什么。用的是**和实际签到完全相同**的判定链。",
+               "Paste a bot reply to see how it would be judged. Uses the exact same chain as a real sign-in.");
+        EN.put("没有输入内容", "Nothing entered");
+        EN.put("没命中任何词 -> 判定：认不出（会记为「结果未知」等你处置）",
+               "No keyword matched -> unreadable (recorded as \"unknown\" for you to handle)");
+        EN.put("像是进度提示 -> 不是结论，会继续等后续回复", "Looks like a progress note -> not a result; keeps waiting");
+        EN.put("命中进度词「{0}」-> 不是结论，会继续等后续回复", "Progress word \"{0}\" -> not a result; keeps waiting");
+        EN.put("命中「{0}」{1} -> 判定：已签", "Matched \"{0}\"{1} -> signed");
+        EN.put("命中失败词「{0}」{1} -> 判定：失败", "Matched failure word \"{0}\"{1} -> failed");
+        EN.put("命中「{0}」-> 判定：今日已用尽（不再重发）", "Matched \"{0}\" -> daily quota used up (no resend)");
+        EN.put("（你的自定义词）", " (your custom word)");
+        EN.put("测试出错：{0}", "Test error: {0}");
+        EN.put("测试失败: {0}", "Test failed: {0}");
+        EN.put("另外：命中排除规则「{0}」→ 这个 bot 不会被学习", "Also: block rule \"{0}\" hit -> this bot will not be learned");
+        EN.put("另外：未命中任何排除规则", "Also: no block rule matched");
+        // ── 统计 Tab（2026-10-03）──
+        EN.put("统计", "Stats");
+        EN.put("目标", "Targets");
+        EN.put("日志", "Log");
+        EN.put("账号完成度", "ACCOUNT COMPLETION");
+        EN.put("天数", "DAYS");
+        EN.put("近 {0} 天", "Last {0} days");
+        EN.put("连续", "Streak");
+        EN.put("本月", "This month");
+        EN.put("累计", "Total");
+        EN.put("{0} 天", "{0} days");
+        EN.put("最近失败最多", "MOST FAILURES RECENTLY");
+        EN.put("连续失败 {0} 天", "{0} days failing");
+        EN.put("最近没有连续失败的目标", "No target is currently failing repeatedly");
+        // ── 统计页 v2（2026-10-03）──
+        EN.put("今日完成", "Done today");
+        EN.put("连续天数", "Streak");
+        EN.put("累计天数", "Total days");
+        EN.put("近 90 天", "Last 90 days");
+        EN.put("各账号对比", "ACCOUNTS");
+        EN.put("（当前）", " (current)");
+        EN.put("各目标近 30 天", "TARGETS (TODAY)");
+        EN.put("今天已签", "signed today");
+        EN.put("今天待签", "due today");
+        EN.put("今日时段", "TODAY'S TIMING");
+        EN.put("今天还没有签到记录", "No sign-in recorded today");
+        EN.put("最早 {0} · 最晚 {1} · 共 {2} 个", "earliest {0} · latest {1} · {2} total");
+        EN.put("少", "less");
+        EN.put("多", "more");
+        // ── 统计页 v3（2026-10-03）──
+        EN.put("近 30 天趋势", "30-DAY TREND");
+        EN.put("近 90 天打卡", "90-DAY ACTIVITY");
+        EN.put("星期分布", "WEEKDAY PATTERN");
+        EN.put("{0} 天有记录", "{0} days recorded");
+        EN.put("月", "/");
+        EN.put("今日 {0}/{1} · 连续 {2} 天", "{0}/{1} today · {2}d streak");
+        EN.put("各目标", "TARGETS");
+        EN.put("近 30 天", "last 30d");
+        // ── 统计页 v5：本周/本月对比 + 主面板战报（2026-10-16）──
+        EN.put("本周 / 本月", "WEEK / MONTH");
+        EN.put("本周", "This week");
+        // ── emoji 签到（2026-10-17）──
+        EN.put("emoji 签到", "EMOJI SIGN-IN");
+        // ── 会话选择器（2026-10-17）──
+        EN.put("选择会话", "Pick a chat");
+        EN.put(" 使用手册", " Handbook");
+        EN.put("手册 · 先用「新手 30 秒」走通，遇到问题查第 9 章「常见疑问 · 自查表」",
+               "Handbook - start with Quick Start, then see chapter 9 FAQ for troubleshooting");
+        EN.put("教程渲染失败: {0}", "Failed to render handbook: {0}");
+        EN.put("计划 {0}", "planned {0}");
+        EN.put("计划 {0}·延迟 {1}", "planned {0}, delayed {1}");
+        EN.put("有目标延迟签到：Telegram 后台被系统限制了。\n想准点请在系统设置里允许 TG 后台活动 / 关闭电池优化。",
+               "Some targets signed late: Android limited Telegram in background.\nAllow background activity / disable battery optimisation for TG to get on-time signing.");
+        EN.put("捕获中 · 点此停止", "Capturing - tap to stop");
+        EN.put("捕获已开启（60 秒）：去 bot 会话点一次它的按钮即可；不想捕获了发 /jmb cap 关闭",
+               "Capture ON (60s): tap the target button in the bot chat; send /jmb cap to cancel");
+        EN.put("捕获模式：已关闭", "Capture mode: OFF");
+        EN.put("捕获模式：已开启（60 秒内点一次目标按钮）",
+               "Capture mode: ON (tap a target button within 60s)");
+        EN.put("用法：/jmb cap [on|off]", "Usage: /jmb cap [on|off]");
+        EN.put("请先在 TG 界面里发 /jmb", "Send /jmb inside Telegram first");
+        EN.put("收藏夹摘要", "Saved Messages digest");
+        EN.put("关掉后不再往「收藏夹」发每日摘要与失败告警；不影响上面的通知。",
+               "Stops sending daily digest and failure alerts to Saved Messages; notifications above are unaffected.");
+        EN.put("从会话列表选机器人", "Pick a bot from chats");
+        EN.put("签到指令，如：/qd 或 签到", "Sign command, e.g. /qd or checkin");
+        EN.put("机器人 ID 或 @用户名（如 123456789 或 @xxx_bot）",
+               "Bot ID or @username (e.g. 123456789 or @xxx_bot)");
+        EN.put("群 ID 或 @用户名（如 -1001234567890 或 @xxx）",
+               "Group ID or @username (e.g. -1001234567890 or @xxx)");
+        EN.put("正在解析 {0} …", "Resolving {0} ...");
+        EN.put("解析失败：请检查 ID，或改用 @用户名 / 数字 ID",
+               "Resolve failed: check the ID, or use @username / numeric ID");
+        EN.put("搜索：名称 / @用户名 / ID", "Search: name / @username / ID");
+        EN.put("全部", "All");
+        EN.put("机器人", "Bots");
+        EN.put("群组", "Groups");
+        EN.put("频道", "Channels");
+        EN.put("这里没有可选项", "Nothing to pick here");
+        EN.put("没有匹配的会话。试试只输名字的一部分，或直接输 ID。",
+               "No match. Try part of the name, or enter the ID directly.");
+        EN.put("拿不到会话列表：先打开一次 TG 主界面再试",
+               "Cannot read chats: open the Telegram chat list once and retry");
+        EN.put("打开选择器失败: {0}", "Failed to open picker: {0}");
+        EN.put("找不到想要的？去 TG 里给这个 bot 发一条任意消息，再回来这里就能看到。\n也可以直接在上面搜索框输 @用户名。",
+               "Cannot find it? Send any message to that bot in Telegram, then come back.\nYou can also type @username in the search box.");
+        EN.put("骰子·表情指令", "Dice / emoji command");
+        EN.put("① 填机器人 ID（数字），或从会话里选", "1) Enter bot ID (numeric), or pick a chat");
+        EN.put("机器人或群 ID（数字，无需 @）", "Bot or group ID (numeric, no @)");
+        EN.put("从会话列表选", "Pick from chats");
+        EN.put("② 点选要发的表情（可多选，每个表情会成为一条目标）", "2) Tap emoji to send (multi-select, each becomes a target)");
+        EN.put("骰子", "Dice");
+        EN.put("保龄球", "Bowling");
+        EN.put("靶心", "Dart");
+        EN.put("老虎机", "Slot machine");
+        EN.put("③ 或者自己填（任意表情或指令，留空即可）", "3) Or type your own (emoji or command, optional)");
+        EN.put("例如 🎲 或 /checkin 或 :dice:", "e.g. 🎲 or /checkin or :dice:");
+        EN.put("添加并签到", "Add & sign");
+        EN.put("请填机器人 ID", "Please enter the bot ID");
+        EN.put("ID 必须是数字", "ID must be numeric");
+        EN.put("请至少选一个表情或填一个指令", "Pick at least one emoji or enter a command");
+        EN.put("这些表情都已经添加过了", "These emoji targets already exist");
+        EN.put("添加失败：请检查机器人 ID", "Add failed: check the bot ID");
+        EN.put("已添加 {0} 条 emoji 目标{1}", "Added {0} emoji target(s){1}");
+        EN.put("（{0} 条重复已跳过）", " ({0} duplicate skipped)");
+        EN.put("同一 bot 可以有多个表情目标（普通签到与疯狂签到各一条）；\n添加后会立即发送第一条，其余靠定时/手动触发。",
+               "One bot can have several emoji targets (normal and crazy sign-in each);\nthe first one is sent immediately, the rest follow timers or manual triggers.");
+        EN.put("本月", "This month");
+        EN.put("今日 {0}/{1} 已签完", "{0}/{1} done today");
+        EN.put("今日 {0}/{1} 已签完 · 连续 {2} 天", "{0}/{1} done today · {2}d streak");
+        EN.put("今日 {0}/{1} 已签 · 还剩 {2} 个", "{0}/{1} signed today · {2} left");
+        // ── 统计页 v4：月历 + 里程碑（2026-10-16）──
+        EN.put("本月月历", "THIS MONTH");
+        EN.put("没有日期数据", "No date data");
+        EN.put("本月 {0}/{1} 天已签", "{0}/{1} days signed this month");
+        EN.put("里程碑", "MILESTONES");
+        EN.put("10 天", "10 days");
+        EN.put("30 天", "30 days");
+        EN.put("百天", "100 days");
+        EN.put("一年", "1 year");
+        EN.put("一年半", "1.5 years");
+        EN.put("三年", "3 years");
+        EN.put("全部里程碑已点亮", "All milestones lit");
+        EN.put("距下一个里程碑还差 {0} 天", "{0}d to the next milestone");
+        EN.put("天", "d");
+        EN.put("一", "M");
+        EN.put("二", "T");
+        EN.put("三", "W");
+        EN.put("四", "T");
+        EN.put("五", "F");
+        EN.put("六", "S");
+        EN.put("日", "S");
+        EN.put("在变好", "improving");
+        EN.put("在变差", "declining");
+        EN.put("持平", "steady");
+        EN.put("7 日滑动平均 · 前 7 天 {0}/7 → 近 7 天 {1}/7（{2}）",
+               "7-day moving average - first 7 days {0}/7 -> last 7 days {1}/7 ({2})");
+        EN.put("完整日志（含筛选、导出、清空）在「全部功能 → 数据 → 运行日志」里",
+               "Full log (filters, export, clear) is under All features - Data - Run log");
+        EN.put("(暂无日志)", "(no log yet)");
+        // ── 外部通知（2026-10-03）──
+        EN.put("外部通知（TG 收不到时兜底）", "External alerts (backup when Telegram can't deliver)");
+        EN.put("类型", "Type");
+        EN.put("不启用", "Off");
+        EN.put("地址", "URL");
+        EN.put("发送测试消息", "Send test message");
+        EN.put("已发送，请检查是否收到", "Sent - please check whether it arrived");
+        EN.put("发送失败：{0}", "Send failed: {0}");
+        EN.put("外部通知已关闭", "External alerts are off");
+        EN.put("请先填地址", "Enter a URL first");
+        EN.put("说明：TG 进程被杀时收藏夹也收不到，外部通道才能兜底", 
+               "Note: if the Telegram process is killed the Saved Messages channel fails too; an external channel is the only fallback");
+        // ── 备份（2026-10-03）──
+        EN.put("备份", "Backup");
+        EN.put("上次备份", "Last backup");
+        EN.put("从未备份", "never");
+        EN.put("立即备份", "Back up now");
+        EN.put("已完成备份", "Backup done");
+        EN.put("自动备份", "Auto backup");
+        EN.put("保留份数", "Keep");
+        EN.put("自动备份：每天首次打开面板时执行一次，并只保留最近 {0} 份",
+               "Auto backup runs once on the first panel open each day, keeping only the newest {0}");
+        EN.put("类型：{0}", "Type: {0}");
+        EN.put("上次备份：{0}", "Last backup: {0}");
+        EN.put("备份位置：{0}", "Location: {0}");
+        EN.put("TGAutoSign 测试消息 · {0}", "TGAutoSign test message - {0}");
+        EN.put("导出失败", "Export failed");
+        EN.put("备份位置", "Location");
+        EN.put("自动备份：每天首次打开面板时执行一次，并只保留最近若干份",
+               "Auto backup runs once on the first panel open each day, keeping only the newest few");
+        EN.put("今日 {0}", "Today {0}");
+        EN.put("  /  补签 {0} 次", "  /  {0} make-ups");
+        EN.put("你已忽略该目标（今天不再试）", "You ignored this target (no retry today)");
+        EN.put("你已确认该目标签上了", "You confirmed this target as signed");
+        EN.put("你点了重试，已重新发送", "You tapped retry; resent");
+        EN_SHORT.put("今天已签", "Done");
+        EN_SHORT.put("今天待签", "Due");
+        EN_SHORT.put("今天未签", "Missed");
+        EN_SHORT.put("今天未参与", "Idle");
+        EN.put("今日操作次数已用尽，已停止重发", "Daily limit reached; stopped retrying");
+        EN.put("bot 说今日次数已用尽，今天不必再签", "The bot says today's quota is used up; no need to sign again");
+        EN_SHORT.put("已用尽", "Used up");
+        EN.put("bot 未回复", "Bot did not reply");
+        EN.put("判定已关", "Judging off");
+        EN.put("判定已关（去设置打开）", "Judging off (open in Settings)");
+        EN.put("严格：判不出就攒到「未识别回复」等你学词。\n放行：机器人回复且「像是签到结果」才算成功（明确失败词仍判失败；纯公告/菜单/进度语不会被当成结果）。\n拦截：判不出就当失败，撤销已签并重试。",
+                "Strict: undecidable replies are collected in \"Unrecognized replies\" for you to teach words.\\nAllow: a reply counts as success only when it *looks like a check-in result* (explicit failure words still fail; plain announcements/menus/progress lines are never treated as a result).\\nBlock: undecidable is treated as failure — the signed mark is revoked and a retry is scheduled.");
+        EN.put("【总开关】开着：按内置词表判断机器人回复是成功还是失败。\n关掉：下面「判不出时」和「使用我的自定义词」都不生效，回复只记录、不判成败（目标需你自己确认）。",
+                "[Main switch] On: judge bot replies with the built-in word list. Off: BOTH \"when undecidable\" and \"use my custom words\" below stop working; replies are only recorded, never judged (you confirm targets yourself).");
+        EN.put("填这里 = 全局生效；同样受上面「自动判定」总开关控制（总开关关着时，这些词不生效）。",
+                "Global scope; also gated by the \"Auto-judge\" main switch above (words do nothing while it is off).");
+        EN.put("⚠ 自动判定已关闭 —— 这一项当前不生效", "⚠ Auto-judge is OFF — this option currently has no effect");
+        EN.put("自动判定已关闭 → 所有回复都不会被判成败。要自动记成功请打开它：设置 → 判定机器人回复 → 自动判定成功/失败",
+                "Auto-judge is OFF → no reply will ever be judged. To record success automatically, turn it on: Settings → Judge bot replies → Auto-judge success/failure");
+        EN.put("待添加 {0} 个", "{0} to add");
+        EN.put("待添加 {0} 个（点此处理）", "{0} to add (tap to handle)");
+        EN.put("待添加（{0}）", "To add ({0})");
+        EN.put("(无待添加目标)", "(no targets to add)");
+        EN.put("处理待添加", "Handle pending adds");
+        EN.put("处理", "Handle");
+        EN.put("{0} 个目标需要处理", "{0} targets need attention");
+        EN.put("待处理（{0}）", "Needs attention ({0})");
+        EN.put("按钮已失效，等 bot 推新面板后可重试", "Button expired; retry after the bot pushes a new panel");
+        EN.put("bot 回复了，但判定词认不出结果", "The bot replied, but no keyword matched the result");
+        EN.put("bot 全程没回复", "The bot never replied");
+        EN.put("自动判定已关闭，未判成败", "Auto judging is off, so success/failure was not decided");
+        EN.put("结果未知，需要你看一眼", "Result unknown, please take a look");
+        EN.put("(待添加列表为空)\\n网络学习命中且「需确认」开启时，这里会出现候选目标。", "(nothing to add)\\nCandidates appear here when network learning matches and \\\"needs confirmation\\\" is on.");
+        EN.put("(没有需要处理的目标)\\n按钮失效、回复判不出、bot 未回复时，这里会出现条目。", "(nothing needs attention)\\nEntries appear here for expired buttons, unreadable replies and bots that never replied.");
+        EN.put("已入待添加：确认后才加入目标", "Added to pending: it joins your targets only after you confirm");
+        EN.put("规则·排除 bot·待添加", "Rules \u00b7 blocked bots \u00b7 pending adds");
+        EN.put("▍待添加", "\u258d TO ADD");
+        EN.put("正在导出界面图…", "Exporting UI screenshots…");
+        EN.put("界面图导出完成：成功 {0} 张，失败 {1} 张", "Screenshot export done: {0} ok, {1} failed");
+        EN.put("界面图正在导出，请稍候…", "Screenshot export already running, please wait…");
+        EN.put("TGAutoSign 每日摘要 · {0}", "TGAutoSign daily summary · {0}");
+        EN.put(" 需要你决定（{0}）", " Needs your decision ({0})");
+        EN.put("自动重试中（{0}）", "Retrying automatically ({0})");
+        EN.put("今日 {0} 个目标全部已签", "All {0} targets signed in today");
+        EN.put("今日 {0}/{1} 已签", "{0}/{1} signed in today");
+        EN.put("发送 /jmb 打开面板处理", "Send /jmb to open the panel and handle them");
+        // ── 设置页小节标题（2026-10-09 排版优化）──
+        EN.put("▍外部通知", "▍External alerts");
+        EN.put("▍备份", "▍Backup");
+        EN.put("▍关键词与排除", "▍Keywords & exclusions");
+        // ── 多主题（2026-10-09）──
+        EN.put("配色：{0}", "Theme: {0}");
+        EN.put("配色：{0}（保存后生效）", "Theme: {0} (applies after saving)");
+        EN.put("明暗：{0}（保存后生效）", "Appearance: {0} (applies after saving)");
+        EN.put("配色与明暗相互独立；自动 = 读宿主当前配色（取不到再看系统深色）。均保存后生效。",
+               "Colour scheme and appearance are independent. Auto reads the host theme (falls back to system dark). Both apply after saving.");
+        // 色板名与描述
+        EN.put("Nord（极地冷灰）", "Nord (arctic grey)");
+        EN.put("终端风（原配色）", "Terminal (legacy)");
+        EN.put("Solarized（暖砂护眼）", "Solarized (warm)");
+        EN.put("Tokyo Night（深紫夜）", "Tokyo Night");
+        EN.put("墨玉（极简无彩）", "Ink Jade (mono)");
+        EN.put("暖琥珀（明亮暖色）", "Amber (warm)");
+        EN.put("Gruvbox（复古暖棕）", "Gruvbox (retro)");
+        EN.put("深海 Ocean（蓝青）", "Ocean (blue)");
+        EN.put("北境冷灰蓝 · 安静不抢戏", "Arctic blue-grey, quiet");
+        EN.put("墨青底 + 霓虹主色", "Ink-teal base with neon accents");
+        EN.put("低眩光暖砂底 · 久看不累", "Low-glare warm base, easy on the eyes");
+        EN.put("深紫底 · 夜间最有氛围", "Deep purple, best at night");
+        EN.put("宣纸白配墨字 · 最不吵", "Paper white and ink, minimal");
+        EN.put("米白配琥珀 · 暖亮友善", "Cream with amber, warm and bright");
+        EN.put("暖褐底 · 复古终端味", "Warm brown, retro terminal feel");
+        EN.put("深海底蓝 · 冷静通透", "Deep ocean blue, calm and clear");
+        // ── 新增 5 套配色（2026-10-09）──
+        EN.put("雾霭玫瑰 Rosé", "Rose Mist");
+        EN.put("纸墨 Paper", "Paper");
+        EN.put("青瓷 Celadon", "Celadon");
+        EN.put("暮山紫 Twilight", "Twilight");
+        EN.put("薄荷 Mint", "Mint");
+        EN.put("柔玫灰 · 温润不腻", "Soft rose grey, gentle");
+        EN.put("近纯黑白 · 久看不累", "Near monochrome, easy on the eyes");
+        EN.put("东方青瓷绿 · 清淡雅致", "Celadon green, understated");
+        EN.put("紫灰沉静 · 有气质", "Muted violet, composed");
+        EN.put("清爽绿白 · 明亮通透", "Fresh green and white, bright");
+        // 明暗三态
+        EN.put("明暗：自动（跟宿主）", "Appearance: Auto (follow host)");
+        EN.put("明暗：始终日间", "Appearance: Light");
+        EN.put("明暗：始终夜间", "Appearance: Dark");
+        EN.put("明暗：{0}", "Appearance: {0}");
+        EN.put("自动", "Auto");
+        EN.put("日间", "Light");
+        EN.put("夜间", "Dark");
+        // ── 链路自检（1.6.7）──
+        EN.put("── 链路自检（只读，不发任何消息） ──", "── Link self-check (read-only, sends nothing) ──");
+        EN.put("锚点A 协议层(processUpdate*): {0}   命中 {1}", "Anchor A protocol (processUpdate*): {0}   hits {1}");
+        EN.put("宿主符号解析：{0}", "Host symbols: {0}");
+        // 2026-11-08 P0：证据分级与「未确定」文案
+        EN.put("未确定", "Unconfirmed");
+        EN.put("刚重试过，请等 {0} 秒；连点不会让 bot 更快回复",
+               "Retried just now \u2014 wait {0}s; tapping again will not make the bot reply sooner");
+        EN.put("还没有结论：可能 bot 已回复但当前无法确认。可重试，或先忽略今天。",
+               "No verdict yet: the bot may have replied but it cannot be confirmed right now. Retry, or ignore for today.");
+        EN.put("回复认不出，可补判定词", "Reply not recognised \u2014 add a keyword in Settings");
+        EN.put("bot 未回复（观察链路健康且无任何回复证据）", "No reply (watch chain healthy and no reply evidence)");
+        EN.put("已发出 {0} 分钟仍无结论（证据：{1}）—— 未确定，不代表 bot 没回复",
+               "Sent {0} min ago, still no verdict (evidence: {1}) \u2014 unconfirmed, not the same as no reply");
+        EN.put("已发出但未得到结论，且当前观察链路不健康（宿主可能刚重启或 Hook 未就绪）—— 不代表 bot 没回复",
+               "Sent but no verdict, and the watch chain is unhealthy (host may have just restarted) \u2014 this does not mean the bot did not reply");
+        EN.put("锚点B 事件层(didReceiveNewMessages): {0}   收到 {1} 批 / 命中 {2}", "Anchor B events (didReceiveNewMessages): {0}   {1} batches / {2} hits");
+        EN.put("锚点C 发送回执(sendRequest): {0}", "Anchor C send receipt (sendRequest): {0}");
+        EN.put("已挂上", "installed");
+        EN.put("未挂上", "NOT installed");
+        EN.put("最近收到消息：{0}（{1} 前）", "Last message received: {0} ({1} ago)");
+        EN.put("最近收到消息：（还没有记录 —— 若刚发过签到请等一会再刷新）", "Last message received: (none yet — if you just sent a check-in, wait a moment and refresh)");
+        EN.put("上次按钮回应：{0}（{1} 前）", "Last button response: {0} ({1} ago)");
+        EN.put("上次按钮回应：（还没有记录）", "Last button response: (none yet)");
+        EN.put("结论：锚点全绿 = 模块这边没问题；若仍判不出，是那个 bot 没回可识别的内容。", "Verdict: all anchors green = the module is fine; if results still can't be read, that bot simply didn't reply with anything recognisable.");
+        EN.put("刷新链路", "Refresh link check");
+        EN.put("已刷新", "Refreshed");
+        // ── 目标处置（1.6.7）──
+        EN.put("我已进群发过消息，重发", "I've sent a message in the group \u2014 retry now");
+        EN.put("清掉失败计数后立即重试", "Clear the failure count and retry immediately");
+        EN.put("已重发，请看状态变化", "Resent \u2014 watch the status");
+        // ── 维护：删除本账号目标（1.6.7）──
+        EN.put("删除本账号全部目标", "Delete all targets of this account");
+        EN.put("只删当前账号，可重加", "This account only; can be re-added");
+        EN.put("将删除 {0} 的全部 {1} 个签到目标。\n\n其他账号不受影响。\n此操作不可撤销。",
+               "This deletes all {1} check-in targets of {0}.\n\nOther accounts are unaffected.\nThis cannot be undone.");
+        EN.put("已删除 {0} 个目标", "Deleted {0} targets");
+        EN.put("删除失败: {0}", "Delete failed: {0}");
+        EN.put("[维护] 删除 {0} 全部目标：{1} 个", "[Maintain] Cleared all targets of {0}: {1}");
+        // ── 单账号签到反馈（1.6.7）──
+        EN.put("{0}：已发起签到（本轮 {1} 个）", "{0}: check-in started ({1} this round)");
+        // ── 自持处置面板（1.6.7）──
+        EN.put("没有需要处理的了", "Nothing left to handle");
+        EN.put("还有 {0} 条需要处理（处置后本窗口自动刷新）", "{0} item(s) to handle (this window refreshes in place)");
+        EN.put("状态：{0}{1}", "Status: {0}{1}");
+        EN.put("签到失败", "Check-in failed");
+        EN.put("bot 明确说没签上（如「请先加入」），按提示处理后重试",
+               "The bot explicitly said it did not check in (e.g. \"please join first\"). Follow its prompt, then retry.");
+        EN.put("今日重试已用尽（{0} 次），可手动重试或忽略",
+               "Daily retries exhausted ({0}). Retry manually or ignore.");
+        // ── 「从不应答」状态（1.6.7）──
+        EN.put("从不应答（这类 bot 不回文字）", "Never replies (this kind of bot sends no text)");
+        // ── humanAge 单位词（1.6.7）──
+        EN.put("毫秒", "ms");
+        EN.put("秒", "s");
+        EN.put("分钟", "min");
+        EN.put("小时", "h");
+        EN.put("天", "d");
+        EN.put("TGAutoSign · {0}：还没有目标，发 {1} 打开面板添加", "TGAutoSign · {0}: no targets yet, send {1} to add");
+        EN.put("TGAutoSign · {0}：{1} 个目标", "TGAutoSign · {0}: {1} targets");
+        EN.put("已签 {0} · 待确认 {1} · 未签 {2}", "Done {0} · Needs you {1} · Unsigned {2}");
+        EN.put("窗口 {0} · 窗口内，会自动签", "Window {0} · inside window, signs automatically");
+        EN.put("窗口 {0} · 补签时段，正在补", "Window {0} · make-up hours, catching up now");
+        EN.put("窗口 {0} · 已过窗口，打开即补签", "Window {0} · window passed, make-up runs on open");
+        EN.put("今天全部签完了", "All done for today");
+        EN.put("另有 {0} 个账号没学习目标", "{0} more account(s) have no targets");
+        EN.put("；另有 {0} 个账号没学习目标", "; {0} more account(s) have no targets");
+    }
+}

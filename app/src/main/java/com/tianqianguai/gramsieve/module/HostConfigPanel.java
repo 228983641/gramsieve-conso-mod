@@ -385,6 +385,8 @@ final class HostConfigPanel {
         } else {
             buildEnhancementCard(container);
             styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(3));
+            buildAutoSignCard(container);
+            styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
             buildDialogListCard(container);
             styleIosCard((LinearLayout) container.getChildAt(container.getChildCount() - 1), gridCols(2));
             buildAiCard(container);
@@ -564,6 +566,22 @@ final class HostConfigPanel {
         localPremiumSwitch.setChecked(baseConfig.localPremium);
         setRowDesc(localPremiumSwitch, t("解锁部分官方功能", "Unlocks some official features"));
         addInfo(card, t("仅本地生效：让客户端认为你是 Premium，可突破置顶聊天数等客户端检查（实测为准，服务端仍可能限制）。服务端 Premium 功能（大文件上传、语音转文字等）仍需官方订阅，且开启本地 Premium 有封号风险，请自行决定。", "Local only: makes the client treat you as Premium, unlocking client-side checks such as the pinned-chat limit (verify on device; the server may still limit). Server Premium features still need a real subscription, and local Premium carries a ban risk."));
+    }
+
+    private void buildAutoSignCard(LinearLayout container) {
+        LinearLayout card = addGroup(container, t("自动签到", "Auto Sign-in"));
+        addInfo(card, t("整合 TGAutoSign（wlmosv，GPLv3）：按钮学习、文本签到、多账号、定时补签和回复判定。客户端进程运行期间执行。", "TGAutoSign by wlmosv (GPLv3): button learning, text commands, multiple accounts, scheduling and reply judgement. Runs while the client process is alive."));
+        IosSwitchView enabled = addSwitch(card, t("启用自动签到", "Enable auto sign-in"));
+        enabled.setChecked(io.github.wlmosv_png.tgautosign.TGAutoSignEntry.isEnabled(context));
+        enabled.setOnCheckedChangeListener((button, checked) ->
+                io.github.wlmosv_png.tgautosign.TGAutoSignEntry.setEnabled(context, checked));
+        Button manage = manageActionButton(t("管理签到目标", "Manage sign-in targets"), true);
+        manage.setOnClickListener(v -> {
+            Activity activity = activityFromContext(context);
+            if (activity == null) return;
+            io.github.wlmosv_png.tgautosign.TGAutoSignEntry.openPanel(activity);
+        });
+        card.addView(manage, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private void buildDialogListCard(LinearLayout container) {

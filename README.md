@@ -174,3 +174,12 @@ Filtering itself runs locally and does not upload your messages. Translation, pr
 ## 许可证 / License
 
 GPL-3.0-or-later，见 `LICENSE` 文件。
+
+## 1.0.5-conso
+
+- 置顶区分：对 DialogCell.onDraw 做反优化，并在宿主缺少 getIsPinned 时读取 drawPin/currentDialog.pinned。每次绘制读取当前状态，避免复用列表行的状态残留。这只修复高亮，不实现超额本地置顶或改变服务端顺序。
+- 整合 TGAutoSign（wlmosv，GPLv3），入口：设置 → GramSieve → 自动签到。默认关闭，启用后可管理目标或使用 /jmb。
+- 保留按钮学习、文本/群签到、多账号隔离、定时时窗、补签、限流退避、回复判定、排除、摘要、统计及签到配置导入导出；仅宿主进程存活时执行。
+- 集成版随 GramSieve 更新，不自动检查/下载独立 TGAutoSign 更新。不要同时启用独立模块，避免重复签到。
+- 签到配置单独存储，迁移时使用签到面板导出/导入；现有 GramSieve 完整备份尚未包含签到配置。
+- 来源和修改范围见 third_party/tgautosign/NOTICE.md。已在小米 13 Ultra / Conso 2.0.0 验证重启后置顶高亮、签到管理面板和自诊断；实际机器人签到及跨日定时尚未验证。关闭自动签到时仍可打开管理面板。

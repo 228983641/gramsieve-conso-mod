@@ -1,0 +1,1250 @@
+package io.github.wlmosv_png.tgautosign;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.Typeface;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import android.view.View;
+
+/**
+ * 统计页专用图表（2026-10-04 分层重构）。
+ *
+ * 原本这四个 Drawable 挤在 Icons.java 里 —— 但 Icons 的定位是"矢量图标集"
+ * （24 网格线性图标），而这里是**数据可视化**：环形进度、趋势折线、
+ * 分布柱、热力格。两者放在一起会同时污染两边的阅读。
+ *
+ * 拆出后：
+ *   · Icons.java   只放图标（约 -190 行）
+ *   · 本文件        只放图表
+ * 都用 Canvas 程序绘制，不依赖任何 res 资源（本模块打包链的既有约束）。
+ */
+final class StatsCharts {
+    private StatsCharts() {}
+
+    /**
+     * 对话框内容区可用宽度（px）。
+     *
+     * 与 TGAutoSignCore.showDialog 里的限制保持同一口径：
+     *   min(屏宽*0.92, 400dp) - 卡片左右内边距。
+     * 凡是"按宽度算格子尺寸"的地方都用它 ——
+     * 直接拿屏幕宽算必然溢出（热力图踩过这个坑，右列被裁）。
+     */
+    static int contentWidth(android.content.Context c) {
+        int w = 0;
+        try { w = c.getResources().getDisplayMetrics().widthPixels; } catch (Throwable ignored) {}
+        if (w <= 0) w = 1080;
+        int target = Math.min((int) (w * 0.92f), Theme.dp(c, 400));
+        return Math.max(0, target - Theme.dp(c, 28));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  主题化动效构件（2026-10-04）
+    //  模块是终端/赛博风（青绿品红琥珀 + 深底 + 等宽字），
+    //  因此动效也用同一套语汇：**扫描线、十字准星、数据流、辉光**，
+    //  而不是通用的"淡入淡出"。
+    //  全部 Canvas 程序绘制，零资源依赖。
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * 环形进度（可动画版）：外圈带**扫描角标**与**端点辉光**。
+     *
+     * 与旧版区别：旧版只是一段静止圆弧；现在
+     *   · progress 可逐帧推进（扫过动画）；
+     *   · 弧的末端画一个亮点 + 外发光 —— 像扫描头停在当前位置；
+     *   · 起始处画一个小十字准星，呼应终端风。
+     */
+    static final class RingScanDrawable extends Drawable {
+        private final Paint base = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint tail = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint mark = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF oval;
+        private final float size, cx, cy, r, stroke;
+        private final int col, baseCol;
+        /** 分格数（= 今日目标数）。0 = 不分格（连续环）。 */
+        private final int segs;
+        private float progress;     // 0..1
+
+        RingScanDrawable(int sizePx, int col, int baseCol) { this(sizePx, col, baseCol, 0); }
+
+        RingScanDrawable(int sizePx, int col, int baseCol, int tickCount) {
+            this.col = col;
+            this.baseCol = baseCol;
+            this.segs = (tickCount >= 1 && tickCount <= 36) ? tickCount : 0;
+            this.size = sizePx;
+            this.cx = sizePx / 2f;
+            this.cy = sizePx / 2f;
+            this.stroke = sizePx * 0.093f;
+            this.r = sizePx / 2f - stroke * 1.9f;
+            oval = new RectF(cx - r, cy - r, cx + r, cy + r);
+
+            base.setStyle(Paint.Style.STROKE);
+            base.setStrokeWidth(stroke * 0.86f);
+            base.setStrokeCap(Paint.Cap.ROUND);
+            base.setColor(baseCol);
+
+            arc.setStyle(Paint.Style.STROKE);
+            arc.setStrokeWidth(stroke);
+            arc.setStrokeCap(Paint.Cap.ROUND);
+            arc.setColor(col);
+
+            tail.setStyle(Paint.Style.STROKE);
+            tail.setStrokeCap(Paint.Cap.ROUND);
+            tail.setColor(col);
+
+            glow.setStyle(Paint.Style.FILL);
+
+            mark.setStyle(Paint.Style.STROKE);
+            mark.setStrokeWidth(Math.max(1.2f, sizePx * 0.015f));
+            mark.setStrokeCap(Paint.Cap.ROUND);
+            mark.setColor(withA(col, 0x88));
+        }
+
+        void setProgress(float p) { this.progress = Math.max(0f, Math.min(1f, p)); invalidateSelf(); }
+
+        /**
+         * 绘制（2026-10-04 第二次重做）。
+         *
+         * 上一版的问题（用户：「底下是类似拼接的，上面又是实的」）：
+         *   底环用 DashPathEffect 画成虚线格，进度却是一条**连续实心**弧 ——
+         *   两种语言拼在一起，上半圈实、下半圈碎，看起来像坏了。
+         *
+         * 现在**整圈都是同一种格子**：
+         *   ① 先把 segs 个格子全画一遍（暗色）——底环本身就是完整的一圈格子；
+         *   ② 再按进度把前几个格子重画一遍（亮色），
+         *      正在进行的那一格用 alpha 渐入，像“卡答上”。
+         *   这样 3/12 就是“十二格亮了三格”，一目了然；
+         *   而且亮格连在一起也自然形成一段弧，不再是两种形态。
+         *
+         * 扫描头仍在最后一个亮格的末端：径向渐变光晕 + 实心点 + 短彗尾。
+         */
+        @Override public void draw(Canvas cv) {
+            try {
+                float sweep = 360f * progress;
+
+                if (segs > 0) {
+                    float segDeg = 360f / segs;
+                    // 缺口随格数自适应：少格留宽缺口，多格缩短，避免分不出格或碎成沙
+                    float gapDeg = Math.max(1.3f, Math.min(6.5f, 54f / segs));
+                    float drawDeg = Math.max(1.5f, segDeg - gapDeg);
+
+                    for (int i = 0; i < segs; i++) {
+                        cv.drawArc(oval, -90f + i * segDeg + gapDeg / 2f, drawDeg, false, base);
+                    }
+                    for (int i = 0; i < segs; i++) {
+                        float f = progress * segs - i;
+                        if (f <= 0f) break;
+                        if (f > 1f) f = 1f;
+                        arc.setAlpha((int) (255f * f));
+                        cv.drawArc(oval, -90f + i * segDeg + gapDeg / 2f, drawDeg, false, arc);
+                    }
+                    arc.setAlpha(255);
+                } else {
+                    // 目标数为 0 或超过 36 时不分格：
+                    // 底环和进度都是连续弧，保持同一种形态。
+                    cv.drawArc(oval, -90f, 360f, false, base);
+                    if (sweep > 0.5f) cv.drawArc(oval, -90f, sweep, false, arc);
+                }
+
+                // 起点准星：四段断口十字，卡在 12 点位的缺口里
+                float tx = cx, ty = cy - r;
+                float k = size * 0.046f;
+                cv.drawLine(tx - k, ty, tx - k * 0.36f, ty, mark);
+                cv.drawLine(tx + k * 0.36f, ty, tx + k, ty, mark);
+                cv.drawLine(tx, ty - k, tx, ty - k * 0.36f, mark);
+                cv.drawLine(tx, ty + k * 0.36f, tx, ty + k, mark);
+
+                if (progress > 0.001f) {
+                    double a0 = Math.toRadians(-90f + sweep);
+                    float ex = (float) (cx + r * Math.cos(a0));
+                    float ey = (float) (cy + r * Math.sin(a0));
+
+                    // 短彗尾：比上一版更短更淡，只作暗示，不与格子抢视线
+                    final int N = 7;
+                    float span = 16f;
+                    float segLen = span / N;
+                    for (int i = 0; i < N; i++) {
+                        float f = i / (float) N;
+                        tail.setAlpha((int) (0x9A * (1f - f) * (1f - f)));
+                        tail.setStrokeWidth(stroke * (1f - f * 0.34f));
+                        cv.drawArc(oval, -90f + sweep - (f + 1f) * segLen, segLen * 1.3f, false, tail);
+                    }
+
+                    // 扫描头：径向渐变光晕（上一版已从硬边圈改成）
+                    // 本次再收一圈：3.0 -> 2.2倍笔画，免得在格子上暂出一团大光斑
+                    float gr = stroke * 2.2f;
+                    try {
+                        android.graphics.RadialGradient rg = new android.graphics.RadialGradient(
+                                ex, ey, gr,
+                                new int[]{withA(col, 0x98), withA(col, 0x38), withA(col, 0x00)},
+                                new float[]{0f, 0.34f, 1f},
+                                android.graphics.Shader.TileMode.CLAMP);
+                        glow.setShader(rg);
+                        cv.drawCircle(ex, ey, gr, glow);
+                        glow.setShader(null);
+                    } catch (Throwable ignored) {}
+                    glow.setColor(col);
+                    cv.drawCircle(ex, ey, stroke * 0.42f, glow);
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 趋势折线（可动画版）：**逐段生长** + 末端数据点脉冲。
+     *
+     * 用 PathMeasure 按进度取部分路径 —— 线条像被"画"出来，
+     * 比整条淡入更像扫描仪在绘图。末端点带一圈呼吸光环。
+     */
+    static final class SparkGrowDrawable extends Drawable {
+        private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float[] vals;
+        private final int col;
+        private final Path full = new Path();
+        private Path seg;
+        private float progress = 0f;
+        SparkGrowDrawable(float[] values, int col, int wPx, int hPx) {
+            this.vals = values;
+            this.col = col;
+            line.setStyle(Paint.Style.STROKE);
+            line.setStrokeWidth(Math.max(1.8f, hPx * 0.022f));
+            line.setStrokeCap(Paint.Cap.ROUND);
+            line.setStrokeJoin(Paint.Join.ROUND);
+            line.setColor(col);
+            fill.setStyle(Paint.Style.FILL);
+            dot.setStyle(Paint.Style.FILL);
+            dot.setColor(col);
+            halo.setStyle(Paint.Style.FILL);
+            halo.setColor(withA(col, 0x55));
+            build(wPx, hPx);
+        }
+        private void build(int w, int h) {
+            full.reset();
+            if (vals == null || vals.length == 0 || w <= 0 || h <= 0) return;
+            float padY = h * 0.14f, usable = h - padY * 2f;
+            int n = vals.length;
+            float dx = n > 1 ? (float) w / (n - 1) : w;
+            for (int i = 0; i < n; i++) {
+                float v = Math.max(0f, Math.min(1f, vals[i]));
+                float x = i * dx, y = padY + (1f - v) * usable;
+                if (i == 0) full.moveTo(x, y); else full.lineTo(x, y);
+            }
+        }
+        void setProgress(float p) {
+            progress = Math.max(0f, Math.min(1f, p));
+            try {
+                android.graphics.PathMeasure pm = new android.graphics.PathMeasure(full, false);
+                seg = new Path();
+                pm.getSegment(0f, pm.getLength() * progress, seg, true);
+            } catch (Throwable t) { seg = full; }
+            invalidateSelf();
+        }
+        /** 已构建路径的尺寸（用于懒重建）。 */
+        private int builtW = -1, builtH = -1;
+
+        @Override public void draw(Canvas cv) {
+            try {
+                int w = getBounds().width(), h = getBounds().height();
+                if (w <= 0 || h <= 0 || vals == null || vals.length == 0) return;
+                // 构造时传的是 dp(280)，而 ImageView 是 match_parent（实际约 330dp）——
+                // 路径只铺满左边一截，右侧空白。
+                // 现在第一次绘制时按**真实 bounds** 重建，并重算当前进度切片。
+                if (w != builtW || h != builtH) {
+                    builtW = w; builtH = h;
+                    build(w, h);
+                    setProgress(progress);   // seg 基于新路径重算，避免用旧尺寸的残片
+                }
+                Path use = (seg != null) ? seg : full;
+                // 面积（渐变淡），随进度一致生长
+                Path area = new Path(use);
+                area.lineTo(measureEndX(w), h);
+                area.lineTo(0, h);
+                area.close();
+                android.graphics.LinearGradient lg = new android.graphics.LinearGradient(
+                        0, 0, 0, h,
+                        new int[]{withA(col, 0x4D), withA(col, 0x14), withA(col, 0x00)},
+                        new float[]{0f, 0.45f, 1f},
+                        android.graphics.Shader.TileMode.CLAMP);
+                fill.setShader(lg);
+                cv.drawPath(area, fill);
+                cv.drawPath(use, line);
+                // 末端脉冲点
+                float[] pos = new float[2];
+                try {
+                    android.graphics.PathMeasure pm = new android.graphics.PathMeasure(full, false);
+                    pm.getPosTan(pm.getLength() * progress, pos, null);
+                } catch (Throwable ignored) {}
+                if (pos[0] > 0f || pos[1] > 0f) {
+                    cv.drawCircle(pos[0], pos[1], h * 0.075f, halo);
+                    cv.drawCircle(pos[0], pos[1], h * 0.032f, dot);
+                }
+            } catch (Throwable ignored) {}
+        }
+        private float measureEndX(int w) {
+            try {
+                android.graphics.PathMeasure pm = new android.graphics.PathMeasure(full, false);
+                float[] p = new float[2];
+                pm.getPosTan(pm.getLength() * progress, p, null);
+                return p[0];
+            } catch (Throwable t) { return w; }
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 柱状（可动画版）：**逐根升起**（底部对齐生长）+ 顶部亮点。
+     */
+    static final class BarsGrowDrawable extends Drawable {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint tip = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int[] vals;
+        private final int col;
+        private final int max;
+        private float grow = 1f;      // 0..1 整体生长
+        BarsGrowDrawable(int[] values, int col) {
+            this.vals = values;
+            this.col = col;
+            int m = 1;
+            if (values != null) for (int v : values) if (v > m) m = v;
+            this.max = m;
+            tip.setStyle(Paint.Style.FILL);
+        }
+        void setGrow(float g) { grow = Math.max(0f, Math.min(1f, g)); invalidateSelf(); }
+        @Override public void draw(Canvas cv) {
+            try {
+                int w = getBounds().width(), h = getBounds().height();
+                if (w <= 0 || h <= 0 || vals == null || vals.length == 0) return;
+                int n = vals.length;
+                float slot = (float) w / n;
+                float bw = slot * 0.26f;
+                float gap = slot - bw;
+                float r = Math.min(bw * 0.22f, h * 0.16f);
+                for (int i = 0; i < n; i++) {
+                    float x = i * (bw + gap) + gap / 2f;
+                    if (vals[i] <= 0) {
+                        p.setColor(withA(col, 0x33));
+                        cv.drawRoundRect(new RectF(x, h - Math.max(2f, h * 0.04f), x + bw, h), r, r, p);
+                        continue;
+                    }
+                    float ratio = vals[i] / (float) max;
+                    float bh = Math.max(h * 0.10f, h * ratio * grow);
+                    int alpha = 0x77 + (int) (ratio * 0x88);
+                    p.setColor(withA(col, Math.min(0xFF, alpha)));
+                    float top = h - bh;
+                    cv.drawRoundRect(new RectF(x, top, x + bw, h), r, r, p);
+                    // 顶部亮点：只在超过 1 格时画，避免空柱也发光
+                    if (ratio > 0f && grow > 0.35f) {
+                        tip.setColor(withA(col, (int) (0xCC * grow)));
+                        cv.drawCircle(x + bw / 2f, top + bw * 0.30f, bw * 0.22f, tip);
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 热力格（可点亮版）：单格可带"刚点亮"的高亮光环。
+     */
+    static final class HeatLitDrawable extends Drawable {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int sizePx, col, level;
+        private final boolean today;
+        private float lit = 0f;    // 0..1 点亮程度
+        HeatLitDrawable(int sizePx, int col, int level, boolean today) {
+            this.sizePx = sizePx;
+            this.col = col;
+            this.level = Math.max(0, Math.min(4, level));
+            this.today = today;
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(Math.max(1f, sizePx * 0.10f));
+        }
+        void setLit(float v) { lit = Math.max(0f, Math.min(1f, v)); invalidateSelf(); }
+        @Override public void draw(Canvas cv) {
+            try {
+                float pad = sizePx * 0.09f, r = sizePx * 0.20f;
+                RectF box = new RectF(pad, pad, sizePx - pad, sizePx - pad);
+                p.setStyle(Paint.Style.FILL);
+                if (level == 0) {
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(Math.max(1f, sizePx * 0.06f));
+                    p.setColor(withA(col, lit > 0f ? (int) (0x33 + 0x55 * lit) : 0x33));
+                } else {
+                    int alpha = 0x55 + (int) ((level - 1) / 3f * 0xAA);
+                    if (lit > 0f) alpha = Math.min(0xFF, alpha + (int) (0x66 * lit));
+                    p.setColor(withA(col, Math.min(0xFF, alpha)));
+                }
+                cv.drawRoundRect(box, r, r, p);
+                // 点亮瞬间的光环
+                if (lit > 0.02f && lit < 1f) {
+                    ring.setColor(withA(col, (int) (0xFF * (1f - lit) * 0.8f)));
+                    cv.drawRoundRect(box, r, r, ring);
+                }
+                if (today) {
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(Math.max(1f, sizePx * 0.09f));
+                    p.setColor(withA(col, 0xFF));
+                    cv.drawRoundRect(new RectF(0, 0, sizePx, sizePx), r, r, p);
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 扫描条：一条水平细线 + 头尾渐隐，从 0 扫到满宽。
+     * 用于"卡片被扫描一遍"的入场感（终端风的核心语汇）。
+     */
+    static final class ScanLineDrawable extends Drawable {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int col;
+        private float pos = -1f;     // -1 = 未开始
+        ScanLineDrawable(int col) {
+            this.col = col;
+            p.setStrokeWidth(1.6f);
+        }
+        void setPos(float v) { pos = v; invalidateSelf(); }
+        @Override public void draw(Canvas cv) {
+            if (pos < 0f) return;
+            try {
+                int w = getBounds().width(), h = getBounds().height();
+                if (w <= 0) return;
+                float x = pos * w;
+                android.graphics.LinearGradient lg = new android.graphics.LinearGradient(
+                        x - w * 0.18f, 0, x + w * 0.02f, 0,
+                        new int[]{withA(col, 0x00), withA(col, 0xDD)},
+                        null, android.graphics.Shader.TileMode.CLAMP);
+                p.setShader(lg);
+                p.setColor(col);
+                cv.drawLine(Math.max(0, x - w * 0.18f), 0, Math.min(w, x), 0, p);
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 「数据流拼装」文字视图（2026-10-04）。
+     *
+     * 用户要的效果：名字像被字符流"拼"出来 —— 左右错位、闪动、然后归位。
+     * 这是终端/赛博风最标志性的观感（矩阵雨 / 解码）。
+     *
+     * 实现：自定义 View，用 Canvas 逐字绘制。
+     *   · 每个字有独立的"就位时间" t_i = i / n（从左到右）;
+     *   · 未就位时：显示随机字符 + 随机水平偏移（幅度随时间收敛）+ 高亮色;
+     *   · 就位瞬间：一次白色闪（flash），随后回到正常色;
+     *   · 全部就位后：整体一次轻微"合拢"（scale 1.03 → 1）。
+     *
+     * 不用 TextView.setText 逐帧改（会产生大量布局/重绘），
+     * 而是在 onDraw 里 drawText —— 一次绘制、零布局。
+     */
+    static final class DecodeTextView extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final String text;
+        private final String[] parts;         // 逐**代码点**拆开（emoji 也能完整保留）
+        private final float[] jitter;         // 每个字当前的横向偏移
+        private final float[] arrive;         // 每个字就位后的残留闪动
+        private final java.util.Random rnd = new java.util.Random();
+        private final android.graphics.Typeface mono =
+                android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE,
+                        android.graphics.Typeface.NORMAL);
+        private final android.graphics.Typeface prop = android.graphics.Typeface.DEFAULT;
+        private final int normalCol, flashCol;
+        private final float textSize;
+        private float textPx = 12f;          // sp 换算后的像素值（绘制/测量都用它）
+        private float progress = 1f;          // 0..1 整体进度
+        private float scale = 1f;
+        private boolean done;
+
+        DecodeTextView(Context c, String text, float textSize, int normalCol, int flashCol) {
+            super(c);
+            this.text = text == null ? "" : text;
+            this.textSize = textSize;
+            this.normalCol = normalCol;
+            this.flashCol = flashCol;
+            // ── 按代码点拆（2026-10-04 修「名字后面出现方块」）──
+            // 旧写法 `cs.add((char) cp)` 把代码点强转 char：
+            //   U+1F600 这类被截成孤立的低代理 → 渲染成方块；
+            //   而且 charCount(cp)=2 却只存了 1 个 char，长度也对不上。
+            // 现在直接存“每个代码点对应的字符串”，emoji 完整保留。
+            java.util.List<String> cs = new java.util.ArrayList<String>();
+            for (int i = 0; i < this.text.length(); ) {
+                int cp = this.text.codePointAt(i);
+                int cc = Character.charCount(cp);
+                cs.add(this.text.substring(i, Math.min(this.text.length(), i + cc)));
+                i += cc;
+            }
+            parts = new String[cs.size()];
+            for (int i = 0; i < parts.length; i++) parts[i] = cs.get(i);
+            jitter = new float[parts.length];
+            arrive = new float[parts.length];
+            // 字体链（2026-10-04）：先 MONOSPACE（保留终端等宽感），
+            // 后接 DEFAULT。系统对 MONOSPACE 缺字会回退，但**回退链常不含彩 emoji**
+            // —— 直接用 MONOSPACE 画 emoji 会得到方块。
+            // 这里改成“先 MONOSPACE，缺字则 DEFAULT”的显式链；
+            // 真正落笔时还会按 run 再切一次（见 onDraw）。
+            p.setTypeface(mono);
+            // ⚠️ Paint.setTextSize 要的是**像素**，而调用方传进来的是 sp
+            //    （Theme.TS_SECOND = 12 这类）。直接传会得到 12px ≈ 4dp，
+            //    字小到看不清（用户截图实测）。
+            //    这里用 scaledDensity 做 sp→px，与 TextView 的默认行为一致。
+            float px = textSize;
+            try {
+                px = textSize * c.getResources().getDisplayMetrics().scaledDensity;
+            } catch (Throwable ignored) {}
+            this.textPx = px;
+            p.setTextSize(px);
+            p.setFakeBoldText(true);
+        }
+
+        /** 0..1 整体进度（外部逐帧驱动）。 */
+        void setProgress(float v) {
+            progress = Math.max(0f, Math.min(1f, v));
+            int n = parts.length;
+            // 每个字按位置稍晚就位：最右的字最后拼好
+            for (int i = 0; i < n; i++) {
+                float ti = n <= 1 ? 0f : (i / (float) n) * 0.55f;
+                float local = (progress - ti) / Math.max(0.001f, 1f - ti);
+                local = Math.max(0f, Math.min(1f, local));
+                // 未就位 → 偏移随 local 收敛；就位后保留一点闪
+                float amp = (1f - local);
+                jitter[i] = amp * (rnd.nextFloat() * 2f - 1f) * textPx * 0.42f;
+                arrive[i] = local >= 1f ? Math.max(0f, arrive[i] - 0.12f) : 1f;
+            }
+            // ── 终点确定性归零（2026-10-04 修「亮色下名字发白」）──
+            // arrive[i] 是“刚就位闪白”的强度，原本只在本方法里递减。
+            // 但动画跑完（progress=1）后**再没有人调它** ——
+            // 于是 arrive 永远停在 1.0，一直按白闪色渲染；
+            // jitter 同理保留了末次随机偏移。
+            // 暗色主题白字在黑底上看得见，亮色主题就几乎不可见。
+            if (progress >= 0.999f) {
+                for (int i = 0; i < n; i++) { arrive[i] = 0f; jitter[i] = 0f; }
+            }
+            // 全部就位后来一次轻微合拢
+            if (progress >= 0.999f && !done) { done = true; scale = 1.03f; }
+            if (done && scale > 1f) scale = Math.max(1f, scale - 0.006f);
+            invalidate();
+        }
+
+        @Override protected void onMeasure(int wSpec, int hSpec) {
+            int w = (int) p.measureText(text) + 4;
+            int h = (int) (textPx * 1.45f);
+            setMeasuredDimension(Math.max(1, w), Math.max(1, h));
+        }
+
+        @Override protected void onDraw(Canvas cv) {
+            try {
+                int n = parts.length;
+                if (n == 0) return;
+                cv.save();
+                cv.scale(scale, scale, 0, getHeight() / 2f);
+                float x = 0f;
+                for (int i = 0; i < n; i++) {
+                    String g = parts[i];
+                    float dx = jitter[i];
+                    // 未就位：偶尔替换成随机字符（看不出原字，像解码中）
+                    if (Math.abs(dx) > 0.6f && rnd.nextInt(3) == 0) {
+                        g = String.valueOf((char) ('a' + rnd.nextInt(26)));
+                    }
+                    if (arrive[i] > 0.05f) {
+                        // 就位闪：向白色插值
+                        int col = blend(flashCol, normalCol, 1f - arrive[i]);
+                        p.setColor(col);
+                    } else if (Math.abs(dx) > 0.6f) {
+                        p.setColor(normalCol);
+                        p.setAlpha(140 + rnd.nextInt(80));
+                    } else {
+                        p.setColor(normalCol);
+                        p.setAlpha(255);
+                    }
+                    // 按字符类型选字体（2026-10-04）：
+                    //   ASCII -> MONOSPACE（保持终端等宝感，字宽稳定）
+                    //   其余（CJK \/ emoji）-> DEFAULT（走系统回退，避免方块）
+                    // 测宽也必须用同一字体，否则 x 前进量与实际字形不符。
+                    android.graphics.Typeface tf = isAscii(g) ? mono : prop;
+                    try { p.setTypeface(tf); } catch (Throwable ignored) {}
+                    cv.drawText(g, x + dx, getHeight() * 0.72f, p);
+                    x += p.measureText(g);
+                }
+                cv.restore();
+            } catch (Throwable ignored) {}
+        }
+
+        /** 是否纯 ASCII（可用等宽字体）。 */
+        private static boolean isAscii(String s) {
+            if (s == null || s.length() == 0) return true;
+            for (int i = 0; i < s.length(); i++) if (s.charAt(i) > 0x7F) return false;
+            return true;
+        }
+
+        private static int blend(int a, int b, float r) {
+            r = Math.max(0f, Math.min(1f, r));
+            int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+            int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+            return 0xFF000000
+                    | ((int) (ar + (br - ar) * r) << 16)
+                    | ((int) (ag + (bg - ag) * r) << 8)
+                    | (int) (ab + (bb - ab) * r);
+        }
+    }
+
+    /**
+     * 账号进度条（2026-10-04，账号一览改版专用）。
+     *
+     * 为什么单独做一个：
+     *   既有的 BarsDrawable 是“多根柱”语义，而这里要的是
+     *   **单条、可逐帧推进、能表达“正在进行”** 的进度条。
+     *   用户需求：点「签全部账号」后能当场看到哪个账号在走、走到哪。
+     *
+     * 视觉：
+     *   · 底槽：暗色圆角条；
+     *   · 已完成部分：实色圆角条，末端带扫描头（实心点 + 光晕）；
+     *   · 「进行中」时：整条带**呼吸脉动**（透明度在 0.65~1.0 之间往返）；
+     *   · 未开始：只画底槽 + 一道浅浅的扫描线，表示“还没动”。
+     */
+    static final class AccProgressDrawable extends Drawable {
+        private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint sweep = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int col;
+        private float ratio = 0f;      // 0..1 已完成比例
+        private float pulse = 0f;      // 0..1 呼吸相位（仅 running 时由外部驱动）
+        private boolean running = false;
+        private boolean done = false;
+
+        AccProgressDrawable(int col) {
+            this.col = col;
+            track.setStyle(Paint.Style.FILL);
+            bar.setStyle(Paint.Style.FILL);
+            glow.setStyle(Paint.Style.FILL);
+            sweep.setStyle(Paint.Style.FILL);
+        }
+
+        void setCol(int c) { this.col = c; invalidateSelf(); }
+        void setRatio(float r) {
+            r = Math.max(0f, Math.min(1f, r));
+            if (Math.abs(r - ratio) > 0.001f) { ratio = r; invalidateSelf(); }
+        }
+        void setRunning(boolean b) { if (running != b) { running = b; invalidateSelf(); } }
+        void setDone(boolean b) { if (done != b) { done = b; invalidateSelf(); } }
+        void setPulse(float p) { this.pulse = Math.max(0f, Math.min(1f, p)); invalidateSelf(); }
+
+        @Override public void draw(Canvas cv) {
+            try {
+                int w = getBounds().width(), h = getBounds().height();
+                if (w <= 0 || h <= 0) return;
+                float r = h / 2f;
+
+                // 底槽
+                track.setColor(withA(col, done ? 0x2E : 0x1F));
+                cv.drawRoundRect(new RectF(0, 0, w, h), r, r, track);
+
+                // 呼吸：仅 running 时整体透明度往返
+                int a = 0xFF;
+                if (running) a = (int) (0xB4 + 0x4B * Math.abs(1f - 2f * pulse));
+
+                if (ratio > 0.001f) {
+                    float bw = Math.max(h, w * ratio);
+                    bar.setColor(withA(col, a));
+                    cv.drawRoundRect(new RectF(0, 0, bw, h), r, r, bar);
+
+                    // 扫描头 + 光晕（终端语汇）
+                    float ex = Math.min(w - r, bw - r);
+                    float gr = h * 1.15f;
+                    try {
+                        android.graphics.RadialGradient rg = new android.graphics.RadialGradient(
+                                ex, h / 2f, gr,
+                                new int[]{withA(col, (int) (0xA8 * a / 255f)),
+                                          withA(col, 0x00)},
+                                new float[]{0f, 1f},
+                                android.graphics.Shader.TileMode.CLAMP);
+                        glow.setShader(rg);
+                        cv.drawCircle(ex, h / 2f, gr, glow);
+                        glow.setShader(null);
+                    } catch (Throwable ignored) {}
+                } else if (running) {
+                    // 还没进度但在跑：一道来回扫的细光，明确「已开始、正在处理」
+                    float px = (float) ((Math.sin(pulse * Math.PI * 2) * 0.5 + 0.5) * (w - h)) + h / 2f;
+                    sweep.setColor(withA(col, 0x66));
+                    cv.drawRoundRect(new RectF(Math.max(0, px - h), 0, Math.min(w, px + h), h),
+                            r, r, sweep);
+                }
+
+                if (done) {
+                    // 完成：描一圈更亮的边，收束感
+                    Paint p2 = track;
+                    p2.setStyle(Paint.Style.STROKE);
+                    p2.setStrokeWidth(Math.max(1f, h * 0.14f));
+                    p2.setColor(withA(col, 0xCC));
+                    cv.drawRoundRect(new RectF(0, 0, w, h), r, r, p2);
+                    p2.setStyle(Paint.Style.FILL);
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /** 给颜色换 alpha（本地副本，避免依赖 Icons 的包内可见性）。 */
+    static int withA(int c, int a) {
+        return ((c & 0x00FFFFFF) | ((a & 0xFF) << 24));
+    }
+
+    static final class RingStatDrawable extends Drawable {
+        private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint base = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF oval;
+        private final float stroke;
+        private final float ratio;
+        RingStatDrawable(int sizePx, float ratio, int col, int baseCol) {
+            float pad = sizePx * 0.10f;
+            this.stroke = sizePx * 0.115f;
+            this.ratio = Math.max(0f, Math.min(1f, ratio));
+            oval = new RectF(pad, pad, sizePx - pad, sizePx - pad);
+            base.setStyle(Paint.Style.STROKE);
+            base.setStrokeWidth(stroke);
+            base.setStrokeCap(Paint.Cap.ROUND);
+            base.setColor(baseCol);
+            arc.setStyle(Paint.Style.STROKE);
+            arc.setStrokeWidth(stroke);
+            arc.setStrokeCap(Paint.Cap.ROUND);
+            arc.setColor(col);
+        }
+        @Override public void draw(Canvas cv) {
+            try {
+                // 底环：从 -90° 起一整圈
+                cv.drawArc(oval, -90f, 360f, false, base);
+                if (ratio > 0f) {
+                    // 进度弧：从 12 点方向顺时针，最小 3° 保证"只签了一个"也看得见
+                    float sweep = Math.max(3f, 360f * ratio);
+                    cv.drawArc(oval, -90f, sweep, false, arc);
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 趋势折线（2026-10-03）：把"每天的完成率"连成一条曲线。
+     *
+     * 这是三个数字给不了的东西 —— 数字只说"现在"，折线说"在变好还是变差"。
+     * 面积用线性渐变从色到透明，视觉上是"填补过的曲线"而不是干巴巴的线。
+     */
+    static final class SparkDrawable extends Drawable {
+        private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float[] vals;     // 0..1
+        private final int col;
+        SparkDrawable(float[] values, int col, int wPx, int hPx) {
+            this.vals = values;
+            this.col = col;
+            line.setStyle(Paint.Style.STROKE);
+            // 线细一点（2026-10-03）：上一版 3.5% 高度，在大图上像一条粗带
+            line.setStrokeWidth(Math.max(1.8f, hPx * 0.022f));
+            line.setStrokeCap(Paint.Cap.ROUND);
+            line.setStrokeJoin(Paint.Join.ROUND);
+            line.setColor(col);
+            fill.setStyle(Paint.Style.FILL);
+        }
+        @Override public void draw(Canvas cv) {
+            try {
+                int w = getBounds().width(), h = getBounds().height();
+                if (w <= 0 || h <= 0 || vals == null || vals.length == 0) return;
+                float padY = h * 0.14f;
+                float usable = h - padY * 2f;
+                int n = vals.length;
+                float dx = n > 1 ? (float) w / (n - 1) : w;
+                Path p = new Path();
+                float firstX = 0f, firstY = 0f;
+                for (int i = 0; i < n; i++) {
+                    float v = Math.max(0f, Math.min(1f, vals[i]));
+                    float x = i * dx;
+                    float y = padY + (1f - v) * usable;
+                    if (i == 0) { p.moveTo(x, y); firstX = x; firstY = y; }
+                    else p.lineTo(x, y);
+                }
+                // 面积：把曲线首尾接到基线
+                Path area = new Path(p);
+                area.lineTo((n - 1) * dx, h);
+                area.lineTo(firstX, h);
+                area.close();
+                // ── 填充改成"只要底部一点点"（2026-10-03）──
+                // 上一版从线到图底整片填充（0x66 起），在深色底上像一整块实心色，
+                // 完全盖过了折线本身，看着"不像趋势图像色块"（用户截图）。
+                // 现在渐变起点也贴近线（0x4D），且到 45% 高度就完全透明 ——
+                // 只在曲线下方留一层薄光晕，视线仍落在线上。
+                android.graphics.LinearGradient lg = new android.graphics.LinearGradient(
+                        0, 0, 0, h,
+                        new int[]{withA(col, 0x4D), withA(col, 0x14), withA(col, 0x00)},
+                        new float[]{0f, 0.45f, 1f},
+                        android.graphics.Shader.TileMode.CLAMP);
+                fill.setShader(lg);
+                cv.drawPath(area, fill);
+                cv.drawPath(p, line);
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 迷你柱状（2026-10-03）：时段分布 / 星期分布用。
+     * 柱子按值高低给不同透明度，高点更亮 —— 比同色柱子更能看出"峰"。
+     */
+    static final class BarsDrawable extends Drawable {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int[] vals;
+        private final int col;
+        private final int max;
+        /** true = 细胶囊样式（统计页用）；false = 旧粗柱。 */
+        private final boolean slim;
+        BarsDrawable(int[] values, int col) { this(values, col, false); }
+        BarsDrawable(int[] values, int col, boolean slim) {
+            this.vals = values;
+            this.col = col;
+            this.slim = slim;
+            int m = 1;
+            if (values != null) for (int v : values) if (v > m) m = v;
+            this.max = m;
+        }
+        @Override public void draw(Canvas cv) {
+            try {
+                int w = getBounds().width(), h = getBounds().height();
+                if (w <= 0 || h <= 0 || vals == null || vals.length == 0) return;
+                int n = vals.length;
+                // 柱太宽太满（2026-10-03）：上一版 3.5% 间隙、柱子几乎占满一格，
+                // 七根粗柱像七块砖。现在加宽间隙、收窄柱体，露出呼吸感。
+                // slim 模式（统计页）柱宽只占约 42%，圆角拉满 = 胶囊观感。
+                float slot = (float) w / n;
+                // slim：柱宽只占 26%（上一版 42% 太胖），
+                // 圆角另算 —— 见下面 r 的计算
+                float bw = slim ? slot * 0.26f : slot * 0.62f;
+                float gap = slot - bw;
+                // 圆角只占柱宽 22%：是"圆角矩形柱"，不是胶囊。
+                // 上一版用 bw*0.5 = 圆角等于半宽 → 直接变药丸（用户截图）。
+                float r = slim ? Math.min(bw * 0.22f, h * 0.16f)
+                               : Math.min(bw * 0.32f, h * 0.10f);
+                for (int i = 0; i < n; i++) {
+                    float x = i * (bw + gap) + gap / 2f;
+                    if (vals[i] <= 0) {
+                        // 空桶：一条底线，表示"这个时段没有"
+                        p.setColor(withA(col, 0x33));
+                        RectF t = new RectF(x, h - Math.max(2f, h * 0.04f), x + bw, h);
+                        cv.drawRoundRect(t, r, r, p);
+                        continue;
+                    }
+                    float ratio = vals[i] / (float) max;
+                    float bh = Math.max(h * 0.10f, h * ratio);
+                    // 越高的柱子越不透明，峰一眼可见
+                    int alpha = 0x77 + (int) (ratio * 0x88);
+                    p.setColor(withA(col, Math.min(0xFF, alpha)));
+                    RectF t = new RectF(x, h - bh, x + bw, h);
+                    cv.drawRoundRect(t, r, r, p);
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /**
+     * 热力图小格（2026-10-03）：统计页用。
+     *
+     * 与日历的 DayCellDrawable 区别：那个表达"某天签没签 + 是不是今天"，
+     * 带脉冲、带日期文字，格大；这个只表达"某天的完成度"，格小、无文字，
+     * 一个屏能铺 90 天。颜色按 level 分 5 档（0=空，4=满）。
+     */
+    static final class HeatDrawable extends Drawable {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int sizePx;
+        private final int col;
+        private final int level;     // 0..4
+        private final boolean today;
+        HeatDrawable(int sizePx, int col, int level, boolean today) {
+            this.sizePx = sizePx;
+            this.col = col;
+            this.level = Math.max(0, Math.min(4, level));
+            this.today = today;
+        }
+        @Override public void draw(Canvas cv) {
+            try {
+                float pad = sizePx * 0.09f;
+                float r = sizePx * 0.20f;
+                RectF box = new RectF(pad, pad, sizePx - pad, sizePx - pad);
+                p.setStyle(Paint.Style.FILL);
+                if (level == 0) {
+                    // 空格：只描边，表示"这天没签"
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(Math.max(1f, sizePx * 0.06f));
+                    p.setColor(withA(col, 0x33));
+                } else {
+                    // 有签：alpha 随 level 递增（0x55 -> 0xFF），一眼看出深浅
+                    int alpha = 0x55 + (int) ((level - 1) / 3f * 0xAA);
+                    p.setColor(withA(col, Math.min(0xFF, alpha)));
+                }
+                cv.drawRoundRect(box, r, r, p);
+                if (today) {
+                    // 今天：加一圈对比色描边，便于定位
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(Math.max(1f, sizePx * 0.09f));
+                    p.setColor(withA(col, 0xFF));
+                    cv.drawRoundRect(new RectF(0, 0, sizePx, sizePx), r, r, p);
+                }
+            } catch (Throwable ignored) {}
+        }
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  月历 + 里程碑（2026-10-16 新增）
+    //  与既有语汇一致：等宽、青主色、辉光、扫描感；
+    //  不引入任何 res 资源，全部 Canvas 程序绘制。
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * 月历：一格 = 一天。
+     *
+     * 与「近 90 天打卡」热力图的区别（为什么两个都要）：
+     *   热力图是**连续 90 天**的方格带，看的是整体密度与趋势；
+     *   月历是**自然月 + 星期对齐**，看的是「这个月哪几天断了」——
+     *   空格与月首月尾的留白让缺口一目了然，这是热力图给不了的。
+     *
+     * 视觉：
+     *   · 已签  = 主色实心圆角格（可带内辉光）
+     *   · 未签（过去）= 细描边空格
+     *   · 未来  = 极淡描边（区分「还没到」与「漏了」）
+     *   · 今天  = 加粗描边 + 四角准星微标
+     * 动画：setLit(0→1) 按日序逐格点亮（每格约 12ms，总时长有上限）。
+     */
+    /**
+     * 月历：一格 = 一天，画成**日期点阵**（小圆），不是大色块。
+     *
+     * 为什么用点阵而不是实心方块（2026-10-16 第二版，真机反馈「丑」后重做）：
+     *   第一版每格是 50dp 实心圆角方块，29 格排开 → 满屏灰砖，
+     *   空格与已签格**视觉重量接近**，整块显得笨重，跟这个界面的精致感不搭。
+     *   点阵把「已签」压成一枚圆点（实心 + 柔光），
+     *   「未签」只剩一圈极细的环 —— 重量差拉开了，密度感也上来了，
+     *   更像终端仪表而不是日历挂历。
+     *
+     * 视觉：
+     *   · 已签 = 实心主色点 + 外柔光（有"点亮"感）
+     *   · 未签（过去）= 极细空心环（弱色，几乎只是"位置提示"）
+     *   · 未来 = 更淡的细环（区分「还没到」与「漏了」）
+     *   · 今天 = 外圈呼吸光晕 + 上下左右四个微刻
+     * 布局：**等分**网格（每列宽度一致），与上方星期表头天然对齐。
+     */
+    /**
+     * 月历 · 日期点阵（2026-10-16 第三版，A+C）。
+     *
+     * 第二版的问题（真机反馈「看着比较晕」）：
+     *   每枚已签点是 4 层叠（大柔光 + 中柔光 + 实心 + 白核），
+     *   三层半透明压在一起 → 一团糊，密度一高就互相糊成一片。
+     *   而且点阵的信息是「哪几天亮了」，**柔光恰恰破坏可读性**。
+     *
+     * 本版：
+     *   A 实心小孔 —— 已签 = 实心圆 + 同色细描边（边缘利落，不糊）；
+     *     未签 = 细环（可见但不抢）；未来 = 极淡细环（只留一丝）。
+     *   C 动效从「每点发光」改为「整块有节奏」：
+     *     · 今天那枚**脉冲呼吸**（一只小环缓缓胀缩 + 亮度同步）
+     *     · 每 6 秒一道**很淡的扫描带**从左到右扫过整块月历
+     *     前者给焦点，后者给节奏；其余一律静止。
+     *
+     * 对齐（本次同时修）：列宽不再用外部传入的固定值，改为
+     *   **draw 时按 bounds.width()/7 实时计算** ——
+     *   与上方星期表头（7 等分父宽）用同一个基准，天然对齐。
+     *   旧版点阵用 contentWidth()（比父窄），表头用全宽 → 越往右偏得越多。
+     */
+    static final class CalendarDrawable extends Drawable {
+        private static final int COLS = 7;
+        private static final long SCAN_PERIOD_MS = 6000L;   // 扫描带周期
+        private static final long PULSE_PERIOD_MS = 2500L;  // 今天脉冲周期
+
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final boolean[] signed;
+        private final boolean[] future;
+        private final int todayIdx;
+        private final int col;
+        private final int dim;
+        private final int faintCol;
+        private final float cellH;     // 行高（列宽改为按 bounds 算）
+        private final int rows;
+        private final long t0 = System.nanoTime();
+        private float lit = 1f;
+        private int colOffset = 0;
+
+        CalendarDrawable(boolean[] signed, boolean[] future, int todayIdx,
+                         int col, int dim, int faintCol,
+                         float cellWUnused, float cellH, int rows) {
+            this.signed = signed;
+            this.future = future;
+            this.todayIdx = todayIdx;
+            this.col = col;
+            this.dim = dim;
+            this.faintCol = faintCol;
+            this.cellH = cellH;
+            this.rows = rows;
+        }
+
+        void setLit(float v) { this.lit = Math.max(0f, Math.min(1f, v)); invalidateSelf(); }
+        /** 保留旧签名（扫描线已改为内部自驱，这里不再使用）。 */
+        void setScan(float v) { invalidateSelf(); }
+        void setColOffset(int off) { this.colOffset = Math.max(0, Math.min(6, off)); invalidateSelf(); }
+
+        @Override public void draw(Canvas cv) {
+            boolean running = false;
+            try {
+                int n = signed == null ? 0 : signed.length;
+                if (n <= 0) return;
+
+                // ── 对齐关键：列宽 = 画布宽/7，与表头同一基准 ──
+                float cellW = getBounds().width() / (float) COLS;
+                if (cellW <= 0) cellW = 1f;
+
+                long nowMs = (System.nanoTime() - t0) / 1000000L;
+                float pulse = 0.5f - 0.5f * (float) Math.cos(
+                        (nowMs % PULSE_PERIOD_MS) / (float) PULSE_PERIOD_MS * 2 * Math.PI);  // 0→1→0
+
+                float r = Math.min(cellW, cellH) * 0.30f;     // 点半径（比 v2 略小，更像"孔"）
+                float ringW = Math.max(1f, r * 0.22f);
+
+                for (int i = 0; i < n; i++) {
+                    float step = 1f / Math.max(1, n + colOffset);
+                    float local = (lit - (i + colOffset) * step) / step;
+                    if (local <= 0f) continue;
+                    if (local > 1f) local = 1f;
+
+                    int slot = i + colOffset;
+                    int rr = slot / COLS, cc = slot % COLS;
+                    float cx = cc * cellW + cellW / 2f;
+                    float cy = rr * cellH + cellH / 2f;
+
+                    boolean isFuture = future != null && i < future.length && future[i];
+                    boolean isToday = (i == todayIdx);
+
+                    if (signed[i]) {
+                        // A：实心小孔（单层，不叠柔光）
+                        float k = 0.65f + 0.35f * local;
+                        p.setStyle(Paint.Style.FILL);
+                        p.setColor(withA(col, (int) (0xF2 * local)));
+                        cv.drawCircle(cx, cy, r * k, p);
+                        // 同色细描边：让边缘利落（浅色底上尤其明显）
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(Math.max(1f, r * 0.16f));
+                        p.setColor(withA(col, (int) (0xFF * local)));
+                        cv.drawCircle(cx, cy, r * k, p);
+                    } else {
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(ringW);
+                        // 过去（漏了）= 可见的细环；未来 = 几乎只剩一丝
+                        int base = isFuture ? faintCol : dim;
+                        int al = isFuture ? 0x26 : (int) (0x62 * local);
+                        p.setColor(withA(base, al));
+                        cv.drawCircle(cx, cy, r * 0.92f, p);
+                    }
+
+                    if (isToday) {
+                        // C：今天脉冲 —— 一只小环缓缓胀缩 + 亮度同步
+                        running = true;
+                        float rr2 = r * (1.30f + 0.42f * pulse);
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(Math.max(1.2f, r * 0.20f));
+                        p.setColor(withA(col, (int) (0xC0 * (1f - 0.45f * pulse))));
+                        cv.drawCircle(cx, cy, rr2, p);
+                        // 内层一圈更淡的（有层次但只有两层，不糊）
+                        p.setStrokeWidth(Math.max(1f, r * 0.13f));
+                        p.setColor(withA(col, (int) (0x55 * pulse)));
+                        cv.drawCircle(cx, cy, r * 1.05f, p);
+                    }
+                }
+
+                // C：扫描带（每 6 秒一道，很淡；用线性渐变保证两端渐隐）
+                if (lit > 0.02f) {
+                    running = true;
+                    float h = rows * cellH;
+                    float w = COLS * cellW;
+                    float prog = (nowMs % SCAN_PERIOD_MS) / (float) SCAN_PERIOD_MS;   // 0..1
+                    // 前 70% 时间在走，后 30% 留白（避免看起来一直在扫）
+                    if (prog < 0.70f) {
+                        float y = (prog / 0.70f) * (h + cellH) - cellH;
+                        float band = Math.max(cellH * 0.55f, 6f);
+                        android.graphics.LinearGradient lg = new android.graphics.LinearGradient(
+                                0, y - band, 0, y + band,
+                                new int[]{withA(col, 0x00), withA(col, 0x1A), withA(col, 0x00)},
+                                new float[]{0f, 0.5f, 1f}, android.graphics.Shader.TileMode.CLAMP);
+                        p.setStyle(Paint.Style.FILL);
+                        p.setShader(lg);
+                        cv.drawRect(0, y - band, w, y + band, p);
+                        p.setShader(null);
+                    }
+                    // 一条细亮线给"扫描头"的实感（比整条带更收敛）
+                    if (prog < 0.70f) {
+                        float y = (prog / 0.70f) * (h + cellH) - cellH;
+                        p.setColor(withA(col, 0x33));
+                        p.setStrokeWidth(1f);
+                        cv.drawLine(0, y, w, y, p);
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            // 自驱：可见才续帧
+            if (running) {
+                try { if (isVisible()) invalidateSelf(); } catch (Throwable ignored) {}
+            }
+        }
+
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    static final class OrbitBadgeDrawable extends Drawable {
+        /** 三态。 */
+        static final int ST_DONE = 0, ST_PROGRESS = 1, ST_LOCKED = 2;
+
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int state;
+        private final int col;        // 主色（达成=绿，进行中=琥珀，未开始=弱色）
+        private final float sizePx;   // 外框尺寸（含发光余量）
+        private final float ri, ro;   // 内 / 外半径（环）
+        private final float ratio;    // 进度 0..1
+        private final long t0 = System.nanoTime();
+        private final long periodMs;  // 绕一圈毫秒（未开始=0 → 不转）
+
+        OrbitBadgeDrawable(int state, int col, float sizePx, float ratio, long periodMs) {
+            this.state = state;
+            this.col = col;
+            this.sizePx = sizePx;
+            this.ratio = Math.max(0f, Math.min(1f, ratio));
+            this.periodMs = periodMs;
+            // 留出 ~14% 边距给外发光与彗尾，避免被 drawable 边界裁掉
+            float cx = sizePx / 2f;
+            this.ro = sizePx * 0.34f;
+            this.ri = sizePx * 0.25f;
+        }
+
+        /** 当前相位 0..1（绕行进度）。 */
+        private float phase() {
+            if (periodMs <= 0) return 0f;
+            long dt = (System.nanoTime() - t0) / 1000000L;
+            return (dt % periodMs) / (float) periodMs;
+        }
+
+        @Override public void draw(Canvas cv) {
+            boolean running = false;
+            try {
+                float cx = sizePx / 2f, cy = sizePx / 2f;
+
+                // ── 底线环（所有状态都有，表达"这里有个刻度"）──
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeCap(Paint.Cap.ROUND);
+                p.setStrokeWidth(Math.max(1.5f, sizePx * 0.045f));
+                p.setColor(withA(col, state == ST_LOCKED ? 0x33 : 0x2E));
+                cv.drawCircle(cx, cy, (ri + ro) / 2f, p);
+
+                // ── 进度弧：从 -90° 起顺时针 ──
+                if (ratio > 0.001f) {
+                    RectF arc = new RectF(cx - (ri + ro) / 2f, cy - (ri + ro) / 2f,
+                                          cx + (ri + ro) / 2f, cy + (ri + ro) / 2f);
+                    float sw = Math.max(1.5f, sizePx * 0.045f);
+                    p.setStrokeWidth(sw);
+                    p.setStrokeCap(Paint.Cap.ROUND);
+                    // 底层亮弧
+                    p.setColor(withA(col, state == ST_LOCKED ? 0x55 : 0xEE));
+                    cv.drawArc(arc, -90f, 360f * ratio, false, p);
+                    // 弧末端一个小亮点（进度头），呼应终端"扫描头"
+                    if (ratio < 0.999f) {
+                        double a = Math.toRadians(-90 + 360 * ratio);
+                        float ex = cx + (float) Math.cos(a) * ((ri + ro) / 2f);
+                        float ey = cy + (float) Math.sin(a) * ((ri + ro) / 2f);
+                        p.setStyle(Paint.Style.FILL);
+                        p.setColor(withA(0xFFFFFFFF, 0xAA));
+                        cv.drawCircle(ex, ey, sw * 0.75f, p);
+                        p.setStyle(Paint.Style.STROKE);
+                    }
+                }
+
+                // ── 外发光（达成：缓慢呼吸；进行中：常亮更弱）──
+                if (state == ST_DONE) {
+                    float ph = periodMs > 0 ? (System.nanoTime() % 3000000000L) / 3.0e9f : 0.5f;
+                    float br = 0.5f - 0.5f * (float) Math.cos(ph * 2 * Math.PI);   // 0→1→0，3s
+                    p.setStyle(Paint.Style.FILL);
+                    p.setColor(withA(col, (int) (0x22 * br)));
+                    cv.drawCircle(cx, cy, ro * 1.16f, p);
+                    running = true;    // 呼吸需要持续重绘
+                } else if (state == ST_PROGRESS) {
+                    p.setStyle(Paint.Style.FILL);
+                    p.setColor(withA(col, 0x18));
+                    cv.drawCircle(cx, cy, ro * 1.10f, p);
+                }
+
+                // ── 轨道光点 + 彗尾（仅 DONE / PROGRESS）──
+                if (periodMs > 0) {
+                    running = true;
+                    float ph = phase();
+                    float rr = (ri + ro) / 2f;
+                    int tailN = state == ST_PROGRESS ? 14 : 9;      // 进行中彗尾更长
+                    float tailSpan = state == ST_PROGRESS ? 0.30f : 0.20f;
+                    p.setStyle(Paint.Style.FILL);
+                    for (int k = tailN; k >= 1; k--) {
+                        float back = (k / (float) tailN) * tailSpan;
+                        double a = Math.toRadians(-90 + 360 * (ph - back));
+                        float al = (1f - k / (float) tailN);
+                        int alpha = (int) ((state == ST_DONE ? 0x7A : 0x66) * al * al);
+                        if (alpha <= 0) continue;
+                        p.setColor(withA(col, alpha));
+                        cv.drawCircle(cx + (float) Math.cos(a) * rr,
+                                      cy + (float) Math.sin(a) * rr,
+                                      Math.max(1.2f, sizePx * 0.030f) * (0.5f + 0.5f * al), p);
+                    }
+                    // 光点本体（带白色高光核）
+                    double a0 = Math.toRadians(-90 + 360 * ph);
+                    float hx = cx + (float) Math.cos(a0) * rr;
+                    float hy = cy + (float) Math.sin(a0) * rr;
+                    p.setColor(withA(col, 0x55));
+                    cv.drawCircle(hx, hy, sizePx * 0.075f, p);
+                    p.setColor(withA(col, 0xFF));
+                    cv.drawCircle(hx, hy, sizePx * 0.050f, p);
+                    p.setColor(withA(0xFFFFFFFF, 0xCC));
+                    cv.drawCircle(hx, hy, sizePx * 0.022f, p);
+                }
+            } catch (Throwable ignored) {}
+
+            // 自驱：可见时下一帧继续，不可见（滚出视野 / 面板关闭）自动停
+            if (running) {
+                try { if (isVisible()) invalidateSelf(); } catch (Throwable ignored) {}
+            }
+        }
+
+        @Override public void setAlpha(int a) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+}
